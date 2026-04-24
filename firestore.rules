@@ -1,0 +1,453 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 공통 헬퍼
+    // ══════════════════════════════════════════════════════════════════════
+    function signedIn()      { return request.auth != null; }
+    function isAdmin()       { return signedIn() && request.auth.token.admin == true; }
+    // Firebase Auth 이메일은 "{empid}@{FB_AUTH_DOMAIN}" 규약이라 local-part 가 empid
+    // Firebase Auth 가 이메일을 소문자로 저장하므로(functions/index.js createUser 참고) 대문자로 정규화해
+    // Firestore 문서 ID(T2408087 등) 및 me.empid 값과 대소문자 불일치 없이 비교한다.
+    function myEmpid()       { return signedIn() ? request.auth.token.email.split('@')[0].upper() : ''; }
+    function isSelf(empid)   { return signedIn() && myEmpid() == empid.upper(); }
+    // 내 account 문서에서 nickname/dept 를 읽어와 매칭 (보안 보강 #1,#2)
+    function myAccount()     { return get(/databases/$(database)/documents/accounts/$(myEmpid())).data; }
+    function isOffice()      { return signedIn() && myAccount().dept == 'Office'; }
+    function myNickname()    { return signedIn() ? myAccount().nickname : ''; }
+    // accounts.role == 'admin' | 'approver' — products 승인 등 내부 승인 흐름 주체
+    function isApproverAcct() {
+      return signedIn() && (myAccount().role == 'admin' || myAccount().role == 'approver');
+    }
+    // 매출/수금 집계 업로드 권한: accounts.permissions 에 target_approve / results_approve 가 있으면 허용
+    // (role 을 'approver' 로 바꾸지 않고 permissions 만 부여한 재무팀 승인자 대응)
+    function hasSalesApprovalPerm() {
+      return signedIn()
+          && myAccount().permissions is list
+          && myAccount().permissions.hasAny(['target_approve', 'results_approve']);
+    }
+    // 재무팀 업로드 하드코딩 — DB 설정 누락/역할 변경 지연에도 특정 empid 는 업로드 허용
+    // (preview-target.html 의 HARDCODED_FINANCE 리스트와 동기화)
+    function isHardcodedFinanceUploader() {
+      return signedIn() && (myEmpid() == 'T2204063' || myEmpid() == 'T2005035');
+    }
+    // customer 문서의 담당 영업 필드가 내 nickname 과 일치 or sales 필드가 비어 있으면 허용 (grace mode)
+    // 대소문자 무관 비교로 완화 — 기존 데이터 표기 편차(예: 'Pat' vs 'pat') 때문에 담당자가 본인 고객을
+    // 보지 못하는 버그 대응. (정상 저장된 nickname 도 _titleCase 로 저장되어 크게 벗어나지 않음.)
+    function ownsCustomer(data) {
+      return data.sales == null || data.sales == ''
+          || (data.sales is string && myNickname() is string
+              && data.sales.lower() == myNickname().lower());
+    }
+    // 민감 필드 변경 차단용: 요청 데이터에 이 필드가 포함되면 거부
+    //  • create 시: 전체 필드 검사 (resource == null)
+    //  • update 시: "실제로 써지는 필드"만 검사 (diff.affectedKeys)
+    //    기존 문서에 남아있는 legacy pw_hash 필드가 admin 수정을 전면 차단하던 버그 대응
+    //    (쓰기 요청 자체에 pw* 가 없으면 허용, 기존 저장값 유무는 무관)
+    function noSecretFields() {
+      return (resource == null)
+        ? !request.resource.data.keys().hasAny(['pw', 'pw_hash', 'password'])
+        : !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['pw', 'pw_hash', 'password']);
+    }
+    // accounts 자기 수정 시 보호 필드(role/permissions/nickname 등) 변경 금지
+    // nickname 은 customer.sales 매칭 키이므로 일반 사용자의 임의 변경을 차단. 관리자만 변경 가능.
+    function noPrivilegeEscalation() {
+      return !request.resource.data.diff(resource.data).affectedKeys()
+        .hasAny(['role', 'permissions', 'empid', 'pw', 'pw_hash', 'password', 'nickname']);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // accounts — 계정 프로필
+    // 모든 인증 사용자 읽기 가능(직원 목록/닉네임 표시용).
+    // 본인은 자기 문서만, 권한 상승 필드는 수정 불가.
+    // 관리자 claim 은 전체 가능. 비밀번호 필드는 어떤 경우에도 쓰기 금지.
+    // ══════════════════════════════════════════════════════════════════════
+    // 신규 계정 자기 생성 프로필 조건: 본인 문서 + role='user' + permissions 비어있음 + 비밀번호 필드 없음
+    // → 사용자가 회원가입 시 fbRegister 가 본인 Auth 계정으로 로그인한 직후 Firestore 프로필을 쓰기
+    //   이 경로를 허용해야 "Firebase Auth 는 만들어졌는데 Firestore accounts 에는 없는" 유령 계정이 생기지 않는다.
+    function isSelfSignupProfile(empid) {
+      return isSelf(empid)
+        && noSecretFields()
+        && request.resource.data.role == 'user'
+        && request.resource.data.permissions is list
+        && request.resource.data.permissions.size() == 0;
+    }
+    match /accounts/{empid} {
+      allow read:   if signedIn();
+      allow create: if (isAdmin() && noSecretFields()) || isSelfSignupProfile(empid);
+      allow update: if noSecretFields() && (
+                      isAdmin() ||
+                      (isSelf(empid) && noPrivilegeEscalation())
+                    );
+      allow delete: if isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 사용자 소유 컬렉션 — 문서 ID 가 empid 여야 함
+    // ══════════════════════════════════════════════════════════════════════
+    match /fcmTokens/{tokenId} {
+      allow read:  if signedIn();
+      allow write: if isSelf(tokenId) || isAdmin();
+    }
+    match /sessions/{empid} {
+      allow read:  if signedIn();
+      allow write: if isSelf(empid) || isAdmin();
+    }
+    match /presence/{empid} {
+      // 접속자 현황은 관리자만 조회 가능
+      allow read:  if isAdmin();
+      // 모든 로그인 사용자는 자신의 presence 만 기록/갱신 (관리자가 확인할 수 있도록)
+      allow write: if isSelf(empid) || isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 공지사항 — 모두 읽기, 관리자만 쓰기
+    // ══════════════════════════════════════════════════════════════════════
+    match /announcements/{annId} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+    match /announceTemplates/{tplId} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+    match /scheduledAnnouncements/{schId} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 앱 설정 / 메타 — 모두 읽기, 관리자만 쓰기
+    // ══════════════════════════════════════════════════════════════════════
+    match /settings/{docId} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+    match /meta/{docId} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 출퇴근 — 모두 읽기(팀 현황), 본인/관리자만 쓰기
+    // ══════════════════════════════════════════════════════════════════════
+    match /attendance/{docId} {
+      allow read:   if signedIn();
+      // 문서 ID 가 "{empid}_{날짜}" 규약이면 본인만 쓸 수 있게 prefix 검사
+      allow create: if signedIn() && (isAdmin() || docId.matches('^' + myEmpid() + '_.*'));
+      allow update: if signedIn() && (isAdmin() || docId.matches('^' + myEmpid() + '_.*'));
+      allow delete: if isAdmin();
+    }
+    // 출퇴근 알림 트리거 — 로그인한 사용자가 생성(empid 필드 본인 강제), 서버 Function 이 삭제
+    match /attendanceNotify/{docId} {
+      allow read:   if isAdmin();
+      allow create: if signedIn() && request.resource.data.empid == myEmpid();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 주문 / 견적 — 인증 사용자 읽기, 생성, 업데이트. 삭제는 관리자만.
+    // (앱 레벨에서 이미 상태/권한 체크를 하므로 여기서는 최소한만)
+    // ══════════════════════════════════════════════════════════════════════
+    match /orders/{orderId} {
+      allow read:   if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if isAdmin();
+    }
+    match /quotes/{quoteId} {
+      allow read:   if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if isAdmin();
+    }
+    match /receipts/{receiptId} {
+      allow read:   if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 고객 / 주소 — 보안 보강 #1, #2
+    // 읽기: 본인 담당 고객 OR sales 필드 비어있음 OR 관리자/Office 전체 허용
+    // 쓰기: 본인 담당 고객 OR 신규 생성(sales 필드를 본인 nickname 으로) OR 관리자/Office
+    // ══════════════════════════════════════════════════════════════════════
+    // customers.sales 필드 동결: 담당자 본인은 고객 정보를 수정할 수 있지만
+    // 담당자 필드 'sales' 자체는 Office/Admin 만 변경 가능(담당자 이관은 관리자 영역).
+    function salesFieldUnchanged() {
+      return request.resource.data.sales == resource.data.sales;
+    }
+    match /customers/{custId} {
+      allow read:   if signedIn() && (
+                      isAdmin() || isOffice() ||
+                      ownsCustomer(resource.data)
+                    );
+      allow create: if signedIn() && (
+                      isAdmin() || isOffice() ||
+                      request.resource.data.sales == myNickname() ||
+                      request.resource.data.sales == null ||
+                      request.resource.data.sales == ''
+                    );
+      allow update: if signedIn() && (
+                      isAdmin() || isOffice() ||
+                      (ownsCustomer(resource.data) && salesFieldUnchanged())
+                    );
+      allow delete: if isAdmin() || isOffice();
+    }
+    // customer_deletions — 삭제된 고객 tombstone (증분 동기화용)
+    // 모든 인증 사용자 읽기 허용 (캐시 증분 업데이트), 생성은 삭제 권한자만,
+    // 수정 금지 (tombstone 은 불변), 삭제는 Admin 만 (감사 보존).
+    match /customer_deletions/{custId} {
+      allow read:   if signedIn();
+      allow create: if isAdmin() || isOffice();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+    // 신규 고객 등록 대기 — 본인 등록건 + Office/Admin 만 읽기, 생성 시 created_by 강제.
+    // 기존 문서에는 created_by 가 없을 수 있어 resource.data.created_by 비교가 불일치할 때는
+    // Office/Admin 허용 경로로 자연 fallback 된다.
+    match /pendingCustomers/{pcId} {
+      allow read:   if signedIn() && (
+                      isAdmin() || isOffice() ||
+                      resource.data.created_by == myEmpid() ||
+                      resource.data.reg_by == myEmpid()
+                    );
+      allow create: if signedIn() && request.resource.data.created_by == myEmpid();
+      allow update: if isAdmin() || isOffice();
+      allow delete: if isAdmin() || isOffice();
+    }
+    match /addresses/{addrId} {
+      allow read, write: if signedIn();
+    }
+    match /address_history/{docId} {
+      allow read, write: if signedIn();
+    }
+    match /customerChangelog/{docId} {
+      // 앱이 쓰고 Cloud Function 이 읽는 로그. 관리자만 직접 접근.
+      allow read:   if isAdmin();
+      allow create: if signedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 제품 / 위탁 / 보고 — 인증 사용자 접근
+    // ══════════════════════════════════════════════════════════════════════
+    // products 는 pendingProducts 승인 흐름(customer.js)에서만 쓰인다.
+    // 승인 주체: custom claim admin, 또는 accounts.role in ('admin','approver'), 또는 Office 부서.
+    // 일반(Sales) 사용자의 직접 쓰기는 차단.
+    match /products/{docId} {
+      allow read:   if signedIn();
+      allow write:  if isAdmin() || isOffice() || isApproverAcct();
+    }
+    match /pendingProducts/{docId} {
+      allow read:   if signedIn();
+      allow create: if signedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /productPrices/{docId} {
+      allow read:   if signedIn();
+      allow write:  if isAdmin();
+    }
+    // product_deletions / product_price_deletions — 증분 동기화용 tombstone
+    // 모든 인증 사용자 읽기(캐시에서 제거 감지), 생성은 삭제 권한자만, 수정 금지.
+    match /product_deletions/{docId} {
+      allow read:   if signedIn();
+      allow create: if isAdmin() || isOffice() || isApproverAcct();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+    match /product_price_deletions/{docId} {
+      allow read:   if signedIn();
+      allow create: if isAdmin() || isOffice() || isApproverAcct();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+    // 위탁 마스터: 조회는 모두, 신규 생성/삭제는 Office/Admin 만(bulk upload).
+    // 정산 상태 업데이트(order.js 의 위탁정산 승인 흐름)는 일반 사용자도 필요하므로 update 허용.
+    match /consignment_master/{docId} {
+      allow read:   if signedIn();
+      allow create: if isAdmin() || isOffice();
+      allow update: if signedIn();
+      allow delete: if isAdmin() || isOffice();
+    }
+    // 위탁 마스터 메타 — version 변화 감지용 경량 문서. 업로드/정산 시마다 bump.
+    // 읽기는 모두, 쓰기는 consignment_master 와 동일 범위(로그인 사용자도 정산에서 bump 필요).
+    match /consignment_meta/{docId} {
+      allow read:  if signedIn();
+      allow write: if signedIn();
+    }
+    // 위탁 삭제 tombstone — 증분 동기화에서 "삭제된 문서" 감지용.
+    // 업로드 리밸런싱 또는 정산 완료 후 물리 삭제 시 tombstone 기록.
+    match /consignment_deletions/{docId} {
+      allow read:   if signedIn();
+      allow create: if isAdmin() || isOffice();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+    // ══════════════════════════════════════════════════════════════════════
+    // AR (미수금) 마스터 — 관리자/Office 업로드, 로그인 사용자 조회
+    //  • ar_master/{nickname}: 각 영업사원 문서(invoices 배열)
+    //  • ar_meta/latest:       version 1개짜리 경량 문서(캐시 변경 감지용)
+    //    클라이언트는 ar_meta/latest 만 읽어 캐시가 유효한지 판단 → 반복 재방문 시
+    //    업로드 없으면 ar_master 재조회를 생략하여 read 비용 절감.
+    // ══════════════════════════════════════════════════════════════════════
+    match /ar_master/{docId} {
+      allow read:  if signedIn();
+      allow write: if isAdmin() || isOffice();
+    }
+    match /ar_meta/{docId} {
+      allow read:  if signedIn();
+      allow write: if isAdmin() || isOffice();
+    }
+    // AR 삭제 tombstone — 영업사원 문서가 제거되었을 때 클라이언트가 감지.
+    match /ar_deletions/{docId} {
+      allow read:   if signedIn();
+      allow create: if isAdmin() || isOffice();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // 일일 보고서: 본인 것만 쓰기. 팀 조회는 모두 가능.
+    match /daily_reports/{docId} {
+      allow read:   if signedIn();
+      allow create: if signedIn() && request.resource.data.empid == myEmpid();
+      allow update: if signedIn() && (
+                      isAdmin() || isOffice() ||
+                      resource.data.empid == myEmpid()
+                    );
+      allow delete: if isAdmin() || isOffice() ||
+                      (signedIn() && resource.data.empid == myEmpid());
+    }
+    // 방문 로그: 본인 것만 쓰기.
+    match /visit_logs/{docId} {
+      allow read:   if signedIn();
+      allow create: if signedIn() && request.resource.data.empid == myEmpid();
+      allow update: if signedIn() && (
+                      isAdmin() || isOffice() ||
+                      resource.data.empid == myEmpid()
+                    );
+      allow delete: if isAdmin() || isOffice() ||
+                      (signedIn() && resource.data.empid == myEmpid());
+    }
+    // 방문 일정(캘린더): 본인 것만 쓰기.
+    match /visit_schedules/{docId} {
+      allow read:   if signedIn();
+      allow create: if signedIn() && request.resource.data.empid == myEmpid();
+      allow update: if signedIn() && (
+                      isAdmin() || isOffice() ||
+                      resource.data.empid == myEmpid()
+                    );
+      allow delete: if isAdmin() || isOffice() ||
+                      (signedIn() && resource.data.empid == myEmpid());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 알림 — 수신자(to 필드 == empid)만 본인 것 읽기, 앱이 생성
+    //   • update: 수신자 본인만, read/readAt 필드 외는 수정 불가
+    //   • delete: 수신자 본인 또는 관리자
+    // ══════════════════════════════════════════════════════════════════════
+    match /notifications/{docId} {
+      allow read:   if signedIn() && (isAdmin() || resource.data.to == myEmpid());
+      allow create: if signedIn();
+      allow update: if signedIn()
+                    && resource.data.to == myEmpid()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['read', 'readAt']);
+      allow delete: if isAdmin() || (signedIn() && resource.data.to == myEmpid());
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 채팅 — 인증 사용자 접근
+    //  • 방(room) 문서: 인증 사용자 읽기/쓰기 (participants 세분화는 Phase 3)
+    //  • 메시지 서브컬렉션: create 시 from == myEmpid() 강제, update/delete 는 작성자만
+    // ══════════════════════════════════════════════════════════════════════
+    match /chats/{chatId} {
+      allow read, write: if signedIn();
+    }
+    match /chats/{chatId}/messages/{msgId} {
+      allow read:   if signedIn();
+      allow create: if signedIn() && request.resource.data.from == myEmpid();
+      // 작성자 본인만 툼스톤/수정 가능
+      allow update: if signedIn() && resource.data.from == myEmpid();
+      // 대화 참여자(보낸사람/받는사람)는 본인 대화방 메시지 삭제 가능 + 관리자
+      allow delete: if isAdmin() || (signedIn() && (
+                      resource.data.from == myEmpid() ||
+                      resource.data.to == myEmpid()
+                    ));
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 매출/수금 집계 대시보드 (preview-target.html) — 업로드 스냅샷 공유
+    //  • 문서: salesDashboard/latest { sales, recv, dataDate, updatedAt }
+    //  • read:  인증 사용자 전체 (재무팀/영업 모두 조회 필요)
+    //  • write: Admin / Office / Approver 계정 (업로드 권한자)
+    // ══════════════════════════════════════════════════════════════════════
+    match /salesDashboard/{docId} {
+      allow read:  if signedIn();
+      // 업로드 권한 — 하드코딩/admin claim 먼저(account 문서 get 불필요) → 문서 get 필요한 체크 순
+      //   규칙 평가 중 myAccount() get() 이 예외를 던지면 전체 거부되므로, 안전한 체크부터 단락 평가.
+      allow write: if isHardcodedFinanceUploader()
+                   || isAdmin()
+                   || isOffice()
+                   || isApproverAcct()
+                   || hasSalesApprovalPerm();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 감사 로그 (보안 보강 #4) — 관리자만 읽기, 클라이언트 쓰기 금지
+    // (Cloud Function 만 admin 권한으로 쓸 수 있음)
+    // ══════════════════════════════════════════════════════════════════════
+    match /auditLogs/{docId} {
+      allow read:  if isAdmin();
+      allow write: if false;  // 클라이언트 직접 쓰기 금지 — Cloud Function 경유
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 헬스체크 — 읽기만 허용
+    // ══════════════════════════════════════════════════════════════════════
+    match /_ping/{docId} {
+      allow read:  if true;
+      allow write: if isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 앱 설정 — 킬 스위치 등 런타임 토글. 관리자만 수정.
+    // app_config/telemetry.enabled == false 이면 클라이언트가 텔레메트리 기록을 중단.
+    // ══════════════════════════════════════════════════════════════════════
+    match /app_config/{docId} {
+      allow read:  if signedIn();
+      allow write: if isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 캐시 동기화 텔레메트리 — 클라이언트가 FULL/INCREMENTAL/MISS 이벤트 기록.
+    // 목적: 매번 Full read 를 하는(캐시가 안 붙는) 사용자 감지.
+    // • create: 본인 uid 와 일치하는 경우에만 기록 허용. HIT 는 클라이언트에서 스킵.
+    // • read/delete: 관리자만. (목록/분석/TTL 우회 정리 용도)
+    // • update: 영구 금지 (로그는 불변)
+    // • expireAt: Firestore TTL 정책 필드. Console 에서 expireAt 에 TTL 30일 설정 필요.
+    // ══════════════════════════════════════════════════════════════════════
+    match /sync_telemetry/{docId} {
+      allow read:   if isAdmin();
+      allow create: if signedIn()
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.mode in ['MISS','INCREMENTAL','FULL']
+                    && request.resource.data.expireAt is timestamp;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 기본 거부 — 위에서 매칭되지 않은 모든 경로
+    // ══════════════════════════════════════════════════════════════════════
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

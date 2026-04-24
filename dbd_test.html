@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DBD Company Search - Test</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh;
+    background: linear-gradient(160deg, #eff6ff 0%, #f8fafc 50%, #f0fdf4 100%);
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    padding: 32px 16px;
+  }
+  .header { text-align: center; margin-bottom: 28px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: #1e3a5f; border-radius: 12px; padding: 8px 18px; margin-bottom: 12px;
+  }
+  .badge-icon {
+    width: 28px; height: 28px; background: #2563eb; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 900; font-size: 13px;
+  }
+  .badge span { color: #93c5fd; font-weight: 700; font-size: 13px; letter-spacing: 0.06em; }
+  h1 { font-size: 24px; font-weight: 800; color: #1e3a5f; }
+  .subtitle { color: #64748b; margin-top: 6px; font-size: 12px; }
+
+  .search-box {
+    max-width: 600px; margin: 0 auto 28px;
+  }
+  .search-bar {
+    display: flex; gap: 10px; background: #fff; border-radius: 14px;
+    padding: 6px; box-shadow: 0 4px 24px rgba(37,99,235,0.10);
+    border: 1.5px solid #dbeafe;
+  }
+  .search-bar input {
+    flex: 1; border: none; outline: none; font-size: 14px;
+    color: #1e293b; background: transparent; padding: 8px 12px;
+    font-family: inherit;
+  }
+  .search-bar button {
+    background: linear-gradient(135deg, #1e3a5f, #2563eb);
+    color: #fff; border: none; border-radius: 10px;
+    padding: 10px 22px; font-weight: 700; font-size: 13px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .search-bar button:disabled {
+    background: #93c5fd; cursor: not-allowed;
+  }
+
+  .tabs {
+    display: flex; gap: 0; max-width: 600px; margin: 0 auto 20px;
+    background: #e2e8f0; border-radius: 10px; padding: 3px; overflow: hidden;
+  }
+  .tab {
+    flex: 1; text-align: center; padding: 8px 0; font-size: 13px;
+    font-weight: 600; cursor: pointer; border-radius: 8px;
+    color: #64748b; transition: all 0.2s;
+  }
+  .tab.active { background: #fff; color: #1e3a5f; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+
+  .content { max-width: 600px; margin: 0 auto; }
+
+  .error-box {
+    background: #fef2f2; border: 1px solid #fecaca;
+    border-radius: 10px; padding: 12px 16px; color: #dc2626;
+    font-size: 13px; margin-bottom: 16px;
+  }
+  .loading { text-align: center; color: #64748b; padding: 32px 0; font-size: 13px; }
+  .empty { text-align: center; padding: 40px 0; }
+  .empty-icon { font-size: 32px; margin-bottom: 10px; }
+  .empty-text { color: #94a3b8; font-size: 14px; }
+
+  .card {
+    background: #fff; border-radius: 12px; padding: 14px 16px;
+    margin-bottom: 10px; cursor: pointer;
+    border: 1.5px solid #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: #2563eb; }
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .card-body { flex: 1; min-width: 0; }
+  .card-name {
+    font-weight: 700; color: #1e3a5f; font-size: 14px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .card-name-en { color: #64748b; font-size: 11px; margin-top: 2px; }
+  .card-meta { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .status-badge {
+    padding: 2px 10px; border-radius: 99px; font-size: 11px;
+    font-weight: 700; color: #fff;
+  }
+  .reg-no { color: #94a3b8; font-size: 11px; font-family: monospace; }
+  .province { color: #64748b; font-size: 11px; }
+  .arrow { color: #94a3b8; font-size: 18px; }
+
+  /* Modal */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; padding: 16px;
+  }
+  .modal {
+    background: #fff; border-radius: 16px; width: 100%; max-width: 520px;
+    max-height: 85vh; overflow: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  }
+  .modal-header {
+    background: linear-gradient(135deg, #1e3a5f, #2563eb);
+    padding: 20px 24px; border-radius: 16px 16px 0 0;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .modal-label { font-size: 10px; color: #93c5fd; font-weight: 600; letter-spacing: 0.1em; margin-bottom: 4px; }
+  .modal-title { color: #fff; font-weight: 700; font-size: 14px; line-height: 1.3; }
+  .modal-close {
+    background: rgba(255,255,255,0.15); border: none; color: #fff;
+    border-radius: 99px; width: 32px; height: 32px; cursor: pointer;
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+  }
+  .modal-body { padding: 20px 24px; }
+  .detail-row {
+    display: flex; gap: 12px; padding: 10px 0;
+    border-bottom: 1px solid #f1f5f9; font-size: 13px;
+  }
+  .detail-label { color: #64748b; min-width: 160px; font-weight: 500; }
+  .detail-value { color: #1e293b; font-weight: 600; flex: 1; word-break: break-all; }
+  .dbd-link {
+    display: block; margin-top: 16px; text-align: center;
+    background: linear-gradient(135deg, #1e3a5f, #2563eb);
+    color: #fff; padding: 10px; border-radius: 10px;
+    text-decoration: none; font-weight: 700; font-size: 13px;
+  }
+
+  .footer { text-align: center; margin-top: 40px; color: #94a3b8; font-size: 11px; }
+  .hint {
+    max-width: 600px; margin: 0 auto 16px;
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+    padding: 10px 14px; font-size: 12px; color: #92400e;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner {
+    width: 12px; height: 12px; border: 2px solid #fff;
+    border-top: 2px solid transparent; border-radius: 50%;
+    display: inline-block; animation: spin 0.8s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+
+  .env-toggle {
+    max-width: 600px; margin: 0 auto 12px;
+    display: flex; gap: 8px; align-items: center; justify-content: center;
+  }
+  .env-toggle label { font-size: 11px; color: #64748b; cursor: pointer; }
+  .env-toggle select {
+    font-size: 11px; padding: 4px 8px; border: 1px solid #cbd5e1;
+    border-radius: 6px; background: #fff; color: #334155;
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="badge">
+    <div class="badge-icon">D</div>
+    <span>DBD COMPANY SEARCH</span>
+  </div>
+  <h1>DBD Company Search</h1>
+  <p class="subtitle">Department of Business Development - Free API Test</p>
+</div>
+
+<!-- Environment -->
+<div class="env-toggle">
+  <label>Endpoint:</label>
+  <select id="envSelect">
+    <option value="emulator">Local Emulator (localhost:5001)</option>
+    <option value="prod">Production (Cloud Functions)</option>
+  </select>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('id')">Registration No.</div>
+  <div class="tab" onclick="switchTab('web')">DBD Website</div>
+</div>
+
+<!-- Search -->
+<div class="search-box">
+  <div class="search-bar">
+    <input id="searchInput" type="text" placeholder="13-digit Registration No. (e.g. 0107537000882)"
+           maxlength="13" onkeydown="if(event.key==='Enter')doSearch()">
+    <button id="searchBtn" onclick="doSearch()">Search</button>
+  </div>
+</div>
+
+<!-- Hint -->
+<div class="hint" id="hintBox">
+  <strong>Test Registration Numbers:</strong><br>
+  0107537000882 (Krungthai Bank) / 0105556176404 / 0105535142498
+</div>
+
+<!-- Web tab content (hidden by default) -->
+<div id="webTab" style="display:none; max-width:600px; margin:0 auto;">
+  <div class="hint">
+    Search by company name on the official DBD website (opens in new tab).
+  </div>
+  <div class="search-bar" style="margin-bottom:16px;">
+    <input id="webInput" type="text" placeholder="Company name (Thai or English)..."
+           onkeydown="if(event.key==='Enter')openDBD()">
+    <button onclick="openDBD()">Open DBD</button>
+  </div>
+</div>
+
+<div class="content" id="resultArea"></div>
+
+<!-- Modal -->
+<div class="modal-bg" id="modalBg" style="display:none" onclick="closeModal()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <div>
+        <div class="modal-label">DBD COMPANY DETAIL</div>
+        <div class="modal-title" id="modalTitle">-</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="footer">DBD Open API (openapi.dbd.go.th) - No API Key Required</div>
+
+<script>
+const PROJECT_ID = "neothai-order";
+let currentTab = "id";
+let currentData = null;
+
+function getEndpoint() {
+  const env = document.getElementById("envSelect").value;
+  if (env === "emulator") {
+    return "http://localhost:5001/" + PROJECT_ID + "/us-central1/dbdLookup";
+  }
+  return "https://us-central1-" + PROJECT_ID + ".cloudfunctions.net/dbdLookup";
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll(".tab").forEach((t, i) => {
+    t.classList.toggle("active", (i === 0 && tab === "id") || (i === 1 && tab === "web"));
+  });
+  document.getElementById("webTab").style.display = tab === "web" ? "block" : "none";
+  document.getElementById("hintBox").style.display = tab === "id" ? "block" : "none";
+  document.querySelector(".search-box").style.display = tab === "id" ? "block" : "none";
+  if (tab === "id") document.getElementById("resultArea").innerHTML = "";
+}
+
+function openDBD() {
+  const q = document.getElementById("webInput").value.trim();
+  if (!q) return;
+  window.open("https://datawarehouse.dbd.go.th/search?q=" + encodeURIComponent(q), "_blank");
+}
+
+async function doSearch() {
+  const input = document.getElementById("searchInput");
+  const btn = document.getElementById("searchBtn");
+  const area = document.getElementById("resultArea");
+  const id = input.value.trim();
+
+  if (!id) return;
+  if (!/^\d{13}$/.test(id)) {
+    area.innerHTML = '<div class="error-box">Please enter a 13-digit registration number.</div>';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Searching...';
+  area.innerHTML = '<div class="loading"><div style="font-size:22px;margin-bottom:8px">&#128270;</div>Querying DBD Open API...</div>';
+
+  try {
+    const url = getEndpoint() + "?id=" + id;
+    const resp = await fetch(url);
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      throw new Error(err.error || "HTTP " + resp.status);
+    }
+
+    const data = await resp.json();
+
+    if (!data.found) {
+      area.innerHTML =
+        '<div class="empty">' +
+          '<div class="empty-icon">&#127970;</div>' +
+          '<div class="empty-text">No data found for "' + id + '"</div>' +
+          '<div style="margin-top:12px"><a href="https://datawarehouse.dbd.go.th/search?q=' + id +
+          '" target="_blank" style="color:#2563eb;font-size:12px">Search on DBD Website &#8599;</a></div>' +
+        '</div>';
+      return;
+    }
+
+    currentData = data.data;
+    const d = data.data;
+    const statusBg = getStatusColor(d.status);
+
+    area.innerHTML =
+      '<div style="font-size:12px;color:#64748b;margin-bottom:12px;font-weight:500">Result</div>' +
+      '<div class="card" onclick="showModal()">' +
+        '<div class="card-top">' +
+          '<div class="card-body">' +
+            '<div class="card-name">' + (d.nameTh || d.nameEn || "-") + '</div>' +
+            (d.nameEn && d.nameTh ? '<div class="card-name-en">' + d.nameEn + '</div>' : '') +
+            '<div class="card-meta">' +
+              (d.status ? '<span class="status-badge" style="background:' + statusBg + '">' + d.status + '</span>' : '') +
+              '<span class="reg-no">#' + d.regNo + '</span>' +
+              (d.province ? '<span class="province">&#128205; ' + d.province + '</span>' : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="arrow">&#8250;</div>' +
+        '</div>' +
+      '</div>';
+  } catch (e) {
+    area.innerHTML = '<div class="error-box">&#9888;&#65039; ' + e.message + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Search";
+  }
+}
+
+function getStatusColor(s) {
+  if (!s) return "#d97706";
+  const l = s.toLowerCase();
+  if (l.includes("ดำเนิน") || l.includes("active")) return "#16a34a";
+  if (l.includes("เลิก") || l.includes("dissolv")) return "#dc2626";
+  return "#d97706";
+}
+
+function showModal() {
+  if (!currentData) return;
+  const d = currentData;
+  document.getElementById("modalTitle").textContent = d.nameTh || d.nameEn || "-";
+
+  const fields = [
+    ["Registration No.", d.regNo],
+    ["Name (TH)", d.nameTh],
+    ["Name (EN)", d.nameEn],
+    ["Type", d.type],
+    ["Status", d.status],
+    ["Registered Capital", d.capital ? Number(d.capital).toLocaleString() + " THB" : ""],
+    ["Registration Date", formatDate(d.regDate)],
+    ["Address", d.address],
+    ["Province", d.province],
+    ["Business Objective", d.objective],
+  ].filter(function(f) { return f[1]; });
+
+  let html = "";
+  fields.forEach(function(f) {
+    html += '<div class="detail-row"><div class="detail-label">' + f[0] + '</div><div class="detail-value">' + f[1] + '</div></div>';
+  });
+
+  if (d.regNo) {
+    html += '<a class="dbd-link" href="https://datawarehouse.dbd.go.th/company/profile/' +
+      d.regNo + '" target="_blank" rel="noopener">&#128279; View Full Details on DBD</a>';
+  }
+
+  document.getElementById("modalBody").innerHTML = html;
+  document.getElementById("modalBg").style.display = "flex";
+}
+
+function closeModal() {
+  document.getElementById("modalBg").style.display = "none";
+}
+
+function formatDate(s) {
+  if (!s || s.length !== 8) return s || "";
+  return s.substring(0, 4) + "-" + s.substring(4, 6) + "-" + s.substring(6, 8);
+}
+
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape") closeModal();
+});
+</script>
+</body>
+</html>

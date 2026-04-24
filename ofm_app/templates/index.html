@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OFM + Makro PRO 상품 조회 - Neobiotech</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'Noto Sans KR', 'Sarabun', sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+
+  header { background: linear-gradient(135deg, #1a1a2e 0%, #2d3e5c 100%); color: white; padding: 20px 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+  header h1 { font-size: 22px; font-weight: 600; }
+  header .subtitle { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+
+  .source-bar { background: white; padding: 0; display: flex; border-bottom: 1px solid #e0e4e8; }
+  .source-tab { flex: 1; padding: 16px; text-align: center; cursor: pointer; font-weight: 600; font-size: 15px; color: #888; border-bottom: 4px solid transparent; transition: all 0.2s; background: #fafbfc; }
+  .source-tab:hover { background: #f0f4f8; }
+  .source-tab.active[data-source="ofm"] { color: #1F4E78; border-bottom-color: #1F4E78; background: white; }
+  .source-tab.active[data-source="makro"] { color: #C0392B; border-bottom-color: #C0392B; background: white; }
+  .source-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; margin-left: 6px; vertical-align: middle; }
+  .source-tab[data-source="ofm"] .source-badge { background: #e8f0f9; color: #1F4E78; }
+  .source-tab[data-source="makro"] .source-badge { background: #fdeaea; color: #C0392B; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  .panel { background: white; padding: 24px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  h2 { font-size: 16px; margin-bottom: 14px; }
+  .theme-ofm h2 { color: #1F4E78; }
+  .theme-makro h2 { color: #C0392B; }
+
+  .search-row { display: flex; gap: 8px; margin-bottom: 14px; }
+  input[type="text"] { padding: 10px 14px; border: 1.5px solid #d0d7de; border-radius: 6px; font-size: 14px; flex: 1; outline: none; transition: border-color 0.2s; }
+  input[type="text"]:focus { border-color: #2E75B6; }
+
+  button { padding: 10px 22px; color: white; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: background 0.2s; }
+  .theme-ofm button:not(.secondary):not(.deselect) { background: #2E75B6; }
+  .theme-ofm button:not(.secondary):not(.deselect):hover { background: #1F4E78; }
+  .theme-makro button:not(.secondary):not(.deselect) { background: #E74C3C; }
+  .theme-makro button:not(.secondary):not(.deselect):hover { background: #C0392B; }
+  button:disabled { background: #aaa !important; cursor: not-allowed; }
+
+  .options { font-size: 13px; color: #666; margin-bottom: 10px; }
+  .status { padding: 10px 14px; border-radius: 6px; margin: 12px 0; font-size: 14px; display: none; }
+  .status.show { display: block; }
+  .status.info { background: #e8f0f9; color: #1F4E78; }
+  .status.error { background: #fde8e8; color: #a33; }
+  .status.success { background: #e6f4ea; color: #1e7e3a; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e8ecef; vertical-align: top; }
+  th { background: #f8fafc; font-weight: 600; color: #555; font-size: 12px; text-transform: uppercase; }
+  tr:hover td { background: #fafbfc; }
+
+  .product-card { display: flex; gap: 14px; align-items: flex-start; }
+  .product-card img { width: 60px; height: 60px; object-fit: contain; border: 1px solid #eee; border-radius: 4px; background: white; flex-shrink: 0; }
+  .product-info .name { font-weight: 500; color: #333; margin-bottom: 4px; word-break: break-word; }
+  .product-info .id { font-size: 12px; color: #888; font-family: 'Consolas', monospace; }
+  .product-info .brand { font-size: 11px; color: #666; margin-top: 2px; }
+  .price { color: #d94a3f; font-weight: 600; font-size: 15px; white-space: nowrap; }
+  .price-origin { color: #aaa; text-decoration: line-through; font-size: 12px; font-weight: normal; margin-left: 4px; }
+  .discount { background: #e74c3c; color: white; font-size: 11px; padding: 1px 6px; border-radius: 3px; margin-left: 4px; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 500; }
+  .badge.stock { background: #e6f4ea; color: #1e7e3a; }
+  .badge.nostock { background: #fde8e8; color: #a33; }
+
+  a { color: #2E75B6; text-decoration: none; }
+  .theme-makro a { color: #E74C3C; }
+  a:hover { text-decoration: underline; }
+
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .footer { text-align: center; padding: 24px; font-size: 12px; color: #888; }
+
+  /* 체크박스 & 선택 내보내기 바 */
+  .chk { width: 18px; height: 18px; cursor: pointer; accent-color: #2E75B6; }
+  .theme-makro .chk { accent-color: #E74C3C; }
+  th .chk { vertical-align: middle; }
+  .export-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: #edf2fa; border-radius: 8px; margin-bottom: 10px; }
+  .theme-makro .export-bar { background: #fdeaea; }
+  .export-bar .count { font-weight: 600; font-size: 14px; color: #1F4E78; }
+  .theme-makro .export-bar .count { color: #C0392B; }
+  .export-bar button { padding: 8px 18px; font-size: 13px; }
+  .export-bar .deselect { background: transparent !important; color: #666; border: 1px solid #ccc; font-size: 12px; padding: 6px 12px; }
+  .export-bar .deselect:hover { background: #f0f0f0 !important; }
+
+  /* 수량 입력 */
+  .qty-input { width: 60px; padding: 6px 8px; border: 1.5px solid #d0d7de; border-radius: 5px; font-size: 13px; text-align: center; outline: none; transition: border-color 0.2s; }
+  .qty-input:focus { border-color: #2E75B6; }
+  .theme-makro .qty-input:focus { border-color: #E74C3C; }
+  .qty-input::-webkit-inner-spin-button { opacity: 1; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>OFM + Makro PRO 상품 조회 시스템</h1>
+  <div class="subtitle">OfficeMate / Makro PRO 상품 검색 | Neobiotech Thailand</div>
+</header>
+
+<!-- 소스 선택 바 -->
+<div class="source-bar">
+  <div class="source-tab active" data-source="ofm">OfficeMate <span class="source-badge">문구/사무용품</span></div>
+  <div class="source-tab" data-source="makro">Makro PRO <span class="source-badge">식품/도매</span></div>
+</div>
+
+<!-- OFM 검색 -->
+<div class="container theme-ofm" id="section-ofm">
+  <div class="panel">
+    <h2>OfficeMate 상품 검색</h2>
+    <div class="search-row">
+      <input type="text" id="ofm-searchInput" placeholder="키워드 (영어/태국어)" autofocus>
+      <button onclick="doSearch('ofm')">검색</button>
+    </div>
+    <div class="options">
+      <label><input type="checkbox" id="ofm-withPrice" checked> 가격/재고 포함 (약 30초 소요)</label>
+    </div>
+    <div class="status" id="ofm-searchStatus"></div>
+    <div id="ofm-searchResults"></div>
+  </div>
+</div>
+
+<!-- Makro 검색 -->
+<div class="container theme-makro" id="section-makro" style="display:none;">
+  <div class="panel">
+    <h2>Makro PRO 상품 검색</h2>
+    <div class="search-row">
+      <input type="text" id="makro-searchInput" placeholder="키워드 (영어/태국어)">
+      <button onclick="doSearch('makro')">검색</button>
+    </div>
+    <div class="status" id="makro-searchStatus"></div>
+    <div id="makro-searchResults"></div>
+  </div>
+</div>
+
+<div class="footer">Neobiotech Thailand · Product Lookup Tool v2.0</div>
+
+<script>
+let currentSource = 'ofm';
+
+// 소스 전환
+document.querySelectorAll('.source-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.source-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentSource = tab.dataset.source;
+
+    document.getElementById('section-ofm').style.display = currentSource === 'ofm' ? 'block' : 'none';
+    document.getElementById('section-makro').style.display = currentSource === 'makro' ? 'block' : 'none';
+  });
+});
+
+// 엔터 키
+document.getElementById('ofm-searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch('ofm'); });
+document.getElementById('makro-searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') doSearch('makro'); });
+
+function showStatus(id, msg, type='info') {
+  const el = document.getElementById(id);
+  el.className = 'status show ' + type;
+  el.innerHTML = msg;
+}
+
+function formatPrice(v) {
+  if (!v) return '-';
+  return '฿' + Number(v).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+// ========== 상품 검색 ==========
+async function doSearch(source) {
+  const q = document.getElementById(source + '-searchInput').value.trim();
+  if (!q || q.length < 2) {
+    showStatus(source + '-searchStatus', '⚠️ 검색어는 2글자 이상', 'error');
+    return;
+  }
+  const loadingMsg = source === 'ofm'
+    ? '<span class="spinner"></span>OFM 검색 중...'
+    : '<span class="spinner"></span>Makro PRO 검색 중...';
+  showStatus(source + '-searchStatus', loadingMsg, 'info');
+  document.getElementById(source + '-searchResults').innerHTML = '';
+
+  let url = `/api/${source}/search?q=${encodeURIComponent(q)}`;
+  if (source === 'ofm') {
+    const withPrice = document.getElementById('ofm-withPrice').checked;
+    url += `&with_price=${withPrice}`;
+  }
+
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(await r.text());
+    const data = await r.json();
+    renderSearchResults(source, data);
+    showStatus(source + '-searchStatus', `✅ "${data.query}" 검색 완료: ${data.count}개`, 'success');
+  } catch (e) {
+    showStatus(source + '-searchStatus', '❌ ' + e.message, 'error');
+  }
+}
+
+// 검색 결과 데이터 보관 (소스별)
+const _searchData = { ofm: [], makro: [] };
+
+function renderSearchResults(source, data) {
+  const container = document.getElementById(source + '-searchResults');
+  if (!data.results || data.results.length === 0) {
+    container.innerHTML = '<p style="color:#888;padding:20px;text-align:center;">검색 결과 없음</p>';
+    return;
+  }
+  _searchData[source] = data.results;
+
+  let html = `<div class="export-bar" id="${source}-exportBar" style="display:none;">
+    <span class="count" id="${source}-selCount">0개 선택</span>
+    <span class="count" style="margin-left:8px;color:#d94a3f;" id="${source}-selTotal"></span>
+    <button onclick="exportSelected('${source}')">엑셀 다운로드</button>
+    <button class="deselect" onclick="deselectAll('${source}')">선택 해제</button>
+  </div>`;
+  html += `<table><thead><tr>
+    <th style="width:36px;"><input type="checkbox" class="chk" id="${source}-chkAll" onchange="toggleAll('${source}', this)"></th>
+    <th>상품</th><th style="width:100px;">단가</th><th style="width:80px;">수량</th><th style="width:110px;">합계</th><th style="width:90px;">재고</th><th style="width:60px;">링크</th>
+  </tr></thead><tbody>`;
+
+  data.results.forEach((p, idx) => {
+    const isOutOfStock = (p.can_buy === false) || (p.availability && (p.availability === '품절' || p.availability === '판매중지'));
+    let stockText = '';
+    if (p.inventory != null && p.inventory > 0) {
+      stockText = `재고 ${Number(p.inventory).toLocaleString()}개`;
+    } else if (p.can_buy === true || (p.availability && p.availability !== '품절' && p.availability !== '판매중지')) {
+      stockText = p.availability || '구매가능';
+    } else if (p.availability) {
+      stockText = p.availability;
+    }
+    const stockBadge = stockText
+      ? `<span class="badge ${isOutOfStock ? 'nostock' : 'stock'}">${stockText}</span>`
+      : '-';
+    const originHtml = p.origin_price && p.origin_price !== p.price
+      ? `<span class="price-origin">฿${Number(p.origin_price).toLocaleString()}</span>` : '';
+    const discountHtml = p.discount_pct ? `<span class="discount">-${p.discount_pct}%</span>` : '';
+
+    html += `<tr>
+      <td><input type="checkbox" class="chk ${source}-row-chk" data-src="${source}" data-idx="${idx}" onchange="updateSelection('${source}')"></td>
+      <td>
+        <div class="product-card">
+          ${p.image ? `<img src="${p.image}" alt="" onerror="this.style.display='none'">` : ''}
+          <div class="product-info">
+            <div class="name">${escapeHtml(p.name || '(이름 없음)')}</div>
+            <div class="id">#${p.id}</div>
+            ${p.brand ? `<div class="brand">${escapeHtml(p.brand)}${p.size ? ' · ' + escapeHtml(p.size) : ''}</div>` : ''}
+          </div>
+        </div>
+      </td>
+      <td>
+        <div class="price">${formatPrice(p.price)}${discountHtml}</div>
+        ${originHtml}
+      </td>
+      <td><input type="number" class="qty-input ${source}-qty" data-src="${source}" data-idx="${idx}" min="0" value="0" onchange="calcRow(this)" oninput="calcRow(this)"></td>
+      <td class="${source}-subtotal" data-idx="${idx}" style="font-weight:600;color:#d94a3f;">-</td>
+      <td>${stockBadge}</td>
+      <td><a href="${p.url}" target="_blank">열기 ↗</a></td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+// ========== 수량 계산 ==========
+function calcRow(input) {
+  const src = input.dataset.src;
+  const idx = parseInt(input.dataset.idx);
+  const qty = parseInt(input.value) || 0;
+  const p = _searchData[src][idx];
+  const price = parseFloat(p?.price) || 0;
+  const subtotal = price * qty;
+  const cell = document.querySelector(`.${src}-subtotal[data-idx="${idx}"]`);
+  if (cell) cell.textContent = qty > 0 ? formatPrice(subtotal.toFixed(2)) : '-';
+
+  const chk = document.querySelector(`.${src}-row-chk[data-idx="${idx}"]`);
+  if (chk) { chk.checked = qty > 0; updateSelection(src); }
+}
+
+function calcGrandTotal(source) {
+  let total = 0;
+  document.querySelectorAll(`.${source}-row-chk:checked`).forEach(c => {
+    const idx = parseInt(c.dataset.idx);
+    const p = _searchData[source][idx];
+    const price = parseFloat(p?.price) || 0;
+    const qtyInput = document.querySelector(`.${source}-qty[data-idx="${idx}"]`);
+    const qty = parseInt(qtyInput?.value) || 0;
+    total += price * qty;
+  });
+  return total;
+}
+
+// ========== 체크박스 ==========
+function toggleAll(source, master) {
+  document.querySelectorAll(`.${source}-row-chk`).forEach(c => { c.checked = master.checked; });
+  updateSelection(source);
+}
+
+function updateSelection(source) {
+  const boxes = document.querySelectorAll(`.${source}-row-chk`);
+  const checked = document.querySelectorAll(`.${source}-row-chk:checked`);
+  const bar = document.getElementById(source + '-exportBar');
+  const allChk = document.getElementById(source + '-chkAll');
+  if (checked.length > 0) {
+    bar.style.display = 'flex';
+    document.getElementById(source + '-selCount').textContent = `${checked.length}개 선택`;
+    const total = calcGrandTotal(source);
+    document.getElementById(source + '-selTotal').textContent = total > 0 ? `합계: ${formatPrice(total.toFixed(2))}` : '';
+  } else {
+    bar.style.display = 'none';
+    document.getElementById(source + '-selTotal').textContent = '';
+  }
+  allChk.checked = boxes.length > 0 && checked.length === boxes.length;
+  allChk.indeterminate = checked.length > 0 && checked.length < boxes.length;
+}
+
+function deselectAll(source) {
+  document.querySelectorAll(`.${source}-row-chk`).forEach(c => { c.checked = false; });
+  document.querySelectorAll(`.${source}-qty`).forEach(i => { i.value = 0; });
+  document.querySelectorAll(`.${source}-subtotal`).forEach(c => { c.textContent = '-'; });
+  const allChk = document.getElementById(source + '-chkAll');
+  if (allChk) allChk.checked = false;
+  updateSelection(source);
+}
+
+// ========== 엑셀 내보내기 ==========
+async function exportSelected(source) {
+  const checked = document.querySelectorAll(`.${source}-row-chk:checked`);
+  if (checked.length === 0) return;
+
+  const indices = Array.from(checked).map(c => parseInt(c.dataset.idx));
+  const items = indices.map(i => {
+    const p = _searchData[source][i];
+    if (!p) return null;
+    const qtyInput = document.querySelector(`.${source}-qty[data-idx="${i}"]`);
+    const qty = parseInt(qtyInput?.value) || 0;
+    const price = parseFloat(p.price) || 0;
+    return { ...p, qty, subtotal: (price * qty).toFixed(2) };
+  }).filter(Boolean);
+
+  const btn = document.querySelector(`#${source}-exportBar button`);
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>엑셀 생성 중...';
+
+  try {
+    const r = await fetch('/api/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, items }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${source}_selected_${items.length}items.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('엑셀 생성 실패: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
+function escapeHtml(s) {
+  if (!s) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NeoBiotech Order App — คู่มือการติดตั้ง</title>
+<style>
+  @page { size: A4; margin: 10mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Noto Sans Thai', 'Sarabun', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #1e293b;
+    background: #f1f5f9;
+    padding: 20px;
+    line-height: 1.55;
+  }
+  .page {
+    max-width: 820px;
+    margin: 0 auto;
+    background: #fff;
+    border-radius: 16px;
+    padding: 32px 36px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+  }
+  /* Header */
+  .hdr { display: flex; align-items: center; justify-content: space-between; padding-bottom: 20px; border-bottom: 3px solid #2563eb; margin-bottom: 24px; }
+  .hdr-left h1 { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; }
+  .hdr-left h1 .brand-neo { color: #ec4899; }
+  .hdr-left h1 .brand-bio { color: #1e40af; }
+  .hdr-left p { font-size: 14px; color: #64748b; margin-top: 4px; }
+  .hdr-right { text-align: center; }
+  .hdr-right img { width: 110px; height: 110px; border: 2px solid #e2e8f0; border-radius: 8px; padding: 4px; background: #fff; }
+  .hdr-right .url { display: block; font-size: 11px; color: #2563eb; font-weight: 600; margin-top: 6px; font-family: monospace; }
+  .intro { background: #eff6ff; border-left: 4px solid #2563eb; padding: 12px 16px; border-radius: 6px; font-size: 13px; color: #1e40af; margin-bottom: 20px; }
+  .intro strong { color: #1e3a8a; }
+
+  /* Card Grid */
+  .grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .card {
+    border: 2px solid;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+  }
+  .card-chrome   { border-color: #fbbf24; background: #fffbeb; }
+  .card-android  { border-color: #10b981; background: #ecfdf5; }
+  .card-ios      { border-color: #0ea5e9; background: #f0f9ff; }
+  .card-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 800; margin-bottom: 4px; }
+  .card-title .emoji { font-size: 22px; }
+  .card-chrome  .card-title { color: #b45309; }
+  .card-android .card-title { color: #047857; }
+  .card-ios     .card-title { color: #0369a1; }
+  .card-sub { font-size: 11px; color: #64748b; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px dashed #cbd5e1; }
+  .steps { list-style: none; flex: 1; }
+  .steps li { display: flex; gap: 10px; margin-bottom: 10px; font-size: 12.5px; line-height: 1.55; }
+  .steps li:last-child { margin-bottom: 0; }
+  .step-num {
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .card-chrome  .step-num { background: #f59e0b; }
+  .card-android .step-num { background: #10b981; }
+  .card-ios     .step-num { background: #0ea5e9; }
+  .step-txt { flex: 1; padding-top: 1px; }
+  .step-txt b { color: #0f172a; }
+  .step-txt .kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 11px;
+    color: #475569;
+    margin: 0 2px;
+  }
+  .note {
+    background: #fef3c7;
+    border-left: 3px solid #f59e0b;
+    padding: 8px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #78350f;
+    margin-top: 10px;
+  }
+  .note.warn { background: #fee2e2; border-color: #ef4444; color: #991b1b; }
+
+  /* Checklist */
+  .check-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-top: 20px;
+  }
+  .check-box h3 { font-size: 14px; font-weight: 700; color: #1e293b; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .check-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; }
+  .check-list li { font-size: 12px; color: #475569; list-style: none; padding-left: 20px; position: relative; }
+  .check-list li::before { content: '✓'; position: absolute; left: 0; top: 0; color: #10b981; font-weight: 800; }
+
+  /* Footer */
+  .ftr { margin-top: 18px; padding-top: 14px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #94a3b8; }
+  .ftr strong { color: #475569; }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .page { box-shadow: none; padding: 0; max-width: 100%; }
+  }
+  @media (max-width: 720px) {
+    .grid { grid-template-columns: 1fr; }
+    .hdr { flex-direction: column; gap: 16px; }
+    .check-list { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="hdr">
+    <div class="hdr-left">
+      <h1><span class="brand-neo">Neo</span><span class="brand-bio">Biotech</span> Order App</h1>
+      <p>ระบบบริหารออเดอร์ จัดส่ง และลูกค้า · คู่มือการติดตั้ง</p>
+    </div>
+    <div class="hdr-right">
+      <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=https://neothai-order.web.app&margin=0" alt="QR">
+      <span class="url">neothai-order.web.app</span>
+    </div>
+  </div>
+
+  <!-- Intro -->
+  <div class="intro">
+    📱 <strong>ไม่ต้องติดตั้งผ่าน App Store</strong> เปิดเว็บไซต์ในเบราว์เซอร์ แล้วทำตามขั้นตอนสำหรับอุปกรณ์ของคุณเพื่อ <strong>เพิ่มไปยังหน้าจอหลัก</strong> หลังติดตั้งแล้ว สามารถเปิดแอปได้จากไอคอนเหมือนแอปทั่วไป
+  </div>
+
+  <!-- 3-column cards -->
+  <div class="grid">
+
+    <!-- Chrome Desktop -->
+    <div class="card card-chrome">
+      <div class="card-title"><span class="emoji">💻</span>Chrome (PC)</div>
+      <div class="card-sub">เดสก์ท็อป Windows · macOS</div>
+      <ol class="steps">
+        <li><span class="step-num">1</span><span class="step-txt">เปิด Chrome แล้วไปที่ <b>neothai-order.web.app</b></span></li>
+        <li><span class="step-num">2</span><span class="step-txt">คลิกไอคอน <b>ติดตั้ง</b> <span class="kbd">⊕</span> ทางขวาของแถบที่อยู่<br><small style="color:#78350f;">(ถ้าไม่เห็น คลิก <span class="kbd">⋮</span> มุมขวาบน → "ติดตั้งแอป")</small></span></li>
+        <li><span class="step-num">3</span><span class="step-txt">ในหน้าต่างป๊อปอัป คลิก <b>[ติดตั้ง]</b></span></li>
+        <li><span class="step-num">4</span><span class="step-txt">ไอคอนจะปรากฏบนเดสก์ท็อปและแถบงาน</span></li>
+      </ol>
+      <div class="note">✅ สามารถใช้งานผ่านบุ๊กมาร์กโดยไม่ต้องติดตั้งก็ได้</div>
+    </div>
+
+    <!-- Android -->
+    <div class="card card-android">
+      <div class="card-title"><span class="emoji">🤖</span>Android</div>
+      <div class="card-sub">Samsung · Xiaomi · Android อื่นๆ</div>
+      <ol class="steps">
+        <li><span class="step-num">1</span><span class="step-txt">เปิด <b>Chrome</b> แล้วไปที่ <b>neothai-order.web.app</b></span></li>
+        <li><span class="step-num">2</span><span class="step-txt">แตะเมนู <span class="kbd">⋮</span> มุมขวาบน</span></li>
+        <li><span class="step-num">3</span><span class="step-txt">แตะ <b>[ติดตั้งแอป]</b> หรือ <b>[เพิ่มไปยังหน้าจอหลัก]</b></span></li>
+        <li><span class="step-num">4</span><span class="step-txt">แตะปุ่ม <b>[ติดตั้ง]</b></span></li>
+        <li><span class="step-num">5</span><span class="step-txt">เปิดแอปจากไอคอนบนหน้าจอหลัก</span></li>
+      </ol>
+      <div class="note">💡 Samsung Internet ใช้วิธีเดียวกันได้</div>
+    </div>
+
+    <!-- iPhone -->
+    <div class="card card-ios">
+      <div class="card-title"><span class="emoji">🍎</span>iPhone (iOS)</div>
+      <div class="card-sub">iPhone · iPad</div>
+      <ol class="steps">
+        <li><span class="step-num">1</span><span class="step-txt">ต้องใช้ <b>Safari</b> เท่านั้น ไปที่ <b>neothai-order.web.app</b></span></li>
+        <li><span class="step-num">2</span><span class="step-txt">แตะปุ่ม <b>แชร์</b> <span class="kbd">⬆</span> ด้านล่างตรงกลาง</span></li>
+        <li><span class="step-num">3</span><span class="step-txt">เลื่อนหาและแตะ <b>[เพิ่มไปยังหน้าจอหลัก]</b></span></li>
+        <li><span class="step-num">4</span><span class="step-txt">แตะ <b>[เพิ่ม]</b> มุมขวาบน</span></li>
+        <li><span class="step-num">5</span><span class="step-txt">เปิดแอปจากไอคอนบนหน้าจอหลัก</span></li>
+      </ol>
+      <div class="note warn">⚠ ใช้ Chrome ไม่ได้ — <b>ต้องใช้ Safari เท่านั้น</b></div>
+    </div>
+
+  </div>
+
+  <!-- Post-install checklist -->
+  <div class="check-box">
+    <h3>📋 สิ่งที่ต้องตรวจสอบเมื่อเปิดแอปครั้งแรก</h3>
+    <ul class="check-list">
+      <li>เข้าสู่ระบบด้วยรหัสพนักงาน (ขึ้นต้นด้วย T) และรหัสผ่าน</li>
+      <li>หากยังไม่มีบัญชี ลงทะเบียนที่แท็บ <b>Register</b></li>
+      <li>อนุญาตการแจ้งเตือน (สำหรับการอนุมัติ/จัดส่ง)</li>
+      <li>เลือกภาษา: KO / EN / TH</li>
+      <li>อนุญาตตำแหน่งที่ตั้ง (เมื่อใช้แผนที่)</li>
+      <li>ตั้งชื่อเล่น · ลายเซ็น (ในตั้งค่าบัญชี)</li>
+    </ul>
+  </div>
+
+  <!-- Footer -->
+  <div class="ftr">
+    <div><strong>NeoBiotech Thailand</strong> · ระบบจัดการออเดอร์ จัดส่ง และการขาย</div>
+    <div>สอบถาม: ติดต่อผู้ดูแลระบบ · v2026.4</div>
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attendance Manual Preview</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background:#f1f5f9; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+
+.manual-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:9500;
+  display:flex; align-items:center; justify-content:center; padding:16px;
+}
+.manual-modal {
+  background:#fff; border-radius:20px; width:100%; max-width:480px; max-height:90vh;
+  display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.3); overflow:hidden;
+}
+.manual-hdr {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px 20px; border-bottom:1px solid #f0f0f0;
+}
+.manual-hdr h3 { font-size:16px; color:#1e293b; display:flex; align-items:center; gap:8px; }
+.manual-close {
+  background:none; border:none; font-size:22px; color:#9ca3af; cursor:pointer; padding:4px 8px; border-radius:8px;
+}
+.manual-close:hover { background:#f3f4f6; color:#374151; }
+
+.manual-body {
+  flex:1; overflow:hidden; position:relative;
+}
+.manual-slides {
+  display:flex; transition:transform .35s cubic-bezier(.4,0,.2,1); height:100%;
+}
+.manual-slide {
+  min-width:100%; padding:28px 24px; overflow-y:auto;
+}
+
+/* Page 1 */
+.manual-slide h4 {
+  font-size:15px; font-weight:700; color:#1e293b; margin-bottom:20px; text-align:center;
+}
+.btn-explain {
+  display:flex; gap:14px; margin-bottom:18px; padding:16px; background:#f8fafc; border-radius:14px; border:1px solid #e2e8f0;
+}
+.btn-explain-icons {
+  display:flex; flex-direction:column; align-items:center; gap:4px; min-width:56px;
+}
+.btn-explain-icons .icon-pair {
+  display:flex; gap:6px;
+}
+.btn-explain-icons .icon-badge {
+  display:flex; flex-direction:column; align-items:center; gap:2px;
+}
+.btn-explain-icons .icon-badge span:first-child { font-size:24px; }
+.btn-explain-icons .icon-badge span:last-child { font-size:9px; font-weight:700; color:#6b7280; }
+.btn-explain-text { flex:1; }
+.btn-explain-text .label { font-size:14px; font-weight:700; color:#1e293b; margin-bottom:6px; }
+.btn-explain-text .desc { font-size:12.5px; color:#475569; line-height:1.6; }
+
+.notice-box {
+  background:#fef3c7; border:1px solid #fcd34d; border-radius:12px; padding:12px 14px;
+  display:flex; gap:8px; align-items:flex-start; margin-top:4px;
+}
+.notice-box .notice-icon { font-size:18px; flex-shrink:0; margin-top:1px; }
+.notice-box .notice-text { font-size:11.5px; color:#92400e; line-height:1.55; font-weight:500; }
+
+/* Page 2 */
+.flow-steps { display:flex; flex-direction:column; gap:0; }
+.flow-step {
+  display:flex; gap:14px; position:relative; padding-bottom:8px;
+}
+.flow-step:last-child { padding-bottom:0; }
+.flow-step-line {
+  display:flex; flex-direction:column; align-items:center; width:40px; flex-shrink:0;
+}
+.flow-step-dot {
+  width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+  font-size:16px; flex-shrink:0; border:2px solid;
+}
+.flow-step-connector {
+  width:2px; flex:1; min-height:16px; margin:4px 0;
+}
+.flow-step:last-child .flow-step-connector { display:none; }
+
+.flow-step-content {
+  flex:1; padding:6px 0 16px;
+}
+.flow-step-title { font-size:13px; font-weight:700; margin-bottom:4px; }
+.flow-step-desc { font-size:12px; color:#64748b; line-height:1.55; }
+.flow-step-record {
+  display:inline-flex; align-items:center; gap:4px; background:#f0fdf4; border:1px solid #bbf7d0;
+  border-radius:6px; padding:3px 8px; font-size:10.5px; font-weight:600; color:#16a34a; margin-top:6px;
+}
+
+/* Colors per type */
+.step-depart .flow-step-dot { background:#fffbeb; border-color:#f59e0b; }
+.step-depart .flow-step-connector { background:#f59e0b; }
+.step-depart .flow-step-title { color:#d97706; }
+
+.step-in .flow-step-dot { background:#f0fdf4; border-color:#16a34a; }
+.step-in .flow-step-connector { background:#16a34a; }
+.step-in .flow-step-title { color:#16a34a; }
+
+.step-out .flow-step-dot { background:#eff6ff; border-color:#2563eb; }
+.step-out .flow-step-connector { background:#2563eb; }
+.step-out .flow-step-title { color:#2563eb; }
+
+.step-return .flow-step-dot { background:#f5f3ff; border-color:#8b5cf6; }
+.step-return .flow-step-connector { background:#8b5cf6; }
+.step-return .flow-step-title { color:#7c3aed; }
+
+/* Footer */
+.manual-footer {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 20px; border-top:1px solid #f0f0f0;
+}
+.manual-dots {
+  display:flex; gap:8px;
+}
+.manual-dot {
+  width:8px; height:8px; border-radius:50%; background:#d1d5db; transition:all .25s; cursor:pointer;
+}
+.manual-dot.active { background:#2563eb; width:20px; border-radius:4px; }
+.manual-nav-btn {
+  background:none; border:1.5px solid #e2e8f0; color:#475569; padding:8px 16px;
+  border-radius:10px; font-size:13px; font-weight:600; cursor:pointer; transition:all .15s;
+}
+.manual-nav-btn:hover { background:#f8fafc; border-color:#cbd5e1; }
+.manual-nav-btn.primary { background:#2563eb; color:#fff; border-color:#2563eb; }
+.manual-nav-btn.primary:hover { background:#1d4ed8; }
+.manual-nav-btn:disabled { opacity:.3; cursor:not-allowed; }
+</style>
+</head>
+<body>
+
+<div class="manual-overlay">
+  <div class="manual-modal">
+    <!-- Header -->
+    <div class="manual-hdr">
+      <h3>📖 Attendance Guide</h3>
+      <button class="manual-close" onclick="alert('Close')">&times;</button>
+    </div>
+
+    <!-- Slides -->
+    <div class="manual-body">
+      <div class="manual-slides" id="manualSlides">
+
+        <!-- Slide 1: Button Explanation -->
+        <div class="manual-slide">
+          <h4>What are the buttons for?</h4>
+
+          <div class="btn-explain">
+            <div class="btn-explain-icons">
+              <div class="icon-pair">
+                <div class="icon-badge"><span>🚗</span><span>Depart</span></div>
+                <div class="icon-badge"><span>🏠</span><span>Return</span></div>
+              </div>
+            </div>
+            <div class="btn-explain-text">
+              <div class="label">Depart / Return</div>
+              <div class="desc">Records travel distance for vehicle fuel support calculation. Distance is measured via <b>Google Maps driving route</b>, not straight-line distance.</div>
+            </div>
+          </div>
+
+          <div class="btn-explain">
+            <div class="btn-explain-icons">
+              <div class="icon-pair">
+                <div class="icon-badge"><span>☀️</span><span>Clock In</span></div>
+                <div class="icon-badge"><span>🌙</span><span>Clock Out</span></div>
+              </div>
+            </div>
+            <div class="btn-explain-text">
+              <div class="label">Clock In / Clock Out</div>
+              <div class="desc">Records the start and end time of field work to calculate total working hours.</div>
+            </div>
+          </div>
+
+          <div class="notice-box">
+            <span class="notice-icon">📍</span>
+            <span class="notice-text">Distance is calculated based on Google Maps driving directions, reflecting actual road distance — not a straight line between two points.</span>
+          </div>
+        </div>
+
+        <!-- Slide 2: Workflow -->
+        <div class="manual-slide">
+          <h4>How does it work?</h4>
+
+          <div class="flow-steps">
+            <div class="flow-step step-depart">
+              <div class="flow-step-line">
+                <div class="flow-step-dot">🚗</div>
+                <div class="flow-step-connector"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-title">① Depart</div>
+                <div class="flow-step-desc">Press when leaving the starting point. Your departure location is recorded.</div>
+              </div>
+            </div>
+
+            <div class="flow-step step-in">
+              <div class="flow-step-line">
+                <div class="flow-step-dot">☀️</div>
+                <div class="flow-step-connector"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-title">② Clock In</div>
+                <div class="flow-step-desc">Press upon arrival at the destination. This records your work start time.</div>
+                <div class="flow-step-record">📏 Travel distance from origin → destination is calculated</div>
+              </div>
+            </div>
+
+            <div class="flow-step step-out">
+              <div class="flow-step-line">
+                <div class="flow-step-dot">🌙</div>
+                <div class="flow-step-connector"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-title">③ Clock Out</div>
+                <div class="flow-step-desc">Press when work is finished. Your working hours are calculated automatically.</div>
+                <div class="flow-step-record">⏱️ Working hours = Clock Out − Clock In</div>
+              </div>
+            </div>
+
+            <div class="flow-step step-return">
+              <div class="flow-step-line">
+                <div class="flow-step-dot">🏠</div>
+                <div class="flow-step-connector"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-title">④ Return</div>
+                <div class="flow-step-desc">Press after arriving back. The return travel distance is recorded.</div>
+                <div class="flow-step-record">📏 Travel distance from destination → home is calculated</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Footer with dots + nav -->
+    <div class="manual-footer">
+      <button class="manual-nav-btn" id="manualPrev" onclick="manualGo(-1)" disabled>← Prev</button>
+      <div class="manual-dots">
+        <div class="manual-dot active" onclick="manualGoTo(0)"></div>
+        <div class="manual-dot" onclick="manualGoTo(1)"></div>
+      </div>
+      <button class="manual-nav-btn primary" id="manualNext" onclick="manualGo(1)">Next →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var _manualPage = 0;
+var _manualTotal = 2;
+
+function manualGo(dir) {
+  manualGoTo(_manualPage + dir);
+}
+function manualGoTo(idx) {
+  if (idx < 0 || idx >= _manualTotal) return;
+  _manualPage = idx;
+  document.getElementById('manualSlides').style.transform = 'translateX(-' + (idx * 100) + '%)';
+  // dots
+  var dots = document.querySelectorAll('.manual-dot');
+  dots.forEach(function(d, i) { d.classList.toggle('active', i === idx); });
+  // nav buttons
+  document.getElementById('manualPrev').disabled = (idx === 0);
+  var nextBtn = document.getElementById('manualNext');
+  if (idx === _manualTotal - 1) {
+    nextBtn.textContent = 'Done ✓';
+    nextBtn.onclick = function() { alert('Close manual'); };
+  } else {
+    nextBtn.textContent = 'Next →';
+    nextBtn.onclick = function() { manualGo(1); };
+  }
+}
+</script>
+</body>
+</html>

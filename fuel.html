@@ -1,0 +1,1154 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>주유 가격 — Neo Sales App</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#ea580c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.min.css?v=198">
+<!-- Preconnect 힌트 (CDN/Firestore 연결 조기 수립) -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://unpkg.com" crossorigin>
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
+<style>
+  body { margin:0; background:#f9fafb; min-height:100vh; }
+  /* 상단 헤더 바는 page-header.js가 렌더링 (.fuel-header 클래스는 Pull-to-Refresh 선택자 호환용으로 유지) */
+  .fuel-win-btn {
+    background:none; border:none; cursor:pointer; color:rgba(255,255,255,.85);
+    padding:6px 10px; border-radius:6px; line-height:1; transition:background .15s,color .15s;
+    font-size:18px;
+  }
+  .fuel-win-btn:hover { background:rgba(255,255,255,.2); color:#fff; }
+  .fuel-tabs {
+    /* iOS safe-area 만큼 두꺼워진 헤더 밑에 위치 — calc 로 보정 */
+    display:flex; border-bottom:2px solid #e5e7eb; background:#fff;
+    position:sticky; top:calc(54px + env(safe-area-inset-top)); z-index:9;
+  }
+  .fuel-tab {
+    flex:1; padding:12px; font-size:14px; font-weight:700; border:none; cursor:pointer;
+    background:#fff; color:#6b7280; border-bottom:3px solid transparent; transition:all .15s;
+  }
+  .fuel-tab.active { color:#f97316; border-bottom-color:#f97316; }
+  .fuel-body { padding:16px; max-width:620px; margin:0 auto; }
+</style>
+</head>
+<body oncontextmenu="event.preventDefault();">
+
+<!-- 헤더 (page-header.js가 렌더링 — 아래 IIFE 초기화 블록에서 조립) -->
+<div id="pageTopBar"></div>
+
+<!-- 탭 -->
+<div class="fuel-tabs">
+  <button class="fuel-tab active" id="fuelTabCurrent" onclick="_fuelSwitchTab('current')" data-i18n="fuel_tab_current">현재 가격</button>
+  <button class="fuel-tab" id="fuelTabHistory" onclick="_fuelSwitchTab('history')" data-i18n="fuel_tab_history">이전 가격</button>
+  <button class="fuel-tab" id="fuelTabMonthly" onclick="_fuelSwitchTab('monthly')" data-i18n="fuel_tab_monthly">월별 요약</button>
+</div>
+
+<!-- 본문 -->
+<div class="fuel-body">
+  <div id="fuelPriceBody">
+    <div style="text-align:center;padding:40px;color:#9ca3af;">로딩 중...</div>
+  </div>
+</div>
+
+<!-- neoAlert / showToast -->
+<div id="neoAlertOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px 20px;max-width:340px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+    <div id="neoAlertMsg" style="font-size:15px;color:#1e293b;white-space:pre-line;line-height:1.6;"></div>
+    <button onclick="document.getElementById('neoAlertOverlay').style.display='none'" style="margin-top:18px;padding:10px 32px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">확인</button>
+  </div>
+</div>
+<div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
+
+<!-- 주변 주유소 오버레이 -->
+<div id="nearbyStationOverlay" style="display:none;position:fixed;inset:0;z-index:100;background:#fff;flex-direction:column;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(135deg,#f97316,#ea580c);flex-shrink:0;">
+    <h3 style="margin:0;color:#fff;font-size:16px;font-weight:700;">📍 <span id="nearbyTitle">주변 주유소</span></h3>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <button onclick="_refreshNearbyStations()" style="background:#fff;border:none;color:#ea580c;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.15);" title="새로고침">🔄 <span id="nearbyRefreshLabel">새로고침</span></button>
+      <button onclick="_closeNearbyStations()" style="background:rgba(255,255,255,.2);border:none;color:#fff;padding:6px 12px;border-radius:8px;font-size:16px;font-weight:700;cursor:pointer;">✕</button>
+    </div>
+  </div>
+  <div id="nearbyMapWrap" style="flex:1;position:relative;">
+    <div id="nearbyMap" style="width:100%;height:100%;"></div>
+    <div id="nearbyLoading" style="position:absolute;inset:0;background:rgba(255,255,255,.85);display:flex;align-items:center;justify-content:center;z-index:10;">
+      <div style="text-align:center;">
+        <div style="font-size:32px;margin-bottom:8px;">📍</div>
+        <div style="font-size:14px;color:#6b7280;" id="nearbyLoadMsg">GPS 위치를 가져오는 중...</div>
+      </div>
+    </div>
+  </div>
+  <div id="nearbyStationList" style="max-height:200px;overflow-y:auto;border-top:2px solid #e5e7eb;flex-shrink:0;"></div>
+</div>
+
+<!-- lang.js -->
+<script src="lang.min.js?v=161"></script>
+<!-- 공용 페이지 헤더 (시범 적용) -->
+<script src="page-header.js?v=2"></script>
+<!-- Firebase 초기화 + 유틸 (shared via firebase-init.js) -->
+<script src="firebase-init.js?v=1"></script>
+<script>
+var _fbDb = firebase.firestore();
+
+// Firebase Auth persistence (IndexedDB) 복원을 기다린다.
+// fuel.html 은 별도 탭/팝업으로 열 수 있는데, 열자마자 Callable Functions 를 부르면
+// auth 가 아직 복원 안 되어 서버가 context.auth=null 로 "unauthenticated" 를 돌려준다.
+// 이 헬퍼로 매 호출 직전에 auth 복원을 확인.
+function _fuelWaitForFbAuth(timeoutMs) {
+  return new Promise(function(resolve) {
+    try {
+      if (firebase.auth && firebase.auth().currentUser) { resolve(firebase.auth().currentUser); return; }
+      var done = false;
+      var unsub = firebase.auth().onAuthStateChanged(function(u) {
+        if (done) return;
+        done = true;
+        try { unsub(); } catch(e){}
+        resolve(u || null);
+      });
+      setTimeout(function() {
+        if (done) return;
+        done = true;
+        try { unsub(); } catch(e){}
+        resolve(firebase.auth().currentUser || null);
+      }, timeoutMs || 5000);
+    } catch(e) { resolve(null); }
+  });
+}
+
+function showToast(msg) {
+  var c = document.getElementById('toastContainer');
+  if (!c) return;
+  var d = document.createElement('div');
+  d.textContent = msg;
+  d.style.cssText = 'background:#1e293b;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;pointer-events:auto;box-shadow:0 4px 12px rgba(0,0,0,.2);';
+  c.appendChild(d);
+  setTimeout(function(){ d.style.opacity='0'; d.style.transition='opacity .3s'; setTimeout(function(){ d.remove(); },300); }, 2500);
+}
+
+// ── 창 컨트롤 ──
+function _fuelMinimize() {
+  if (window.opener && !window.opener.closed) {
+    window.close();
+  } else {
+    history.back();
+  }
+}
+var _fuelIsFs = false;
+function _fuelToggleFs() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(function(){});
+    _fuelIsFs = true;
+  } else {
+    document.exitFullscreen();
+    _fuelIsFs = false;
+  }
+}
+
+// ── 주유 가격 로직 ──
+var _fuelCache = null;
+var _fuelCacheTime = 0;
+var _fuelHistCache = {};
+var _fuelTab = 'current';
+var _fuelMonthCache = {};
+
+function _fuelSwitchTab(tab) {
+  _fuelTab = tab;
+  var tabs = ['fuelTabCurrent','fuelTabHistory','fuelTabMonthly'];
+  var activeId = tab === 'current' ? 'fuelTabCurrent' : tab === 'history' ? 'fuelTabHistory' : 'fuelTabMonthly';
+  tabs.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (id === activeId) {
+      el.classList.add('active');
+    } else {
+      el.classList.remove('active');
+    }
+  });
+  if (tab === 'current') _loadFuelPrice();
+  else if (tab === 'history') _showFuelHistory();
+  else _showFuelMonthly();
+}
+
+// ── 현재 가격 (전 브랜드) ──
+async function _loadFuelPrice() {
+  var body = document.getElementById('fuelPriceBody');
+  var now = Date.now();
+  if (_fuelCache && (now - _fuelCacheTime < 600000)) {
+    _renderFuelPrice(_fuelCache);
+    return;
+  }
+  body.innerHTML = '<div style="text-align:center;padding:40px;color:#9ca3af;">⛽ ' + t('fuel_loading') + '</div>';
+  try {
+    var resp = await fetch('https://api.chnwt.dev/thai-oil-api/latest');
+    var data = await resp.json();
+    if (data.status === 'success' && data.response) {
+      _fuelCache = data.response;
+      _fuelCacheTime = now;
+      _renderFuelPrice(data.response);
+    } else {
+      body.innerHTML = '<div style="text-align:center;padding:40px;color:#ef4444;">⚠️ ' + t('fuel_fail') + '</div>';
+    }
+  } catch(e) {
+    body.innerHTML = '<div style="text-align:center;padding:40px;color:#ef4444;">⚠️ ' + t('fuel_fail') + ': ' + e.message + '</div>';
+  }
+}
+
+// ── 이전 가격 UI (날짜 선택) ──
+function _showFuelHistory() {
+  var body = document.getElementById('fuelPriceBody');
+  var today = new Date();
+  var defDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+  var html = '<div style="text-align:center;margin-bottom:16px;">';
+  html += '<label style="font-size:14px;font-weight:600;color:#374151;">📅 ' + t('fuel_hist_select') + '</label><br>';
+  html += '<input type="date" id="fuelHistDate" value="' + defDate + '" max="' + defDate + '" style="margin-top:8px;padding:8px 14px;border:1.5px solid #d1d5db;border-radius:10px;font-size:15px;color:#374151;cursor:pointer;" />';
+  html += ' <button onclick="_loadFuelHistory()" style="margin-left:8px;padding:8px 18px;background:#f97316;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;">🔍 ' + t('fuel_hist_search') + '</button>';
+  html += '</div>';
+  html += '<div id="fuelHistResult" style="color:#9ca3af;text-align:center;padding:20px;font-size:14px;">' + t('fuel_hist_guide') + '</div>';
+  body.innerHTML = html;
+}
+
+// ── PTT SOAP API로 이전 가격 조회 ──
+async function _loadFuelHistory() {
+  var dateVal = document.getElementById('fuelHistDate').value;
+  if (!dateVal) return;
+  var parts = dateVal.split('-');
+  var dd = parts[2], mm = parts[1], yyyy = parts[0];
+  var resultEl = document.getElementById('fuelHistResult');
+  resultEl.innerHTML = '<div style="text-align:center;padding:30px;color:#9ca3af;">⛽ ' + t('fuel_loading') + '</div>';
+
+  if (_fuelHistCache[dateVal]) {
+    _renderFuelHistory(_fuelHistCache[dateVal], dateVal);
+    return;
+  }
+
+  try {
+    var _u = await _fuelWaitForFbAuth(6000);
+    if (!_u) {
+      resultEl.innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444;">⚠️ ' + t('fuel_fail') + ': 로그인 세션이 복원되지 않았습니다. 메인 앱에서 로그인 후 다시 시도해 주세요.</div>';
+      return;
+    }
+    var callFn = firebase.functions().httpsCallable('getPttOilPrice');
+    var result = await callFn({ dd: dd, mm: mm, yyyy: yyyy });
+    var r = result.data;
+    if (r.success && r.items && r.items.length) {
+      var histData = { items: r.items, priceDate: r.priceDate || dateVal };
+      _fuelHistCache[dateVal] = histData;
+      _renderFuelHistory(histData, dateVal);
+    } else {
+      resultEl.innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444;">⚠️ ' + t('fuel_hist_nodata') + '</div>';
+    }
+  } catch(e) {
+    resultEl.innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444;">⚠️ ' + t('fuel_fail') + ': ' + e.message + '</div>';
+  }
+}
+
+// 이전 가격 렌더링
+function _renderFuelHistory(histData, dateVal) {
+  var items = histData.items || histData;
+  var priceDate = histData.priceDate || dateVal;
+  var resultEl = document.getElementById('fuelHistResult');
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+  var html = '<div style="text-align:center;margin-bottom:12px;">';
+  html += '<div style="font-size:14px;font-weight:600;color:#374151;">📅 ' + t('fuel_hist_date_label') + ': ' + priceDate + '</div>';
+  if (priceDate !== dateVal) {
+    html += '<div style="font-size:12px;color:#9ca3af;margin-top:4px;">(' + t('fuel_hist_nearest') + ' ' + dateVal + ')</div>';
+  }
+  html += '</div>';
+  html += '<div style="border:1.5px solid #e5e7eb;border-radius:12px;overflow:hidden;">';
+  html += '<div style="padding:10px 16px;background:#1d4ed8;color:#fff;font-size:15px;font-weight:700;">PTT ' + t('fuel_hist_title') + '</div>';
+  items.forEach(function(item, idx) {
+    var bg = idx % 2 === 0 ? '#fff' : '#f9fafb';
+    html += '<div style="padding:10px 16px;background:' + bg + ';border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">';
+    html += '<span style="font-size:13px;color:#374151;">' + item.name + '</span>';
+    html += '<span style="font-size:15px;font-weight:700;color:#1d4ed8;">' + item.price.toFixed(2) + ' ฿</span>';
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // 현재 가격과 비교 (PTT만)
+  if (_fuelCache && _fuelCache.stations && _fuelCache.stations.ptt) {
+    var pttNow = _fuelCache.stations.ptt;
+    var hasCompare = false;
+    var compHtml = '<div style="margin-top:14px;border:1.5px solid #e5e7eb;border-radius:12px;overflow:hidden;">';
+    compHtml += '<div style="padding:10px 16px;background:#374151;color:#fff;font-size:14px;font-weight:700;">📊 ' + t('fuel_hist_compare') + '</div>';
+    items.forEach(function(item, idx) {
+      var matchKey = null;
+      // 1차: 정확한 이름 매칭
+      Object.keys(pttNow).forEach(function(k) {
+        if (pttNow[k].name && pttNow[k].name === item.name) matchKey = k;
+      });
+      // 2차: 정규화된 키 매칭 (Diesel ≠ Diesel B20 구분)
+      if (!matchKey) {
+        var lname = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
+        // 정확한 키 매핑 테이블
+        var _fuelKeyMap = [
+          { pattern: /diesel\s*b\s*20|ดีเซล\s*b\s*20/i, key: 'diesel_b20' },
+          { pattern: /diesel\s*b\s*7|ดีเซล\s*b\s*7/i, key: 'diesel_b7' },
+          { pattern: /premium\s*diesel|ดีเซล\s*พรีเมียม/i, key: 'premium_diesel' },
+          { pattern: /^diesel$|^ดีเซล$/i, key: 'diesel' },
+          { pattern: /gasohol\s*95|แก๊สโซฮอล์\s*95|e10\s*95|เบนซิน\s*95/i, key: 'gasohol_95' },
+          { pattern: /gasohol\s*91|แก๊สโซฮอล์\s*91|e10\s*91|เบนซิน\s*91/i, key: 'gasohol_91' },
+          { pattern: /gasohol\s*e\s*85|แก๊สโซฮอล์\s*e\s*85/i, key: 'gasohol_e85' },
+          { pattern: /gasohol\s*e\s*20|แก๊สโซฮอล์\s*e\s*20/i, key: 'gasohol_e20' },
+          { pattern: /ngv|เอ็นจีวี/i, key: 'ngv' }
+        ];
+        for (var mi = 0; mi < _fuelKeyMap.length; mi++) {
+          if (_fuelKeyMap[mi].pattern.test(lname) && pttNow[_fuelKeyMap[mi].key]) {
+            matchKey = _fuelKeyMap[mi].key;
+            break;
+          }
+        }
+        // 3차: 기존 부분 매칭 (위에서 못 찾은 경우)
+        if (!matchKey) {
+          Object.keys(pttNow).forEach(function(k) {
+            var pn = (pttNow[k].name || '').toLowerCase();
+            if (!matchKey && pn && lname === pn) matchKey = k;
+          });
+        }
+      }
+      if (matchKey && pttNow[matchKey].price && pttNow[matchKey].price !== '-') {
+        hasCompare = true;
+        var nowPrice = parseFloat(pttNow[matchKey].price);
+        var diff = nowPrice - item.price;
+        var diffColor = diff > 0 ? '#ef4444' : diff < 0 ? '#16a34a' : '#6b7280';
+        var diffIcon = diff > 0 ? '▲' : diff < 0 ? '▼' : '—';
+        var bg = idx % 2 === 0 ? '#fff' : '#f9fafb';
+        compHtml += '<div style="padding:8px 16px;background:' + bg + ';border-bottom:1px solid #f3f4f6;display:flex;align-items:center;gap:8px;font-size:13px;">';
+        compHtml += '<span style="flex:1;color:#374151;">' + item.name + '</span>';
+        compHtml += '<span style="color:#6b7280;">' + item.price.toFixed(2) + '</span>';
+        compHtml += '<span style="color:#9ca3af;">→</span>';
+        compHtml += '<span style="font-weight:700;">' + nowPrice.toFixed(2) + '</span>';
+        compHtml += '<span style="font-weight:700;color:' + diffColor + ';">' + diffIcon + ' ' + Math.abs(diff).toFixed(2) + '</span>';
+        compHtml += '</div>';
+      }
+    });
+    compHtml += '</div>';
+    if (hasCompare) html += compHtml;
+  }
+
+  resultEl.innerHTML = html;
+}
+
+// ── 월별 요약 ──
+function _showFuelMonthly() {
+  var body = document.getElementById('fuelPriceBody');
+  var now = new Date();
+  var defMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  var html = '<div style="text-align:center;margin-bottom:16px;">';
+  html += '<label style="font-size:14px;font-weight:600;color:#374151;">📅 ' + t('fuel_monthly_select') + '</label><br>';
+  html += '<input type="month" id="fuelMonthInput" value="' + defMonth + '" style="margin-top:8px;padding:8px 14px;border:1.5px solid #d1d5db;border-radius:10px;font-size:15px;color:#374151;cursor:pointer;" />';
+  html += ' <button onclick="_loadFuelMonthly()" style="margin-left:8px;padding:8px 18px;background:#f97316;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;">🔍 ' + t('fuel_hist_search') + '</button>';
+  html += '</div>';
+  html += '<div id="fuelMonthResult" style="color:#9ca3af;text-align:center;padding:20px;font-size:14px;">' + t('fuel_monthly_guide') + '</div>';
+  body.innerHTML = html;
+}
+
+async function _loadFuelMonthly() {
+  var monthVal = document.getElementById('fuelMonthInput').value;
+  if (!monthVal) return;
+  var parts = monthVal.split('-');
+  var yyyy = parts[0], mm = parts[1];
+  var resultEl = document.getElementById('fuelMonthResult');
+  resultEl.innerHTML = '<div style="text-align:center;padding:30px;color:#9ca3af;">⛽ ' + t('fuel_monthly_loading') + '</div>';
+
+  if (_fuelMonthCache[monthVal]) {
+    _renderFuelMonthly(_fuelMonthCache[monthVal], monthVal);
+    return;
+  }
+
+  try {
+    var _u = await _fuelWaitForFbAuth(6000);
+    if (!_u) {
+      resultEl.innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444;">⚠️ ' + t('fuel_fail') + ': 로그인 세션이 복원되지 않았습니다. 메인 앱에서 로그인 후 다시 시도해 주세요.</div>';
+      return;
+    }
+    var callFn = firebase.functions().httpsCallable('getPttMonthly', { timeout: 60000 });
+    var result = await callFn({ mm: mm, yyyy: yyyy });
+    var r = result.data;
+    if (r.success && r.announcements && r.announcements.length) {
+      _fuelMonthCache[monthVal] = r;
+      _renderFuelMonthly(r, monthVal);
+    } else {
+      resultEl.innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444;">⚠️ ' + t('fuel_hist_nodata') + '</div>';
+    }
+  } catch(e) {
+    resultEl.innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444;">⚠️ ' + t('fuel_fail') + ': ' + e.message + '</div>';
+  }
+}
+
+function _renderFuelMonthly(data, monthVal) {
+  var resultEl = document.getElementById('fuelMonthResult');
+  var ann = data.announcements;
+  var html = '';
+
+  // 요약 카드
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">';
+  html += '<div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:12px;padding:14px;text-align:center;">';
+  html += '<div style="font-size:24px;font-weight:700;color:#1d4ed8;">' + ann.length + '</div>';
+  html += '<div style="font-size:12px;color:#6b7280;">' + t('fuel_monthly_count') + '</div></div>';
+
+  // Gasohol 95 평균 계산
+  var g95sum = 0, g95cnt = 0;
+  ann.forEach(function(a) {
+    a.items.forEach(function(item) {
+      if (item.name === 'Gasohol 95' || item.name.indexOf('Gasohol 95') >= 0) {
+        g95sum += item.price;
+        g95cnt++;
+      }
+    });
+  });
+  var g95avg = g95cnt > 0 ? (g95sum / g95cnt).toFixed(2) : '-';
+  var g95num = parseFloat(g95avg);
+  var _fuelRate = '-';
+  if (!isNaN(g95num)) {
+    if (g95num <= 35) _fuelRate = 5;
+    else if (g95num <= 40) _fuelRate = 6;
+    else _fuelRate = 7;
+  }
+  html += '<div style="background:#fef3c7;border:1.5px solid #fbbf24;border-radius:12px;padding:14px;text-align:center;">';
+  html += '<div style="font-size:24px;font-weight:700;color:#d97706;">' + g95avg + ' ฿</div>';
+  html += '<div style="font-size:12px;color:#6b7280;">Gasohol 95 ' + t('fuel_monthly_avg') + '</div></div>';
+  html += '</div>';
+
+  // 지원금 요약 + 공지 만들기 버튼
+  if (_fuelRate !== '-') {
+    var _mp = monthVal.split('-');
+    var _applyY = parseInt(_mp[0]), _applyM = parseInt(_mp[1]) + 1;
+    if (_applyM > 12) { _applyM = 1; _applyY++; }
+    var _applyStr = _applyY + '-' + String(_applyM).padStart(2,'0');
+    var _thMonths = ['','มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+    var _thYear = _applyY + 543;
+    var _applyThStr = _thMonths[_applyM] + ' ' + _thYear;
+    var _srcMonth = _thMonths[parseInt(_mp[1])] + ' ' + (parseInt(_mp[0]) + 543);
+
+    // 현재 월인지 판단 → (예상) 표시
+    var _nowIct = new Date(new Date().getTime() + 7 * 3600000);
+    var _curMonthStr = _nowIct.toISOString().slice(0, 7); // "2026-04"
+    var _isCurrentMonth = (monthVal === _curMonthStr);
+    var _estLabel = _isCurrentMonth ? ' (' + t('fuel_est') + ')' : '';
+
+    html += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;padding:14px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;">';
+    html += '<div>';
+    html += '<div style="font-size:14px;font-weight:700;color:#16a34a;">⛽ ' + t('fuel_subsidy_rate') + _estLabel + '</div>';
+    html += '<div style="font-size:22px;font-weight:800;color:#15803d;margin-top:2px;">' + _fuelRate + ' ฿/km</div>';
+    html += '<div style="font-size:12px;color:#6b7280;">' + t('fuel_apply_from') + ': ' + _applyStr + '</div>';
+    html += '</div>';
+    html += '</div>';
+  }
+
+  // Gasohol 95 가격 변동 차트
+  if (g95cnt > 1) {
+    html += '<div style="border:1.5px solid #e5e7eb;border-radius:12px;overflow:hidden;margin-bottom:14px;">';
+    html += '<div style="padding:10px 16px;background:#374151;color:#fff;font-size:14px;font-weight:700;">📈 Gasohol 95 ' + t('fuel_monthly_trend') + '</div>';
+    var g95prices = [];
+    ann.forEach(function(a) {
+      a.items.forEach(function(item) {
+        if (item.name === 'Gasohol 95' || item.name.indexOf('Gasohol 95') >= 0) {
+          var d = a.date.split(' ')[0];
+          g95prices.push({ date: d, price: item.price });
+        }
+      });
+    });
+    g95prices.forEach(function(p, idx) {
+      var diff = idx > 0 ? p.price - g95prices[idx - 1].price : 0;
+      var diffColor = diff > 0 ? '#ef4444' : diff < 0 ? '#16a34a' : '#6b7280';
+      var diffIcon = diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : '';
+      var diffStr = diffIcon + Math.abs(diff).toFixed(2);
+      var bg = idx % 2 === 0 ? '#fff' : '#f9fafb';
+      html += '<div style="padding:8px 16px;background:' + bg + ';display:flex;align-items:center;border-bottom:1px solid #f3f4f6;">';
+      html += '<span style="font-size:13px;color:#6b7280;width:90px;flex-shrink:0;">' + p.date + '</span>';
+      html += '<span style="font-size:15px;font-weight:700;color:#1d4ed8;flex:1;text-align:right;">' + p.price.toFixed(2) + ' ฿</span>';
+      html += '<span style="font-size:13px;font-weight:600;color:' + diffColor + ';width:70px;text-align:right;flex-shrink:0;">' + diffStr + '</span>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // 공시별 상세
+  html += '<div style="border:1.5px solid #e5e7eb;border-radius:12px;overflow:hidden;">';
+  html += '<div style="padding:10px 16px;background:#1d4ed8;color:#fff;font-size:14px;font-weight:700;">📋 ' + t('fuel_monthly_detail') + '</div>';
+  ann.forEach(function(a, aIdx) {
+    var dateStr = a.date.split(' ')[0];
+    html += '<div style="padding:8px 16px;background:#eff6ff;border-bottom:1px solid #dbeafe;font-size:13px;font-weight:700;color:#1e40af;">📅 ' + dateStr + '</div>';
+    a.items.forEach(function(item, idx) {
+      var bg = idx % 2 === 0 ? '#fff' : '#f9fafb';
+      html += '<div style="padding:6px 16px 6px 28px;background:' + bg + ';display:flex;justify-content:space-between;font-size:13px;border-bottom:1px solid #f3f4f6;">';
+      html += '<span style="color:#374151;">' + item.name + '</span>';
+      html += '<span style="font-weight:700;color:#1d4ed8;">' + item.price.toFixed(2) + ' ฿</span>';
+      html += '</div>';
+    });
+  });
+  html += '</div>';
+
+  resultEl.innerHTML = html;
+}
+
+// ── 유류 지원금 공지 자동 생성 → localStorage 저장 후 index.html로 이동 ──
+function _fuelCreateAnnounce(monthVal, avgPrice, rate, applyThStr, srcMonth, annCount) {
+  var cached = _fuelMonthCache[monthVal];
+  var priceLines = '';
+  var totalPrice = 0;
+  if (cached && cached.announcements) {
+    cached.announcements.forEach(function(a, idx) {
+      a.items.forEach(function(item) {
+        if (item.name === 'Gasohol 95' || item.name.indexOf('Gasohol 95') >= 0) {
+          var dateStr = a.date.split(' ')[0];
+          var dp = dateStr.split('/');
+          var fmtDate = dp.length === 3 ? dp[0] + '.' + dp[1] + '.' + dp[2] : dateStr;
+          priceLines += '   ' + (idx + 1) + '          ' + fmtDate + '             ' + item.price.toFixed(2) + '\n';
+          totalPrice += item.price;
+        }
+      });
+    });
+  }
+  var total = totalPrice.toFixed(2);
+  var avg = avgPrice;
+
+  var title = 'แจ้งอัตราค่าน้ำมันประจำเดือน' + applyThStr;
+  var msg = 'เรียน พนักงานทุกท่าน\n\n';
+  msg += 'ทางบริษัทขอประกาศแจ้งอัตราค่าน้ำมันประจำเดือน' + applyThStr + '\n';
+  msg += 'โดยจะคำนวณจากราคาเฉลี่ยของราคาน้ำมันที่เปลี่ยนแปลงของเดือนที่ผ่านมา (' + srcMonth + ')\n';
+  msg += 'โดยอ้างอิงราคาน้ำมันจากเว็บไซต์ ปตท. (https://www.pttor.com/th/oil_price)\n';
+  msg += '【✅ อัตราที่ใช้เดือน' + applyThStr + ': ' + rate + ' ฿/km (เฉลี่ย ' + avg + ' ฿/ลิตร)】\n\n';
+  msg += '━━━━━━━━━━━━━━━━━━━━\n';
+  msg += '  ครั้งที่      วันที่              Gasohol 95 (BKK)\n';
+  msg += '━━━━━━━━━━━━━━━━━━━━\n';
+  msg += priceLines;
+  msg += '━━━━━━━━━━━━━━━━━━━━\n';
+  msg += '  รวม / Total                     ' + total + '\n';
+  msg += '  ราคาเฉลี่ย / Average        ' + avg + '\n';
+  msg += '━━━━━━━━━━━━━━━━━━━━\n\n';
+  msg += '📌 อัตราค่าน้ำมัน (rate to pay / KM)\n';
+  msg += '  0-35 ฿/ลิตร  →  5 ฿/km\n';
+  msg += '  36-40 ฿/ลิตร  →  6 ฿/km\n';
+  msg += '  40 ฿ ขึ้นไป    →  7 ฿/km';
+
+  // localStorage에 저장 후 index.html로 이동하여 공지 모달 열기
+  localStorage.setItem('_fuelAnnounceTitle', title);
+  localStorage.setItem('_fuelAnnounceMsg', msg);
+  location.href = 'index.html?openAnnounce=fuel';
+}
+
+// ── 현재 가격 렌더링 (전 브랜드) ──
+// ── 당월 유류 지원금 로드 (전월 Gasohol 95 평균 기준) ──
+async function _loadCurrentMonthSubsidy() {
+  var el = document.getElementById('fuelSubsidyTag');
+  if (!el) return;
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+  // 전월 계산
+  var nowIct = new Date(new Date().getTime() + 7 * 3600000);
+  var prevDate = new Date(nowIct.getFullYear(), nowIct.getMonth() - 1, 1);
+  var yyyy = String(prevDate.getFullYear());
+  var mm = String(prevDate.getMonth() + 1).padStart(2, '0');
+  var monthVal = yyyy + '-' + mm;
+
+  var cached = _fuelMonthCache[monthVal];
+  if (!cached) {
+    try {
+      var _u = await _fuelWaitForFbAuth(6000);
+      if (!_u) return; // 조용히 스킵 — subsidy 는 부가 표시라 로그인 유도 배너 안 띄움
+      var callFn = firebase.functions().httpsCallable('getPttMonthly', { timeout: 60000 });
+      var result = await callFn({ mm: mm, yyyy: yyyy });
+      var r = result.data;
+      if (r.success && r.announcements && r.announcements.length) {
+        _fuelMonthCache[monthVal] = r;
+        cached = r;
+      }
+    } catch(e) { return; }
+  }
+  if (!cached || !cached.announcements) return;
+
+  var ann = cached.announcements;
+  var g95sum = 0, g95cnt = 0;
+  ann.forEach(function(a) {
+    a.items.forEach(function(item) {
+      if (item.name === 'Gasohol 95' || item.name.indexOf('Gasohol 95') >= 0) {
+        g95sum += item.price;
+        g95cnt++;
+      }
+    });
+  });
+  if (g95cnt === 0) return;
+  var g95avg = (g95sum / g95cnt).toFixed(2);
+  var g95num = parseFloat(g95avg);
+  var rate = '-';
+  if (g95num <= 35) rate = 5;
+  else if (g95num <= 40) rate = 6;
+  else rate = 7;
+
+  var labels = {
+    ko: '당월 유류 지원금: ' + rate + ' ฿/km',
+    en: 'Fuel Subsidy: ' + rate + ' ฿/km',
+    th: 'เงินช่วยเหลือน้ำมัน: ' + rate + ' ฿/km'
+  };
+  el.innerHTML = '<span style="background:#15803d;color:#fff;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;">⛽ ' + (labels[L] || labels.en) + '</span>';
+}
+
+// ── 연료 이름 → 표준 키 정규화 (API 키는 신뢰 불가, name 필드 기준) ──
+function _fuelCanonicalKey(name) {
+  if (!name) return null;
+  var n = String(name).toLowerCase().replace(/\s+/g, ' ').trim();
+  // Diesel 계열 (더 구체적인 것부터)
+  if (/premium\s*diesel|ดีเซล\s*พรีเมียม|ดีเซลพรีเมียม/.test(n)) return 'premium_diesel';
+  if (/diesel\s*b\s*20|ดีเซล\s*b\s*20/.test(n)) return 'diesel_b20';
+  if (/diesel\s*b\s*7|ดีเซล\s*b\s*7/.test(n)) return 'diesel_b7';
+  if (/^diesel$|^ดีเซล$/.test(n)) return 'diesel';
+  // Premium Gasohol 95 (Shell V-Power 등) — 일반 Gasohol 95 보다 먼저
+  if (/v[- ]?power.*gasohol\s*95|วี[- ]?เพาเวอร์.*แก๊สโซฮอล์\s*95|เชลล์.*แก๊สโซฮอล์\s*95|premium\s*gasohol\s*95|พรีเมียม.*แก๊สโซฮอล์\s*95/.test(n)) return 'vpower_gasohol_95';
+  // 순수 휘발유 (에탄올 무함유) — Gasohol 보다 먼저
+  if (/^(?:benzine|gasoline|ul)\s*95$|^เบนซิน\s*95$/.test(n)) return 'gasoline_95';
+  if (/^(?:benzine|gasoline|ul)\s*91$|^เบนซิน\s*91$/.test(n)) return 'gasoline_91';
+  // Gasohol (에탄올 혼합)
+  if (/gasohol\s*e\s*85|แก๊สโซฮอล์\s*e\s*85/.test(n)) return 'gasohol_e85';
+  if (/gasohol\s*e\s*20|แก๊สโซฮอล์\s*e\s*20/.test(n)) return 'gasohol_e20';
+  if (/gasohol\s*95|แก๊สโซฮอล์\s*95|e10\s*95/.test(n)) return 'gasohol_95';
+  if (/gasohol\s*91|แก๊สโซฮอล์\s*91|e10\s*91/.test(n)) return 'gasohol_91';
+  // NGV
+  if (/ngv|เอ็นจีวี/.test(n)) return 'ngv';
+  return null;
+}
+
+function _renderFuelPrice(res) {
+  var body = document.getElementById('fuelPriceBody');
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+  var brandNames = {
+    ptt: 'PTT', bcp: 'Bangchak', shell: 'Shell', esso: 'Esso',
+    caltex: 'Caltex', irpc: 'IRPC', pt: 'PT', susco: 'Susco',
+    pure: 'Pure', susco_dealers: 'Susco Dealers'
+  };
+  var brandColors = {
+    ptt: '#1d4ed8', bcp: '#16a34a', shell: '#dc2626', esso: '#2563eb',
+    caltex: '#ef4444', irpc: '#7c3aed', pt: '#d97706', susco: '#0891b2',
+    pure: '#059669', susco_dealers: '#64748b'
+  };
+  var fuelNames = {
+    ko: { gasoline_95: '휘발유 95', gasoline_91: '휘발유 91', gasohol_95: '가솔린 95', gasohol_91: '가솔린 91', gasohol_e20: '가솔린 E20', gasohol_e85: '가솔린 E85', vpower_gasohol_95: '프리미엄 가솔린 95', diesel: '경유', diesel_b7: '경유 B7', premium_diesel: '프리미엄 경유', diesel_b20: '경유 B20', ngv: 'NGV' },
+    en: { gasoline_95: 'Benzine 95', gasoline_91: 'Benzine 91', gasohol_95: 'Gasohol 95', gasohol_91: 'Gasohol 91', gasohol_e20: 'Gasohol E20', gasohol_e85: 'Gasohol E85', vpower_gasohol_95: 'Premium Gasohol 95', diesel: 'Diesel', diesel_b7: 'Diesel B7', premium_diesel: 'Premium Diesel', diesel_b20: 'Diesel B20', ngv: 'NGV' },
+    th: { gasoline_95: 'เบนซิน 95', gasoline_91: 'เบนซิน 91', gasohol_95: 'แก๊สโซฮอล์ 95', gasohol_91: 'แก๊สโซฮอล์ 91', gasohol_e20: 'แก๊สโซฮอล์ E20', gasohol_e85: 'แก๊สโซฮอล์ E85', vpower_gasohol_95: 'แก๊สโซฮอล์ 95 พรีเมียม', diesel: 'ดีเซล', diesel_b7: 'ดีเซล B7', premium_diesel: 'ดีเซลพรีเมียม', diesel_b20: 'ดีเซล B20', ngv: 'NGV' }
+  };
+  var fNames = fuelNames[L] || fuelNames.en;
+  // 표시 우선순위
+  var displayOrder = ['gasoline_95','gasoline_91','gasohol_95','gasohol_91','gasohol_e20','gasohol_e85','vpower_gasohol_95','diesel','diesel_b7','diesel_b20','premium_diesel','ngv'];
+  var html = '';
+  html += '<div style="text-align:center;margin-bottom:14px;">';
+  html += '<span style="font-size:13px;color:#6b7280;">📅 ' + (res.date || '') + '</span>';
+  html += ' <span id="fuelSubsidyTag"></span>';
+  html += '</div>';
+  var stations = res.stations || {};
+  var brandOrder = ['ptt','bcp','shell','esso','caltex','irpc','pt','susco','pure','susco_dealers'];
+  brandOrder.forEach(function(bk) {
+    var st = stations[bk];
+    if (!st) return;
+    var color = brandColors[bk] || '#374151';
+    html += '<div style="border:1.5px solid #e5e7eb;border-radius:12px;margin-bottom:12px;overflow:hidden;">';
+    html += '<div style="padding:10px 16px;background:' + color + ';color:#fff;font-size:15px;font-weight:700;">' + (brandNames[bk] || bk) + '</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0;">';
+    // API 키는 어긋나 있으므로 fuel.name 을 표준 키로 정규화하고 중복 제거
+    var seen = {};
+    var items = [];
+    Object.keys(st).forEach(function(fk) {
+      var fuel = st[fk];
+      if (!fuel || !fuel.price || fuel.price === '-') return;
+      var canon = _fuelCanonicalKey(fuel.name);
+      var dedupeKey = canon || ('raw:' + (fuel.name || fk));
+      if (seen[dedupeKey]) return;
+      seen[dedupeKey] = true;
+      items.push({ canon: canon, name: fuel.name, price: fuel.price });
+    });
+    items.sort(function(a, b) {
+      var ai = a.canon ? displayOrder.indexOf(a.canon) : -1;
+      var bi = b.canon ? displayOrder.indexOf(b.canon) : -1;
+      if (ai === -1) ai = 999;
+      if (bi === -1) bi = 999;
+      return ai - bi;
+    });
+    items.forEach(function(item, idx) {
+      var price = parseFloat(item.price);
+      var label = (item.canon && fNames[item.canon]) || item.name || item.canon || '';
+      var bg = idx % 2 === 0 ? '#fff' : '#f9fafb';
+      html += '<div style="padding:10px 16px;background:' + bg + ';border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;align-items:center;">';
+      html += '<span style="font-size:13px;color:#374151;">' + label + '</span>';
+      html += '<span style="font-size:15px;font-weight:700;color:' + color + ';">' + price.toFixed(2) + ' ฿</span>';
+      html += '</div>';
+    });
+    html += '</div></div>';
+  });
+  html += '<div style="text-align:center;margin-top:8px;font-size:11px;color:#9ca3af;">' + t('fuel_source') + '</div>';
+  body.innerHTML = html;
+  _loadCurrentMonthSubsidy();
+}
+
+// ── 주변 주유소 ──
+var _nearbyMap = null;
+var _nearbyMarkers = [];
+
+function _openNearbyStations() {
+  var ov = document.getElementById('nearbyStationOverlay');
+  ov.style.display = 'flex';
+  var loadEl = document.getElementById('nearbyLoading');
+  loadEl.style.display = 'flex';
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+  var msgs = { ko: 'GPS 위치를 가져오는 중...', en: 'Getting GPS location...', th: 'กำลังระบุตำแหน่ง GPS...' };
+  document.getElementById('nearbyLoadMsg').textContent = msgs[L] || msgs.ko;
+
+  if (!navigator.geolocation) {
+    var errMsgs = { ko: 'GPS를 지원하지 않는 브라우저입니다.', en: 'GPS not supported.', th: 'เบราว์เซอร์ไม่รองรับ GPS' };
+    document.getElementById('nearbyLoadMsg').textContent = errMsgs[L] || errMsgs.ko;
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    var lat = pos.coords.latitude;
+    var lng = pos.coords.longitude;
+    _initNearbyMap(lat, lng);
+  }, function(err) {
+    var errMsgs = { ko: 'GPS 위치를 가져올 수 없습니다.', en: 'Unable to get GPS location.', th: 'ไม่สามารถระบุตำแหน่ง GPS ได้' };
+    document.getElementById('nearbyLoadMsg').textContent = (errMsgs[L] || errMsgs.ko) + ' (' + err.message + ')';
+  }, { enableHighAccuracy: true, timeout: 15000 });
+}
+
+function _closeNearbyStations() {
+  document.getElementById('nearbyStationOverlay').style.display = 'none';
+  if (_nearbyMap) { _nearbyMap.remove(); _nearbyMap = null; }
+  _nearbyMarkers = [];
+  _nbAllStations = [];
+  _nbActiveBrand = null;
+  document.getElementById('nearbyStationList').innerHTML = '';
+}
+
+function _refreshNearbyStations() {
+  if (_nearbyMap) { _nearbyMap.remove(); _nearbyMap = null; }
+  _nearbyMarkers = [];
+  _nbAllStations = [];
+  _nbActiveBrand = null;
+  document.getElementById('nearbyStationList').innerHTML = '';
+  var loadEl = document.getElementById('nearbyLoading');
+  loadEl.style.display = 'flex';
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+  var msgs = { ko: 'GPS 위치를 가져오는 중...', en: 'Getting GPS location...', th: 'กำลังระบุตำแหน่ง GPS...' };
+  document.getElementById('nearbyLoadMsg').textContent = msgs[L] || msgs.ko;
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    _initNearbyMap(pos.coords.latitude, pos.coords.longitude);
+  }, function(err) {
+    var errMsgs = { ko: 'GPS 위치를 가져올 수 없습니다.', en: 'Unable to get GPS location.', th: 'ไม่สามารถระบุตำแหน่ง GPS ได้' };
+    document.getElementById('nearbyLoadMsg').textContent = (errMsgs[L] || errMsgs.ko) + ' (' + err.message + ')';
+  }, { enableHighAccuracy: true, timeout: 15000 });
+}
+
+function _initNearbyMap(lat, lng) {
+  _nbMyLat = lat; _nbMyLng = lng;
+  var loadEl = document.getElementById('nearbyLoading');
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+
+  // 지도 초기화
+  if (_nearbyMap) { _nearbyMap.remove(); _nearbyMap = null; }
+  _nearbyMap = L_map('nearbyMap').setView([lat, lng], 13);
+  L_tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap',
+    maxZoom: 19
+  }).addTo(_nearbyMap);
+
+  // 내 위치 마커
+  var myIcon = L_divIcon({
+    className: '',
+    html: '<div style="width:24px;height:24px;background:#111827;border:3px solid #fff;border-radius:50%;box-shadow:0 0 8px rgba(0,0,0,.5);"></div>',
+    iconSize: [24, 24],
+    iconAnchor: [12, 12]
+  });
+  L_marker([lat, lng], { icon: myIcon }).addTo(_nearbyMap).bindPopup('<b>📍 ' + ({ ko: '내 위치', en: 'My Location', th: 'ตำแหน่งของฉัน' }[L] || '내 위치') + '</b>');
+
+  // 20km 반경 원
+  L_circle([lat, lng], { radius: 20000, color: '#f97316', fillColor: '#f97316', fillOpacity: 0.06, weight: 1.5 }).addTo(_nearbyMap);
+
+  // Overpass API로 주유소 검색
+  var searchMsg = { ko: '주변 주유소를 검색하는 중...', en: 'Searching nearby gas stations...', th: 'กำลังค้นหาปั๊มน้ำมันใกล้เคียง...' };
+  document.getElementById('nearbyLoadMsg').textContent = searchMsg[L] || searchMsg.ko;
+
+  var overpassQuery = '[out:json][timeout:25];(node["amenity"="fuel"](around:20000,' + lat + ',' + lng + ');way["amenity"="fuel"](around:20000,' + lat + ',' + lng + '););out center body;';
+  var _overpassServers = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter'
+  ];
+
+  function _fetchOverpass(idx) {
+    if (idx >= _overpassServers.length) {
+      loadEl.style.display = 'none';
+      document.getElementById('nearbyStationList').innerHTML = '<div style="padding:16px;text-align:center;color:#ef4444;">⚠️ 주유소 검색 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.</div>';
+      return;
+    }
+    var url = _overpassServers[idx] + '?data=' + encodeURIComponent(overpassQuery);
+    fetch(url).then(function(resp) {
+      var ct = resp.headers.get('content-type') || '';
+      if (!resp.ok || ct.indexOf('json') < 0) throw new Error('Server ' + (idx+1) + ' unavailable');
+      return resp.json();
+    }).then(function(data) {
+      _processNearbyData(data, lat, lng, loadEl, L);
+    }).catch(function(e) {
+      console.warn('[Nearby] Server ' + (idx+1) + ' failed:', e.message, '→ trying next');
+      _fetchOverpass(idx + 1);
+    });
+  }
+
+  _fetchOverpass(0);
+}
+
+// 브랜드 색상 매핑 (태국 판매량 Top 5) — 전역
+var _nbBrands = [
+  { keys: ['ptt','ปตท','ป.ต.ท','พีทีที','pttor','ปั๊มพีที'], color: '#1d4ed8', label: 'PTT' },
+  { keys: ['bangchak','บางจาก','บ.จ.ก','bcp'], color: '#16a34a', label: 'Bangchak' },
+  { keys: ['shell','เชลล์','เชล'], color: '#dc2626', label: 'Shell' },
+  { keys: ['esso','เอสโซ่','เอสโซ'], color: '#92400e', label: 'Esso' },
+  { keys: ['caltex','คาลเท็กซ์','คาลเทกซ์'], color: '#f59e0b', label: 'Caltex' },
+  { keys: ['irpc','ไออาร์พีซี'], color: '#6366f1', label: 'IRPC' },
+  { keys: ['susco','ซัสโก้','ซัสโก'], color: '#0d9488', label: 'Susco' },
+  { keys: ['pt ','พีที ','pt gas','สถานีบริการ พีที'], color: '#ea580c', label: 'PT' }
+];
+var _nbOtherColor = '#9ca3af';
+var _nbOtherLabel = 'Other';
+var _nbAllStations = [];
+var _nbActiveBrand = null; // null = 전체, 'PTT' 등 = 해당 브랜드만
+var _nbMyLat = 0, _nbMyLng = 0; // 내 위치 저장
+
+function _nbGetBrandColor(text) {
+  var low = (text || '').toLowerCase();
+  for (var i = 0; i < _nbBrands.length; i++) {
+    for (var j = 0; j < _nbBrands[i].keys.length; j++) {
+      if (low.indexOf(_nbBrands[i].keys[j]) >= 0) return { color: _nbBrands[i].color, label: _nbBrands[i].label };
+    }
+  }
+  return { color: _nbOtherColor, label: '' };
+}
+
+var _excludeNames = ['7-eleven','7-11','seven eleven','เซเว่น','familymart','แฟมิลี่มาร์ท','lawson','mini big c','tesco','lotus','makro','big c'];
+function _isRealStation(tags, name, brand) {
+  var combined = ((name || '') + ' ' + (brand || '')).toLowerCase();
+  for (var i = 0; i < _excludeNames.length; i++) {
+    if (combined.indexOf(_excludeNames[i]) >= 0) return false;
+  }
+  if (tags.shop === 'convenience') return false;
+  return true;
+}
+
+function _processNearbyData(data, lat, lng, loadEl, L) {
+  loadEl.style.display = 'none';
+  _nbOtherLabel = { ko: '기타', en: 'Other', th: 'อื่นๆ' }[L] || 'Other';
+
+  _nbAllStations = (data.elements || []).map(function(el) {
+    var elLat = el.lat || (el.center && el.center.lat);
+    var elLng = el.lon || (el.center && el.center.lon);
+    if (!elLat || !elLng) return null;
+    var tags = el.tags || {};
+    var name = tags.name || tags['name:th'] || tags['name:en'] || tags.brand || tags.operator || '';
+    var brand = tags.brand || tags.operator || '';
+    if (!_isRealStation(tags, name, brand)) return null;
+    var dist = _haversine(lat, lng, elLat, elLng);
+    var bc = _nbGetBrandColor(brand || name);
+    return { lat: elLat, lng: elLng, name: name, brand: brand, dist: dist, tags: tags, color: bc.color, brandLabel: bc.label || _nbOtherLabel };
+  }).filter(function(s) { return s !== null; });
+
+  _nbAllStations.sort(function(a, b) { return a.dist - b.dist; });
+  _nbActiveBrand = null;
+  _nbRenderMarkers();
+  _nbRenderLegend(L);
+  _renderNearbyList(_nbAllStations, lat, lng);
+}
+
+function _nbRenderMarkers() {
+  // 기존 마커 제거
+  _nearbyMarkers.forEach(function(m) { _nearbyMap.removeLayer(m); });
+  _nearbyMarkers = [];
+
+  var filtered = _nbActiveBrand ? _nbAllStations.filter(function(s) { return s.brandLabel === _nbActiveBrand; }) : _nbAllStations;
+
+  filtered.forEach(function(s) {
+    var stIcon = L_divIcon({
+      className: '',
+      html: '<div style="width:12px;height:12px;background:' + s.color + ';border:2px solid #fff;border-radius:50%;box-shadow:0 1px 4px rgba(0,0,0,.3);"></div>',
+      iconSize: [12, 12],
+      iconAnchor: [6, 6]
+    });
+    var distStr = s.dist < 1 ? (s.dist * 1000).toFixed(0) + ' m' : s.dist.toFixed(1) + ' km';
+    var _isDesk = window.innerWidth > 700;
+    var _pFs = _isDesk ? '16px' : '13px';
+    var _pFsSm = _isDesk ? '14px' : '12px';
+    var _pMinW = _isDesk ? '280px' : '200px';
+    var _pPad = _isDesk ? '12px' : '8px';
+    var _svW = _isDesk ? 320 : 280;
+    var _svH = _isDesk ? 160 : 140;
+    var _svUrl = 'https://maps.googleapis.com/maps/api/streetview?size=' + _svW + 'x' + _svH + '&location=' + s.lat + ',' + s.lng + '&fov=90&heading=0&pitch=0&key=' + (typeof GMAPS_KEY !== 'undefined' ? GMAPS_KEY : 'AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw');
+    var popupHtml = '<div style="font-size:' + _pFs + ';min-width:' + _pMinW + ';padding:' + _pPad + ';">';
+    popupHtml += '<div style="border-radius:8px;overflow:hidden;margin-bottom:8px;"><img src="' + _svUrl + '" style="width:100%;height:auto;display:block;" onerror="this.parentElement.style.display=\'none\'"></div>';
+    popupHtml += '<div style="font-weight:700;margin-bottom:6px;font-size:' + (_isDesk ? '18px' : '14px') + ';">⛽ ' + (s.name || 'Gas Station') + '</div>';
+    if (s.brand && s.brand !== s.name) popupHtml += '<div style="color:#6b7280;font-size:' + _pFsSm + ';margin-bottom:4px;">🏷 ' + s.brand + '</div>';
+    popupHtml += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;"><span style="width:12px;height:12px;border-radius:50%;background:' + s.color + ';display:inline-block;border:1px solid rgba(0,0,0,.1);"></span><span style="font-size:' + _pFsSm + ';color:#6b7280;">' + s.brandLabel + '</span></div>';
+    popupHtml += '<div style="color:#f97316;font-weight:700;font-size:' + _pFs + ';margin-bottom:6px;">📏 ' + distStr + '</div>';
+    if (s.tags && s.tags.opening_hours) popupHtml += '<div style="font-size:' + _pFsSm + ';color:#475569;margin-bottom:4px;">🕐 ' + s.tags.opening_hours + '</div>';
+    if (s.tags && s.tags.phone) popupHtml += '<div style="font-size:' + _pFsSm + ';color:#475569;margin-bottom:4px;">📞 ' + s.tags.phone + '</div>';
+    if (s.tags && (s.tags['addr:street'] || s.tags['addr:district'])) {
+      var addr = [s.tags['addr:street'], s.tags['addr:district'], s.tags['addr:city']].filter(function(a){return a;}).join(', ');
+      popupHtml += '<div style="font-size:' + _pFsSm + ';color:#475569;margin-bottom:4px;">📍 ' + addr + '</div>';
+    }
+    popupHtml += '<div style="margin-top:8px;"><a href="https://www.google.com/maps/dir/?api=1&destination=' + s.lat + ',' + s.lng + '" target="_blank" style="color:#fff;background:#2563eb;padding:6px 14px;border-radius:8px;font-size:' + _pFsSm + ';text-decoration:none;font-weight:700;display:inline-block;">🧭 Navigate →</a></div>';
+    popupHtml += '</div>';
+    var _popupOpts = { maxWidth: _isDesk ? 360 : 300, autoPan: true, autoPanPadding: [20, 20] };
+    var marker = L_marker([s.lat, s.lng], { icon: stIcon }).addTo(_nearbyMap).bindPopup(popupHtml, _popupOpts);
+    _nearbyMarkers.push(marker);
+  });
+
+  // 리스트도 갱신
+  _renderNearbyList(filtered, 0, 0);
+}
+
+function _nbGoMyLocation() {
+  if (_nearbyMap && _nbMyLat) _nearbyMap.setView([_nbMyLat, _nbMyLng], 13, { animate: true });
+}
+
+function _nbFilterBrand(label) {
+  if (_nbActiveBrand === label) {
+    _nbActiveBrand = null; // 다시 클릭하면 전체 표시
+  } else {
+    _nbActiveBrand = label;
+  }
+  _nbRenderMarkers();
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+  _nbRenderLegend(L);
+}
+
+function _nbRenderLegend(L) {
+  var old = document.getElementById('nearbyLegend');
+  if (old) old.remove();
+
+  var _myLocLabel = { ko: '내 위치', en: 'My Location', th: 'ตำแหน่ง' }[L] || '내 위치';
+  var _legendOrder = [
+    { label: 'PTT', color: '#1d4ed8' },
+    { label: 'Bangchak', color: '#16a34a' },
+    { label: 'Shell', color: '#dc2626' },
+    { label: 'Esso', color: '#92400e' },
+    { label: 'Caltex', color: '#f59e0b' },
+    { label: _nbOtherLabel, color: _nbOtherColor },
+    { label: _myLocLabel, color: '#111827', isMe: true }
+  ];
+
+  // Leaflet 커스텀 컨트롤로 추가 (z-index 문제 해결)
+  var LegendControl = window.L.Control.extend({
+    options: { position: 'topright' },
+    onAdd: function() {
+      var div = window.L.DomUtil.create('div');
+      div.id = 'nearbyLegend';
+      var isDesk = window.innerWidth > 700;
+      var fs = isDesk ? '16px' : '14px';
+      var dotSz = isDesk ? '18px' : '14px';
+      var pad = isDesk ? '14px 18px' : '10px 14px';
+      var gap = isDesk ? '10px' : '8px';
+      div.style.cssText = 'background:rgba(255,255,255,.95);border-radius:10px;padding:' + pad + ';box-shadow:0 2px 8px rgba(0,0,0,.2);font-size:' + fs + ';cursor:default;';
+      window.L.DomEvent.disableClickPropagation(div);
+
+      var html = '<div style="font-weight:700;margin-bottom:8px;color:#374151;font-size:' + fs + ';">⛽ Brand</div>';
+      _legendOrder.forEach(function(item) {
+        var isActive = !item.isMe && (_nbActiveBrand === null || _nbActiveBrand === item.label);
+        var opacity = isActive || item.isMe ? '1' : '0.3';
+        var cursor = 'pointer';
+        var fw = (!item.isMe && _nbActiveBrand === item.label) ? 'font-weight:700;' : '';
+        var borderStyle = item.isMe ? 'border:2px solid #fff;box-shadow:0 0 3px rgba(0,0,0,.3);' : 'border:1.5px solid rgba(0,0,0,.15);';
+        var mt = item.isMe ? 'margin-top:8px;padding-top:8px;border-top:1px solid #d1d5db;' : '';
+        var onclick = item.isMe ? ' onclick="_nbGoMyLocation()"' : ' onclick="_nbFilterBrand(\'' + item.label.replace(/'/g, "\\'") + '\')"';
+        html += '<div style="display:flex;align-items:center;gap:' + gap + ';margin-bottom:5px;opacity:' + opacity + ';cursor:' + cursor + ';' + mt + '"' + onclick + '>';
+        html += '<span style="width:' + dotSz + ';height:' + dotSz + ';border-radius:50%;background:' + item.color + ';flex-shrink:0;display:inline-block;' + borderStyle + '"></span>';
+        html += '<span style="color:#374151;line-height:1.3;' + fw + '">' + item.label + '</span></div>';
+      });
+      div.innerHTML = html;
+      return div;
+    }
+  });
+  new LegendControl().addTo(_nearbyMap);
+}
+
+function _renderNearbyList(stations, myLat, myLng) {
+  var listEl = document.getElementById('nearbyStationList');
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+  if (!stations.length) {
+    var noResult = { ko: '반경 20km 내 주유소가 없습니다.', en: 'No gas stations within 20km.', th: 'ไม่พบปั๊มน้ำมันในรัศมี 20 กม.' };
+    listEl.innerHTML = '<div style="padding:16px;text-align:center;color:#9ca3af;">' + (noResult[L] || noResult.ko) + '</div>';
+    return;
+  }
+  var countLabel = { ko: '개 주유소 발견', en: ' gas stations found', th: ' ปั๊มน้ำมันที่พบ' };
+  var navLabel = { ko: '길찾기', en: 'Navigate', th: 'นำทาง' };
+  var isDk = window.innerWidth > 700;
+  var lFs = isDk ? '15px' : '13px';
+  var lFsSm = isDk ? '13px' : '11px';
+  var lPad = isDk ? '12px 16px' : '8px 12px';
+  var lDot = isDk ? '14px' : '10px';
+  var html = '<div style="padding:' + lPad + ';background:#f3f4f6;font-size:' + lFs + ';font-weight:700;color:#374151;">⛽ ' + stations.length + (countLabel[L] || countLabel.ko) + ' (20km)</div>';
+  var max = Math.min(stations.length, 50);
+  for (var i = 0; i < max; i++) {
+    var s = stations[i];
+    var distStr = s.dist < 1 ? (s.dist * 1000).toFixed(0) + ' m' : s.dist.toFixed(1) + ' km';
+    var brandSub = (s.brand && s.brand !== s.name) ? ' <span style="color:#9ca3af;font-size:' + lFsSm + ';">' + s.brand + '</span>' : '';
+    html += '<div onclick="_nearbyFlyTo(' + s.lat + ',' + s.lng + ',' + i + ')" style="padding:' + lPad + ';border-bottom:1px solid #f3f4f6;display:flex;align-items:center;gap:10px;cursor:pointer;" onmouseover="this.style.background=\'#f0f9ff\'" onmouseout="this.style.background=\'\'" ontouchstart="this.style.background=\'#f0f9ff\'" ontouchend="this.style.background=\'\'">';
+    html += '<span style="width:' + lDot + ';height:' + lDot + ';border-radius:50%;background:' + s.color + ';flex-shrink:0;border:1px solid rgba(0,0,0,.1);"></span>';
+    html += '<div style="flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-size:' + lFs + ';font-weight:600;color:#111827;">' + (s.name || 'Gas Station') + brandSub + '</div>';
+    html += '<div style="flex-shrink:0;font-size:' + lFs + ';font-weight:700;color:#f97316;min-width:60px;text-align:center;">' + distStr + '</div>';
+    html += '<a href="https://www.google.com/maps/dir/?api=1&destination=' + s.lat + ',' + s.lng + '" target="_blank" onclick="event.stopPropagation()" style="flex-shrink:0;font-size:' + (isDk ? '14px' : '12px') + ';color:#2563eb;text-decoration:none;font-weight:600;white-space:nowrap;">🧭 ' + (navLabel[L] || navLabel.ko) + '</a>';
+    html += '</div>';
+  }
+  listEl.innerHTML = html;
+}
+
+function _nearbyFlyTo(lat, lng, idx) {
+  if (!_nearbyMap) return;
+  // 지도 중앙에 주유소 배치
+  _nearbyMap.setView([lat, lng], 17, { animate: true });
+  setTimeout(function() {
+    if (_nearbyMarkers[idx]) _nearbyMarkers[idx].openPopup();
+  }, 400);
+}
+
+// Haversine 거리 계산 (km)
+function _haversine(lat1, lon1, lat2, lon2) {
+  var R = 6371;
+  var dLat = (lat2 - lat1) * Math.PI / 180;
+  var dLon = (lon2 - lon1) * Math.PI / 180;
+  var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Leaflet 래퍼 (전역 L과 lang 변수 충돌 방지)
+function L_map(id) { return window.L.map(id); }
+function L_tileLayer(url, opt) { return window.L.tileLayer(url, opt); }
+function L_marker(ll, opt) { return window.L.marker(ll, opt); }
+function L_circle(ll, opt) { return window.L.circle(ll, opt); }
+function L_divIcon(opt) { return window.L.divIcon(opt); }
+
+// ── 초기화 ──
+(function() {
+  // 다국어 적용
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+
+  // ── 공용 헤더 렌더 (title/leftSlot/rightSlot으로 구성) ──
+  var _hdr = renderPageTopBar({
+    titleHtml: '⛽ <span data-i18n="fuel_title">주유 가격</span>',
+    titleId: 'fuelHdrTitle', showBack: false, theme: 'gradient',
+    background: 'linear-gradient(135deg,#f97316,#ea580c)',
+    extraClass: 'fuel-header' // Pull-to-Refresh 선택자 호환
+  });
+  _hdr.leftSlot.insertAdjacentHTML('beforeend',
+    '<button type="button" onclick="_openNearbyStations()" title="주변 주유소" style="background:#fff;border:none;color:#ea580c;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.15);">📍 <span id="fuelNearbyLabel">주유소 찾기</span></button>');
+  _hdr.rightSlot.innerHTML =
+    '<button class="fuel-win-btn" onclick="_fuelMinimize()" title="최소화">&#x2015;</button>' +
+    '<button class="fuel-win-btn" id="fuelFsBtn" onclick="_fuelToggleFs()" title="전체화면">&#x25A1;</button>' +
+    '<button class="fuel-win-btn" onclick="history.back()" title="닫기">&#x2715;</button>';
+
+  // data-i18n 적용 (헤더 내부 포함)
+  document.querySelectorAll('[data-i18n]').forEach(function(el) {
+    var key = el.getAttribute('data-i18n');
+    var val = t(key);
+    if (val && val !== key) el.textContent = val;
+  });
+  // 주유소 찾기 버튼 다국어
+  var nearbyLabels = { ko: '주유소 찾기', en: 'Nearby Stations', th: 'ค้นหาปั๊ม' };
+  var nearbyTitles = { ko: '주변 주유소', en: 'Nearby Gas Stations', th: 'ปั๊มน้ำมันใกล้เคียง' };
+  var nbLabel = document.getElementById('fuelNearbyLabel');
+  if (nbLabel) nbLabel.textContent = nearbyLabels[L] || nearbyLabels.ko;
+  var nbTitle = document.getElementById('nearbyTitle');
+  if (nbTitle) nbTitle.textContent = nearbyTitles[L] || nearbyTitles.ko;
+  var refreshLabels = { ko: '새로고침', en: 'Refresh', th: 'รีเฟรช' };
+  var nbRefresh = document.getElementById('nearbyRefreshLabel');
+  if (nbRefresh) nbRefresh.textContent = refreshLabels[L] || refreshLabels.ko;
+  // 현재 가격 자동 로드
+  _fuelSwitchTab('current');
+
+  // ── Pull-to-Refresh (주황색 헤더) ──
+  var _ptrStartY = 0, _ptrDist = 0, _ptrActive = false, _ptrThreshold = 80, _ptrEl = null;
+  function _createPtr() {
+    if (_ptrEl) return;
+    _ptrEl = document.createElement('div');
+    _ptrEl.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-50px);z-index:999999;background:#ea580c;color:#fff;padding:8px 20px;border-radius:0 0 12px 12px;font-size:13px;font-weight:600;transition:transform .2s;pointer-events:none;display:flex;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(0,0,0,.3);';
+    _ptrEl.innerHTML = '<span id="fuelPtrArrow" style="display:inline-block;transition:transform .2s;">↓</span> <span id="fuelPtrText">' + ({ ko:'당겨서 새로고침', en:'Pull to refresh', th:'ดึงเพื่อรีเฟรช' }[L] || '당겨서 새로고침') + '</span>';
+    document.body.appendChild(_ptrEl);
+  }
+  var _ptrRelease = { ko:'놓으면 새로고침', en:'Release to refresh', th:'ปล่อยเพื่อรีเฟรช' }[L] || '놓으면 새로고침';
+  var _ptrPull = { ko:'당겨서 새로고침', en:'Pull to refresh', th:'ดึงเพื่อรีเฟรช' }[L] || '당겨서 새로고침';
+  var _ptrLoading = { ko:'새로고침 중...', en:'Refreshing...', th:'กำลังรีเฟรช...' }[L] || '새로고침 중...';
+
+  document.addEventListener('touchstart', function(e) {
+    var hdr = document.querySelector('.fuel-header');
+    if (!hdr || !hdr.contains(e.target)) return;
+    // 주유소 찾기 오버레이가 열려있으면 그쪽 헤더에서 pull 방지
+    var nbOv = document.getElementById('nearbyStationOverlay');
+    if (nbOv && nbOv.style.display === 'flex') return;
+    _ptrStartY = e.touches[0].clientY;
+    _ptrDist = 0;
+    _ptrActive = true;
+    _createPtr();
+  }, { passive: true });
+
+  document.addEventListener('touchmove', function(e) {
+    if (!_ptrActive) return;
+    _ptrDist = e.touches[0].clientY - _ptrStartY;
+    if (_ptrDist < 0) { _ptrDist = 0; return; }
+    var prog = Math.min(_ptrDist / _ptrThreshold, 1);
+    var ty = Math.min(_ptrDist * 0.5, 50);
+    if (_ptrEl) {
+      _ptrEl.style.transform = 'translateX(-50%) translateY(' + (ty - 10) + 'px)';
+      var arrow = document.getElementById('fuelPtrArrow');
+      var txt = document.getElementById('fuelPtrText');
+      if (prog >= 1) {
+        if (arrow) arrow.style.transform = 'rotate(180deg)';
+        if (txt) txt.textContent = _ptrRelease;
+      } else {
+        if (arrow) arrow.style.transform = 'rotate(0deg)';
+        if (txt) txt.textContent = _ptrPull;
+      }
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', function() {
+    if (!_ptrActive) return;
+    _ptrActive = false;
+    if (_ptrDist >= _ptrThreshold) {
+      if (_ptrEl) {
+        var txt = document.getElementById('fuelPtrText');
+        var arrow = document.getElementById('fuelPtrArrow');
+        if (txt) txt.textContent = _ptrLoading;
+        if (arrow) { arrow.innerHTML = '⟳'; arrow.style.animation = 'ptrSpin .6s linear infinite'; }
+      }
+      setTimeout(function() {
+        // 현재 탭 데이터 새로고침
+        _fuelCache = null; _fuelCacheTime = 0;
+        _fuelSwitchTab(_fuelTab);
+        // 주유소 찾기가 열려있으면 함께 새로고침
+        var nbOv = document.getElementById('nearbyStationOverlay');
+        if (nbOv && nbOv.style.display === 'flex') {
+          _refreshNearbyStations();
+        }
+        // 인디케이터 숨기기
+        if (_ptrEl) _ptrEl.style.transform = 'translateX(-50%) translateY(-50px)';
+        showToast('🔄 ' + ({ ko:'새로고침 완료', en:'Refreshed', th:'รีเฟรชแล้ว' }[L] || '새로고침 완료'));
+      }, 400);
+    } else {
+      if (_ptrEl) _ptrEl.style.transform = 'translateX(-50%) translateY(-50px)';
+    }
+  });
+})();
+
+// ptrSpin 애니메이션
+(function() {
+  var s = document.createElement('style');
+  s.textContent = '@keyframes ptrSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}';
+  document.head.appendChild(s);
+})();
+</script>
+</body>
+</html>

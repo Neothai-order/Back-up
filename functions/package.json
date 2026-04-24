@@ -1,0 +1,22 @@
+{
+  "name": "neothai-order-functions",
+  "description": "Cloud Functions for Neo Sales App",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions"
+  },
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "@line/bot-sdk": "^9.0.0",
+    "@sendgrid/mail": "^8.1.6",
+    "axios": "^1.14.0",
+    "exceljs": "^4.4.0",
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0",
+    "googleapis": "^144.0.0",
+    "nodemailer": "^6.9.0"
+  }
+}

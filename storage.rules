@@ -1,0 +1,56 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 공통 헬퍼
+    // ══════════════════════════════════════════════════════════════════════
+    function signedIn()   { return request.auth != null; }
+    function isAdmin()    { return signedIn() && request.auth.token.admin == true; }
+    function isImage()    { return request.resource.contentType.matches('image/.*'); }
+    function underSize(mb){ return request.resource.size < mb * 1024 * 1024; }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 고객 첨부 / 채팅 이미지 / 제품 이미지 / 출퇴근 PDF / 일반 파일
+    // — 인증 사용자 읽기/쓰기, 10MB 제한
+    // ══════════════════════════════════════════════════════════════════════
+    match /customer-attachments/{allPaths=**} {
+      allow read:   if signedIn();
+      allow write:  if signedIn() && underSize(10);
+      allow delete: if signedIn();
+    }
+    match /chat_images/{allPaths=**} {
+      allow read:   if signedIn();
+      allow write:  if signedIn() && underSize(10) && isImage();
+      allow delete: if signedIn();
+    }
+    match /product-images/{allPaths=**} {
+      allow read:   if signedIn();
+      allow write:  if signedIn() && underSize(10) && isImage();
+      allow delete: if signedIn();
+    }
+    match /attendance-pdf/{allPaths=**} {
+      allow read:   if signedIn();
+      allow write:  if signedIn() && underSize(10);
+      allow delete: if isAdmin();
+    }
+    match /user-files/{allPaths=**} {
+      allow read:   if signedIn();
+      allow write:  if signedIn() && underSize(10);
+      allow delete: if signedIn();
+    }
+    // 내 주변 치과 — 거래처 사진
+    match /customer-photos/{allPaths=**} {
+      allow read:   if signedIn();
+      allow write:  if signedIn() && underSize(5) && isImage();
+      allow delete: if signedIn();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // 기본 — 위에서 매칭되지 않은 모든 경로는 차단
+    // ══════════════════════════════════════════════════════════════════════
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

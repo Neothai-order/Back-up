@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Visit Log — Neo Sales App</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2563eb">
+<!-- Preconnect 힌트 (CDN/Firestore 연결 조기 수립) -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script src="lang.min.js?v=161"></script>
+<script src="page-header.js?v=2"></script>
+<script src="firebase-init.js?v=1"></script>
+<script src="customer-cache-shim.js?v=1"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f4f8;min-height:100vh;-webkit-user-select:none;user-select:none;}
+/* 상단 헤더 바는 page-header.js가 렌더링 (.vl-header 클래스는 _vlMin/_vlRestore 선택자 호환용으로 유지) */
+.vl-hdr-btn{background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px;}
+.vl-hdr-btn:hover{background:rgba(255,255,255,.2);}
+.vl-win-btn{width:28px;height:28px;border:none;border-radius:6px;background:rgba(255,255,255,.15);color:#fff;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.vl-win-btn:hover{background:rgba(255,255,255,.3);}
+.vl-container{max-width:700px;margin:0 auto;padding:12px;}
+.vl-filter{background:#fff;border-radius:12px;padding:12px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+.vl-filter-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.vl-filter-row input[type="date"]{flex:1;min-width:120px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;background:#fff;}
+.vl-search-row{display:flex;gap:8px;margin-top:8px;}
+.vl-search-input{flex:1;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;}
+.vl-btn-new{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap;}
+.vl-btn-new:active{opacity:.85;}
+.vl-list{display:flex;flex-direction:column;gap:10px;padding-bottom:20px;}
+.vl-card{background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);cursor:pointer;transition:box-shadow .2s;}
+.vl-card:active{box-shadow:0 2px 8px rgba(0,0,0,.12);}
+.vl-card-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.vl-date{font-size:13px;color:#6b7280;font-weight:500;}
+.vl-emp{font-size:12px;color:#9ca3af;}
+.vl-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:600;color:#fff;}
+.vl-badge-regular{background:#3b82f6;} .vl-badge-new{background:#22c55e;} .vl-badge-follow_up{background:#f59e0b;} .vl-badge-complaint{background:#ef4444;} .vl-badge-demo{background:#a855f7;}
+.vl-cust{font-size:15px;font-weight:600;color:#1e293b;margin-bottom:4px;}
+.vl-purp{font-size:13px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.vl-detail{display:none;margin-top:12px;padding-top:12px;border-top:1px solid #e5e7eb;}
+.vl-detail.open{display:block;}
+.vl-dlbl{font-size:12px;color:#6b7280;font-weight:600;margin-top:8px;} .vl-dlbl:first-child{margin-top:0;}
+.vl-dval{font-size:14px;color:#1e293b;margin-top:2px;white-space:pre-wrap;word-break:break-word;}
+.vl-dphoto{display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;}
+.vl-dphoto img{width:80px;height:80px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;cursor:pointer;}
+.vl-dact{display:flex;gap:8px;margin-top:12px;justify-content:flex-end;}
+.vl-btn-edit{padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:#e0e7ff;color:#2563eb;}
+.vl-btn-del{padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:none;cursor:pointer;background:#fee2e2;color:#ef4444;}
+.vl-nodata{text-align:center;padding:40px 20px;color:#9ca3af;font-size:14px;}
+.vl-spinner{display:none;text-align:center;padding:30px;}
+.vl-spinner.show{display:block;}
+.vl-spinner::after{content:'';display:inline-block;width:32px;height:32px;border:3px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:vlspin .7s linear infinite;}
+@keyframes vlspin{to{transform:rotate(360deg);}}
+/* Modal - 모든 스타일에 vl- prefix로 충돌 방지 */
+.vl-modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;justify-content:center;align-items:flex-start;overflow-y:auto;padding:20px 10px;}
+.vl-modal-bg.open{display:flex!important;}
+.vl-modal{background:#fff;border-radius:16px;width:100%;max-width:600px;margin:auto;box-shadow:0 8px 30px rgba(0,0,0,.25);}
+.vl-modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #e5e7eb;}
+.vl-modal-title{font-size:17px;font-weight:700;color:#1e293b;}
+.vl-modal-close{background:none;border:none;font-size:22px;color:#6b7280;cursor:pointer;}
+.vl-modal-body{padding:16px;display:flex;flex-direction:column;gap:12px;max-height:70vh;overflow-y:auto;}
+.vl-fg{display:flex;flex-direction:column;gap:4px;}
+.vl-fl{font-size:13px;font-weight:600;color:#374151;}
+.vl-fi{padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;background:#fff;font-family:inherit;width:100%;box-sizing:border-box;}
+.vl-fsel{padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;background:#fff;font-family:inherit;width:100%;}
+.vl-fta{padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;background:#fff;font-family:inherit;resize:vertical;min-height:60px;width:100%;}
+.vl-photo-prev{display:flex;gap:8px;flex-wrap:wrap;}
+.vl-photo-item{position:relative;width:80px;height:80px;}
+.vl-photo-item img{width:100%;height:100%;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;}
+.vl-photo-rm{position:absolute;top:-6px;right:-6px;width:22px;height:22px;background:#ef4444;color:#fff;border:2px solid #fff;border-radius:50%;font-size:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;}
+.vl-btn-photo{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;background:#f3f4f6;border:1px dashed #9ca3af;border-radius:8px;color:#374151;font-size:13px;cursor:pointer;}
+.vl-gps-row{display:flex;gap:8px;align-items:center;}
+.vl-btn-gps{padding:8px 14px;background:#e0e7ff;color:#2563eb;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;}
+.vl-gps-status{font-size:12px;color:#6b7280;}
+.vl-modal-ft{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid #e5e7eb;}
+.vl-btn-save{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;}
+.vl-btn-save:disabled{opacity:.5;cursor:not-allowed;}
+.vl-btn-cancel{background:#f3f4f6;color:#374151;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;}
+/* Customer autocomplete */
+.vl-ac-wrap{position:relative;}
+.vl-ac-list{position:fixed;max-height:240px;overflow-y:auto;background:#fff;border:1px solid #d1d5db;border-radius:0 0 10px 10px;z-index:999999;display:none;box-shadow:0 8px 24px rgba(0,0,0,.2);}
+.vl-ac-list.show{display:block;}
+.vl-ac-item{padding:10px 12px;cursor:pointer;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;gap:10px;}
+.vl-ac-item:hover{background:#eff6ff;}
+.vl-ac-main{flex:1;min-width:0;}
+.vl-ac-name{font-size:13px;font-weight:600;color:#1e293b;display:flex;align-items:center;gap:4px;flex-wrap:wrap;}
+.vl-ac-nt{font-size:10px;color:#2563eb;background:#eff6ff;padding:1px 6px;border-radius:4px;font-weight:600;}
+.vl-ac-sub{font-size:11px;color:#9ca3af;margin-top:1px;}
+/* Selected customer display */
+.vl-cust-selected{display:none;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px;align-items:center;gap:10px;}
+.vl-cust-selected.show{display:flex;}
+.vl-cust-info{flex:1;display:flex;flex-direction:column;gap:2px;}
+.vl-cust-info .erp-tag{font-size:11px;color:#2563eb;font-weight:700;background:#dbeafe;padding:1px 8px;border-radius:10px;display:inline-block;width:fit-content;}
+.vl-cust-info .name-tag{font-size:14px;font-weight:600;color:#1e293b;}
+.vl-cust-clear{background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px;}
+.vl-cust-clear:hover{background:#fee2e2;color:#ef4444;}
+/* Toast */
+.vl-toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 24px;border-radius:10px;font-size:14px;font-weight:500;z-index:999999;opacity:0;transition:opacity .3s;pointer-events:none;}
+.vl-toast.show{opacity:1;}
+/* Photo viewer */
+.vl-viewer{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999999;justify-content:center;align-items:center;cursor:pointer;}
+.vl-viewer.open{display:flex;}
+.vl-viewer img{max-width:95%;max-height:90vh;border-radius:8px;}
+/* Mini bar */
+.vl-mini{display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#2563eb;color:#fff;padding:10px 24px;border-radius:20px;font-size:13px;font-weight:700;cursor:pointer;z-index:99999;box-shadow:0 4px 15px rgba(0,0,0,.3);align-items:center;gap:8px;}
+.vl-mini.show{display:flex;}
+@media(max-width:500px){
+  .vl-filter-row input[type="date"]{min-width:100px;font-size:13px;padding:6px 4px;}
+  .vl-container{padding:8px;}
+}
+</style>
+</head>
+<body oncontextmenu="event.preventDefault();">
+
+<!-- 헤더 (page-header.js가 렌더링) -->
+<div id="pageTopBar"></div>
+
+<div class="vl-container" id="vlMain">
+  <div class="vl-filter">
+    <div class="vl-filter-row">
+      <input type="date" id="vlDateFrom">
+      <span style="font-size:13px;color:#6b7280;">~</span>
+      <input type="date" id="vlDateTo">
+    </div>
+    <div class="vl-search-row">
+      <input type="text" class="vl-search-input" id="vlSearch" placeholder="">
+      <button class="vl-btn-new" id="vlBtnNew" onclick="vlOpenNew()">+ 새 방문 기록</button>
+    </div>
+  </div>
+  <div class="vl-spinner" id="vlSpinner"></div>
+  <div class="vl-list" id="vlList"></div>
+  <div class="vl-nodata" id="vlNoData" style="display:none;"></div>
+</div>
+
+<!-- Modal -->
+<div class="vl-modal-bg" id="vlModalBg">
+  <div class="vl-modal">
+    <div class="vl-modal-hdr">
+      <div class="vl-modal-title" id="vlModalTitle">새 방문 기록</div>
+      <button class="vl-modal-close" onclick="vlCloseModal()">&times;</button>
+    </div>
+    <div class="vl-modal-body">
+      <div class="vl-fg">
+        <label class="vl-fl" id="vlLblDate">날짜</label>
+        <input type="date" class="vl-fi" id="vlFDate">
+      </div>
+      <div class="vl-fg">
+        <label class="vl-fl" id="vlLblCust">고객</label>
+        <div class="vl-ac-wrap" id="vlSearchWrap">
+          <input type="text" class="vl-fi" id="vlFSearch" placeholder="ERP 코드 또는 고객명 검색" autocomplete="off">
+        </div>
+        <div class="vl-cust-selected" id="vlCustSelected">
+          <div class="vl-cust-info">
+            <span class="erp-tag" id="vlSelErp"></span>
+            <span class="name-tag" id="vlSelName"></span>
+            <span class="sub-tag" id="vlSelSub" style="font-size:11px;color:#64748b;"></span>
+          </div>
+          <button class="vl-cust-clear" onclick="_vlClearCust()" title="변경">&#x2715;</button>
+        </div>
+        <input type="hidden" id="vlFErp">
+        <input type="hidden" id="vlFCust">
+      </div>
+      <div class="vl-fg">
+        <label class="vl-fl" id="vlLblType">방문 유형</label>
+        <select class="vl-fsel" id="vlFType">
+          <option value="regular">정기 방문</option>
+          <option value="new">신규 방문</option>
+          <option value="follow_up">후속 방문</option>
+          <option value="complaint">클레임</option>
+          <option value="demo">데모</option>
+        </select>
+      </div>
+      <div class="vl-fg">
+        <label class="vl-fl" id="vlLblPurpose">방문 목적</label>
+        <textarea class="vl-fta" id="vlFPurpose" rows="3"></textarea>
+      </div>
+      <div class="vl-fg">
+        <label class="vl-fl" id="vlLblResult">방문 결과</label>
+        <textarea class="vl-fta" id="vlFResult" rows="3"></textarea>
+      </div>
+      <div class="vl-fg">
+        <label class="vl-fl" id="vlLblNext">후속 조치</label>
+        <textarea class="vl-fta" id="vlFNext" rows="2"></textarea>
+      </div>
+      <div class="vl-fg">
+        <label class="vl-fl" id="vlLblPhoto">사진 첨부</label>
+        <div class="vl-photo-prev" id="vlPhotoPrev"></div>
+        <label class="vl-btn-photo" id="vlBtnPhotoLbl">
+          &#128247; <span>사진 추가</span>
+          <input type="file" accept="image/*" multiple style="display:none;" id="vlPhotoInput" onchange="_vlHandlePhotos(this)">
+        </label>
+      </div>
+      <div class="vl-fg">
+        <label class="vl-fl" id="vlLblLoc">위치</label>
+        <div class="vl-gps-row">
+          <button class="vl-btn-gps" id="vlBtnGps" onclick="_vlCaptureGps()">GPS 캡처</button>
+          <span class="vl-gps-status" id="vlGpsStatus"></span>
+        </div>
+      </div>
+      <div class="vl-fg">
+        <label class="vl-fl" id="vlLblAddr">주소</label>
+        <input type="text" class="vl-fi" id="vlFAddr">
+      </div>
+    </div>
+    <div class="vl-modal-ft">
+      <button class="vl-btn-cancel" onclick="vlCloseModal()">취소</button>
+      <button class="vl-btn-save" id="vlBtnSave" onclick="vlSave()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- Photo Viewer -->
+<div class="vl-viewer" id="vlViewer" onclick="this.classList.remove('open')">
+  <img id="vlViewerImg" src="">
+</div>
+
+<!-- Toast -->
+<div class="vl-toast" id="vlToast"></div>
+
+<!-- Autocomplete dropdown (outside modal to avoid overflow clipping) -->
+<div class="vl-ac-list" id="vlAcList"></div>
+
+<!-- Mini bar -->
+<div class="vl-mini" id="vlMini" onclick="_vlRestore()">📝 <span>방문 일지</span></div>
+
+<script>
+// ══ Firebase (shared via firebase-init.js) ══
+var _vlDb = firebase.firestore();
+
+// ══ Auth ══
+function getCurrentUser() {
+  var u = JSON.parse(sessionStorage.getItem('current_user') || 'null');
+  if (u) return u;
+  if (localStorage.getItem('auto_login') === 'true') return JSON.parse(localStorage.getItem('current_user_persist') || 'null');
+  return null;
+}
+function _isAdmin(u) {
+  if (!u) return false;
+  var HA = ['T2408087'];
+  return HA.includes(u.empid) || u.role === 'admin';
+}
+
+// ══ i18n ══
+var _VL = {
+  vl_title:{ko:'방문 일지',en:'Visit Log',th:'บันทึกการเยี่ยม'},
+  vl_new:{ko:'새 방문 기록',en:'New Visit',th:'บันทึกใหม่'},
+  vl_date:{ko:'날짜',en:'Date',th:'วันที่'},
+  vl_customer:{ko:'고객',en:'Customer',th:'ลูกค้า'},
+  vl_erp:{ko:'ERP 코드',en:'ERP Code',th:'รหัส ERP'},
+  vl_type:{ko:'방문 유형',en:'Visit Type',th:'ประเภทการเยี่ยม'},
+  vl_type_regular:{ko:'정기 방문',en:'Regular Visit',th:'เยี่ยมปกติ'},
+  vl_type_new:{ko:'신규 방문',en:'New Visit',th:'เยี่ยมใหม่'},
+  vl_type_follow:{ko:'후속 방문',en:'Follow-up',th:'ติดตาม'},
+  vl_type_complaint:{ko:'클레임',en:'Complaint',th:'ร้องเรียน'},
+  vl_type_demo:{ko:'데모',en:'Demo',th:'สาธิต'},
+  vl_purpose:{ko:'방문 목적',en:'Purpose',th:'วัตถุประสงค์'},
+  vl_result:{ko:'방문 결과',en:'Result',th:'ผลลัพธ์'},
+  vl_next:{ko:'후속 조치',en:'Next Action',th:'การดำเนินการต่อไป'},
+  vl_photo:{ko:'사진 첨부',en:'Attach Photos',th:'แนบรูปภาพ'},
+  vl_photo_add:{ko:'사진 추가',en:'Add Photo',th:'เพิ่มรูป'},
+  vl_location:{ko:'위치',en:'Location',th:'ตำแหน่ง'},
+  vl_address:{ko:'주소',en:'Address',th:'ที่อยู่'},
+  vl_save:{ko:'저장',en:'Save',th:'บันทึก'},
+  vl_cancel:{ko:'취소',en:'Cancel',th:'ยกเลิก'},
+  vl_delete:{ko:'삭제',en:'Delete',th:'ลบ'},
+  vl_edit:{ko:'수정',en:'Edit',th:'แก้ไข'},
+  vl_no_data:{ko:'방문 기록이 없습니다',en:'No visit records',th:'ไม่มีบันทึกการเยี่ยม'},
+  vl_search:{ko:'고객명/ERP 검색...',en:'Search customer/ERP...',th:'ค้นหาลูกค้า/ERP...'},
+  vl_gps:{ko:'GPS 캡처',en:'Capture GPS',th:'จับตำแหน่ง GPS'},
+  vl_saved:{ko:'저장되었습니다',en:'Saved successfully',th:'บันทึกสำเร็จ'},
+  vl_deleted:{ko:'삭제되었습니다',en:'Deleted',th:'ลบแล้ว'},
+  vl_confirm_delete:{ko:'이 방문 기록을 삭제하시겠습니까?',en:'Delete this visit record?',th:'ลบบันทึกนี้?'}
+};
+var _vlLang = localStorage.getItem('lang') || 'ko';
+function _t(k) { var o = _VL[k]; return o ? (o[_vlLang] || o.ko || k) : k; }
+function _typeLabel(t) {
+  var m = {regular:'vl_type_regular','new':'vl_type_new',follow_up:'vl_type_follow',complaint:'vl_type_complaint',demo:'vl_type_demo'};
+  return _t(m[t] || 'vl_type_regular');
+}
+
+// ══ State ══
+var _vlVisits = [];
+var _vlEditId = null;
+var _vlPhotos = [];
+var _vlGps = null;
+var _vlCustData = []; // customer list from Firestore
+
+// ══ Window controls ══
+function _vlMin() {
+  document.querySelector('.vl-header').style.display = 'none';
+  document.getElementById('vlMain').style.display = 'none';
+  document.getElementById('vlMini').classList.add('show');
+}
+function _vlRestore() {
+  document.querySelector('.vl-header').style.display = '';
+  document.getElementById('vlMain').style.display = '';
+  document.getElementById('vlMini').classList.remove('show');
+}
+function _vlFs() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(function(){});
+}
+
+// ══ Toast ══
+function _vlToast(msg) {
+  var t = document.getElementById('vlToast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(function(){ t.classList.remove('show'); }, 2000);
+}
+
+// ══ Helpers ══
+function _todayStr() { var d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _daysAgo(n) { var d = new Date(); d.setDate(d.getDate()-n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _esc(s) { var d = document.createElement('div'); d.textContent = s||''; return d.innerHTML; }
+
+// ══ Load customer data — shared per-user IDB cache (customer-cache-shim.js) ══
+function _vlMapCust(d) {
+  var name = d.name_th || d.cust_name || d.name_en || d.company || d.name || '';
+  return { erp: d.erp || '', ntCode: d.nt_code || '', name: name, address: d.address || d.province || d.location || '', nameEn: d.name_en || '' };
+}
+function _vlLoadCustomers() {
+  if (typeof loadCustomersCached !== 'function') {
+    console.warn('[VisitLog] customer-cache-shim missing — aborting customer load.');
+    return;
+  }
+  loadCustomersCached({
+    db: _vlDb,
+    onCache: function(rows) { _vlCustData = rows.map(_vlMapCust); console.log('[VisitLog] cache hit:', _vlCustData.length); },
+    onSync:  function(rows) { _vlCustData = rows.map(_vlMapCust); console.log('[VisitLog] bg sync updated:', _vlCustData.length); }
+  }).then(function(rows) {
+    if (!_vlCustData.length) {
+      _vlCustData = (rows||[]).map(_vlMapCust);
+      console.log('[VisitLog] cold-start loaded:', _vlCustData.length);
+    }
+  }).catch(function(e) { console.warn('[VisitLog] Customer load failed:', e); });
+}
+
+// ══ Customer autocomplete (unified search) ══
+function _vlSelectCust(c) {
+  document.getElementById('vlFErp').value = c.erp;
+  document.getElementById('vlFCust').value = c.name;
+  document.getElementById('vlFAddr').value = c.address || '';
+  document.getElementById('vlSelErp').textContent = c.erp ? '[' + c.erp + ']' : '';
+  document.getElementById('vlSelName').textContent = c.name;
+  var subEl = document.getElementById('vlSelSub');
+  if (subEl) subEl.textContent = c.nameEn && c.nameEn !== c.name ? c.nameEn : '';
+  document.getElementById('vlSearchWrap').style.display = 'none';
+  document.getElementById('vlCustSelected').classList.add('show');
+  document.getElementById('vlAcList').classList.remove('show');
+}
+function _vlClearCust() {
+  document.getElementById('vlFErp').value = '';
+  document.getElementById('vlFCust').value = '';
+  document.getElementById('vlFAddr').value = '';
+  document.getElementById('vlFSearch').value = '';
+  document.getElementById('vlSearchWrap').style.display = '';
+  document.getElementById('vlCustSelected').classList.remove('show');
+  document.getElementById('vlFSearch').focus();
+}
+function _vlPositionAC() {
+  var inp = document.getElementById('vlFSearch');
+  var dd = document.getElementById('vlAcList');
+  if (!inp || !dd) return;
+  var rect = inp.getBoundingClientRect();
+  dd.style.top = rect.bottom + 'px';
+  dd.style.left = rect.left + 'px';
+  dd.style.width = rect.width + 'px';
+}
+function _vlSetupAC() {
+  var searchIn = document.getElementById('vlFSearch');
+  var dd = document.getElementById('vlAcList');
+  var timer;
+  searchIn.addEventListener('input', function() {
+    clearTimeout(timer);
+    timer = setTimeout(function() {
+      var q = searchIn.value.trim().toLowerCase();
+      if (!q) { dd.classList.remove('show'); return; }
+      var qNoSpace = q.replace(/\s+/g, '');
+      var qIsNum = /^\d+$/.test(q);
+      var matches = _vlCustData.filter(function(c) {
+        var hay = (c.erp + ' ' + c.ntCode + ' ' + c.name + ' ' + c.nameEn).toLowerCase().replace(/\s+/g, '');
+        if (hay.indexOf(qNoSpace) >= 0) return true;
+        if (qIsNum && c.ntCode && c.ntCode.toLowerCase().replace(/^nt/i, '').indexOf(q) >= 0) return true;
+        return false;
+      }).slice(0, 10);
+      if (!matches.length) { dd.classList.remove('show'); return; }
+      dd.innerHTML = matches.map(function(c, i) {
+        var erpStr = c.erp ? '[' + _esc(c.erp) + '] ' : '';
+        var ntTag = c.ntCode ? '<span class="vl-ac-nt">' + _esc(c.ntCode) + '</span>' : '';
+        var subName = c.nameEn && c.nameEn !== c.name ? c.nameEn : '';
+        return '<div class="vl-ac-item" data-i="' + i + '">' +
+          '<div class="vl-ac-main">' +
+            '<div class="vl-ac-name">' + _esc(erpStr) + _esc(c.name) + '  ' + ntTag + '</div>' +
+            (subName ? '<div class="vl-ac-sub">' + _esc(subName) + '</div>' : '') +
+          '</div></div>';
+      }).join('');
+      dd.querySelectorAll('.vl-ac-item').forEach(function(el, i) {
+        el.onclick = function(e) { e.stopPropagation(); _vlSelectCust(matches[i]); };
+      });
+      _vlPositionAC();
+      dd.classList.add('show');
+    }, 150);
+  });
+
+  var modalBody = document.querySelector('.vl-modal-body');
+  if (modalBody) {
+    modalBody.addEventListener('scroll', function() {
+      if (dd.classList.contains('show')) _vlPositionAC();
+    });
+  }
+  document.addEventListener('click', function(e) {
+    if (!e.target.closest('.vl-ac-wrap') && !e.target.closest('.vl-ac-list')) {
+      dd.classList.remove('show');
+    }
+  });
+}
+
+// ══ Photo compress ══
+function _vlCompressImg(file, maxW, cb) {
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var img = new Image();
+    img.onload = function() {
+      var w = img.width, h = img.height;
+      if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+      var c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      cb({ name: file.name, dataUrl: c.toDataURL('image/jpeg', 0.7) });
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function _vlHandlePhotos(input) {
+  var files = Array.from(input.files).slice(0, 3 - _vlPhotos.length);
+  var done = 0;
+  files.forEach(function(f) {
+    _vlCompressImg(f, 800, function(r) {
+      _vlPhotos.push(r); done++;
+      if (done === files.length) _vlRenderPhotos();
+    });
+  });
+  input.value = '';
+}
+function _vlRenderPhotos() {
+  var c = document.getElementById('vlPhotoPrev'); c.innerHTML = '';
+  _vlPhotos.forEach(function(p, i) {
+    var div = document.createElement('div'); div.className = 'vl-photo-item';
+    div.innerHTML = '<img src="'+p.dataUrl+'"><button class="vl-photo-rm" onclick="event.stopPropagation();_vlRemovePhoto('+i+')">x</button>';
+    c.appendChild(div);
+  });
+  document.getElementById('vlBtnPhotoLbl').style.display = _vlPhotos.length >= 3 ? 'none' : '';
+}
+function _vlRemovePhoto(i) { _vlPhotos.splice(i,1); _vlRenderPhotos(); }
+
+// ══ GPS ══
+function _vlCaptureGps() {
+  var st = document.getElementById('vlGpsStatus'); st.textContent = '...';
+  if (!navigator.geolocation) { st.textContent = 'GPS not available'; return; }
+  navigator.geolocation.getCurrentPosition(function(pos) {
+    _vlGps = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    st.textContent = _vlGps.lat.toFixed(5) + ', ' + _vlGps.lng.toFixed(5);
+  }, function(err) { st.textContent = 'Error: ' + err.message; }, { enableHighAccuracy: true, timeout: 10000 });
+}
+
+// ══ Modal ══
+function vlOpenNew() {
+  _vlEditId = null;
+  document.getElementById('vlModalTitle').textContent = _t('vl_new');
+  document.getElementById('vlFDate').value = _todayStr();
+  document.getElementById('vlFErp').value = '';
+  document.getElementById('vlFCust').value = '';
+  document.getElementById('vlFSearch').value = '';
+  document.getElementById('vlSearchWrap').style.display = '';
+  document.getElementById('vlCustSelected').classList.remove('show');
+  document.getElementById('vlFType').value = 'regular';
+  document.getElementById('vlFPurpose').value = '';
+  document.getElementById('vlFResult').value = '';
+  document.getElementById('vlFNext').value = '';
+  document.getElementById('vlFAddr').value = '';
+  _vlPhotos = []; _vlGps = null;
+  _vlRenderPhotos();
+  document.getElementById('vlGpsStatus').textContent = '';
+  document.getElementById('vlAcList').classList.remove('show');
+  document.getElementById('vlModalBg').classList.add('open');
+}
+function vlOpenEdit(id) {
+  var v = _vlVisits.find(function(x){ return x.id === id; });
+  if (!v) return;
+  _vlEditId = id;
+  document.getElementById('vlModalTitle').textContent = _t('vl_edit');
+  document.getElementById('vlFDate').value = v.date || '';
+  document.getElementById('vlFErp').value = v.customer_erp || '';
+  document.getElementById('vlFCust').value = v.customer_name || '';
+  if (v.customer_erp || v.customer_name) {
+    document.getElementById('vlSelErp').textContent = v.customer_erp || '';
+    document.getElementById('vlSelName').textContent = v.customer_name || '';
+    document.getElementById('vlSearchWrap').style.display = 'none';
+    document.getElementById('vlCustSelected').classList.add('show');
+  } else {
+    document.getElementById('vlFSearch').value = '';
+    document.getElementById('vlSearchWrap').style.display = '';
+    document.getElementById('vlCustSelected').classList.remove('show');
+  }
+  document.getElementById('vlFType').value = v.visit_type || 'regular';
+  document.getElementById('vlFPurpose').value = v.purpose || '';
+  document.getElementById('vlFResult').value = v.result || '';
+  document.getElementById('vlFNext').value = v.next_action || '';
+  document.getElementById('vlFAddr').value = v.address || '';
+  _vlPhotos = (v.photos || []).slice();
+  _vlGps = v.location || null;
+  _vlRenderPhotos();
+  document.getElementById('vlGpsStatus').textContent = _vlGps ? (_vlGps.lat.toFixed(5)+', '+_vlGps.lng.toFixed(5)) : '';
+  document.getElementById('vlModalBg').classList.add('open');
+}
+function vlCloseModal() { document.getElementById('vlModalBg').classList.remove('open'); }
+
+// ══ Save ══
+function vlSave() {
+  var user = getCurrentUser();
+  if (!user) { alert('Login required'); return; }
+  var btn = document.getElementById('vlBtnSave'); btn.disabled = true;
+  var data = {
+    empid: user.empid, emp_name: user.name || user.empid,
+    date: document.getElementById('vlFDate').value,
+    customer_erp: document.getElementById('vlFErp').value.trim(),
+    customer_name: document.getElementById('vlFCust').value.trim(),
+    visit_type: document.getElementById('vlFType').value,
+    purpose: document.getElementById('vlFPurpose').value.trim(),
+    result: document.getElementById('vlFResult').value.trim(),
+    next_action: document.getElementById('vlFNext').value.trim(),
+    photos: _vlPhotos, location: _vlGps || null,
+    address: document.getElementById('vlFAddr').value.trim(),
+    updated_at: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  var p;
+  if (_vlEditId) { p = _vlDb.collection('visit_logs').doc(_vlEditId).update(data); }
+  else { data.created_at = firebase.firestore.FieldValue.serverTimestamp(); p = _vlDb.collection('visit_logs').add(data); }
+  p.then(function() { btn.disabled = false; vlCloseModal(); _vlToast(_t('vl_saved')); _vlLoad(); })
+   .catch(function(err) { btn.disabled = false; alert('Error: ' + err.message); });
+}
+
+// ══ Delete ══
+function vlDelete(id) {
+  if (!confirm(_t('vl_confirm_delete'))) return;
+  _vlDb.collection('visit_logs').doc(id).delete().then(function() { _vlToast(_t('vl_deleted')); _vlLoad(); });
+}
+
+// ══ Load visits ══
+function _vlLoad() {
+  var user = getCurrentUser();
+  if (!user) return;
+  var sp = document.getElementById('vlSpinner');
+  var list = document.getElementById('vlList');
+  var nd = document.getElementById('vlNoData');
+  sp.classList.add('show'); list.innerHTML = ''; nd.style.display = 'none';
+
+  var from = document.getElementById('vlDateFrom').value;
+  var to = document.getElementById('vlDateTo').value;
+
+  // empid 필터를 먼저 적용 (인덱스 불필요하게)
+  var q;
+  if (_isAdmin(user)) {
+    q = _vlDb.collection('visit_logs').where('date','>=',from).where('date','<=',to).orderBy('date','desc');
+  } else {
+    q = _vlDb.collection('visit_logs').where('empid','==',user.empid).where('date','>=',from).where('date','<=',to).orderBy('date','desc');
+  }
+
+  q.get().then(function(snap) {
+    sp.classList.remove('show');
+    _vlVisits = [];
+    snap.forEach(function(doc) { var d = doc.data(); d.id = doc.id; _vlVisits.push(d); });
+    // search filter
+    var s = document.getElementById('vlSearch').value.trim().toLowerCase();
+    var filtered = s ? _vlVisits.filter(function(v) {
+      return (v.customer_name||'').toLowerCase().indexOf(s)>=0 || (v.customer_erp||'').toLowerCase().indexOf(s)>=0;
+    }) : _vlVisits;
+    if (!filtered.length) { nd.style.display = 'block'; return; }
+    _vlRender(filtered);
+  }).catch(function(err) {
+    sp.classList.remove('show');
+    console.error('[VisitLog] Query error:', err);
+    // Firestore 인덱스 필요 시 안내
+    if (err.message && err.message.indexOf('index') >= 0) {
+      nd.textContent = 'Firestore index required. Check console.';
+      nd.style.display = 'block';
+    }
+  });
+}
+
+// ══ Render visits ══
+function _vlRender(visits) {
+  var user = getCurrentUser();
+  var isAdm = _isAdmin(user);
+  var list = document.getElementById('vlList'); list.innerHTML = '';
+
+  visits.forEach(function(v) {
+    var canEdit = isAdm || (user && v.empid === user.empid);
+    var card = document.createElement('div'); card.className = 'vl-card';
+    var bCls = 'vl-badge vl-badge-' + (v.visit_type || 'regular');
+
+    var html = '<div class="vl-card-hdr"><span class="vl-date">' + _esc(v.date) + '</span><span class="'+bCls+'">' + _esc(_typeLabel(v.visit_type)) + '</span></div>';
+    if (isAdm) html += '<div class="vl-emp">' + _esc(v.emp_name || v.empid) + '</div>';
+    html += '<div class="vl-cust">' + _esc(v.customer_name||'-') + (v.customer_erp ? ' <span style="color:#6b7280;font-size:12px;">('+_esc(v.customer_erp)+')</span>' : '') + '</div>';
+    html += '<div class="vl-purp">' + _esc(v.purpose||'') + '</div>';
+
+    // detail
+    html += '<div class="vl-detail" id="vld_'+v.id+'">';
+    html += '<div class="vl-dlbl">'+_t('vl_purpose')+'</div><div class="vl-dval">'+_esc(v.purpose||'-')+'</div>';
+    html += '<div class="vl-dlbl">'+_t('vl_result')+'</div><div class="vl-dval">'+_esc(v.result||'-')+'</div>';
+    html += '<div class="vl-dlbl">'+_t('vl_next')+'</div><div class="vl-dval">'+_esc(v.next_action||'-')+'</div>';
+    if (v.address) html += '<div class="vl-dlbl">'+_t('vl_address')+'</div><div class="vl-dval">'+_esc(v.address)+'</div>';
+    if (v.location && v.location.lat) html += '<div class="vl-dlbl">'+_t('vl_location')+'</div><div class="vl-dval">'+v.location.lat.toFixed(5)+', '+v.location.lng.toFixed(5)+'</div>';
+    if (v.photos && v.photos.length) {
+      html += '<div class="vl-dlbl">'+_t('vl_photo')+'</div><div class="vl-dphoto">';
+      v.photos.forEach(function(p) { html += '<img src="'+p.dataUrl+'" onclick="event.stopPropagation();_vlViewPhoto(this.src)">'; });
+      html += '</div>';
+    }
+    if (canEdit) {
+      html += '<div class="vl-dact">' +
+        '<button class="vl-btn-edit" onclick="event.stopPropagation();vlOpenEdit(\''+v.id+'\')">'+_t('vl_edit')+'</button>' +
+        '<button class="vl-btn-del" onclick="event.stopPropagation();vlDelete(\''+v.id+'\')">'+_t('vl_delete')+'</button></div>';
+    }
+    html += '</div>';
+    card.innerHTML = html;
+    card.onclick = function() { document.getElementById('vld_'+v.id).classList.toggle('open'); };
+    list.appendChild(card);
+  });
+}
+
+function _vlViewPhoto(src) {
+  document.getElementById('vlViewerImg').src = src;
+  document.getElementById('vlViewer').classList.add('open');
+}
+
+// ══ Apply i18n ══
+function _vlApplyI18n() {
+  document.getElementById('vlBtnNew').textContent = '+ ' + _t('vl_new');
+  document.getElementById('vlSearch').placeholder = _t('vl_search');
+  document.getElementById('vlNoData').textContent = _t('vl_no_data');
+  document.getElementById('vlLblDate').textContent = _t('vl_date');
+  document.getElementById('vlLblErp').textContent = _t('vl_erp');
+  document.getElementById('vlLblCust').textContent = _t('vl_customer');
+  document.getElementById('vlLblType').textContent = _t('vl_type');
+  document.getElementById('vlLblPurpose').textContent = _t('vl_purpose');
+  document.getElementById('vlLblResult').textContent = _t('vl_result');
+  document.getElementById('vlLblNext').textContent = _t('vl_next');
+  document.getElementById('vlLblPhoto').textContent = _t('vl_photo');
+  document.getElementById('vlLblLoc').textContent = _t('vl_location');
+  document.getElementById('vlLblAddr').textContent = _t('vl_address');
+  document.getElementById('vlBtnGps').textContent = _t('vl_gps');
+  var sel = document.getElementById('vlFType');
+  sel.options[0].textContent = _t('vl_type_regular');
+  sel.options[1].textContent = _t('vl_type_new');
+  sel.options[2].textContent = _t('vl_type_follow');
+  sel.options[3].textContent = _t('vl_type_complaint');
+  sel.options[4].textContent = _t('vl_type_demo');
+  document.querySelector('.vl-btn-cancel').textContent = _t('vl_cancel');
+  document.getElementById('vlBtnSave').textContent = _t('vl_save');
+  document.querySelector('#vlBtnPhotoLbl span').textContent = _t('vl_photo_add') || _t('vl_photo');
+}
+
+// ══ Init ══
+(function() {
+  // 공용 헤더 렌더 (좌측 ◀ + 중앙 타이틀 + 우측 창 컨트롤)
+  var _vlHdr = renderPageTopBar({
+    titleHtml: '📝 <span data-i18n="vl_title">방문 일지</span>',
+    titleId: 'vlTitle', showBack: false, theme: 'gradient',
+    background: 'linear-gradient(135deg,#2563eb,#1d4ed8)',
+    extraClass: 'vl-header' // _vlMin/_vlRestore의 querySelector('.vl-header') 호환
+  });
+  _vlHdr.leftSlot.insertAdjacentHTML('afterbegin',
+    '<button class="vl-hdr-btn" onclick="history.back()">&#9664;</button>');
+  _vlHdr.rightSlot.innerHTML =
+    '<button class="vl-win-btn" onclick="_vlMin()" title="최소화">&#x2015;</button>' +
+    '<button class="vl-win-btn" onclick="_vlFs()" title="전체화면">&#x25A1;</button>' +
+    '<button class="vl-win-btn" onclick="history.back()" title="닫기">&#x2715;</button>';
+  // 타이틀 중앙 정렬 유지 (absolute 배치)
+  var _vlT = _vlHdr.host.querySelector('.pt-title');
+  if (_vlT) { _vlT.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none;margin:0;'; }
+  _vlApplyI18n();
+  document.getElementById('vlDateFrom').value = _daysAgo(30);
+  document.getElementById('vlDateTo').value = _todayStr();
+  document.getElementById('vlDateFrom').addEventListener('change', _vlLoad);
+  document.getElementById('vlDateTo').addEventListener('change', _vlLoad);
+  var timer;
+  document.getElementById('vlSearch').addEventListener('input', function() {
+    clearTimeout(timer); timer = setTimeout(_vlLoad, 400);
+  });
+  _vlLoadCustomers();
+  _vlSetupAC();
+  _vlLoad();
+})();
+</script>
+</body>
+</html>

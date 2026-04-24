@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AR Aging — Neo Sales App</title>
+<link rel="stylesheet" href="style.min.css?v=198">
+<!-- Preconnect 힌트 (CDN/Firestore 연결 조기 수립) -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="page-header.js?v=2"></script>
+<script src="firebase-init.js?v=1"></script>
+<script>
+// Firebase init (shared via firebase-init.js)
+var _arDb = firebase.firestore();
+function getCurrentUser() {
+  var u = JSON.parse(sessionStorage.getItem('current_user') || 'null');
+  if (u) return u;
+  if (localStorage.getItem('auto_login') === 'true') {
+    return JSON.parse(localStorage.getItem('current_user_persist') || 'null');
+  }
+  return null;
+}
+// ── 내장 i18n (ar.html 자체. 앱 언어(localStorage.appLang)를 사용) ──
+var _arI18n = {
+  ko: {
+    search_ph:'고객명/인보이스 검색...', all_sales:'전체 담당',
+    aging_all:'전체', aging_current:'미도래', aging_30:'30일 이하', aging_90:'90일 이하', aging_180:'180일 이하', aging_365:'1년 미만', aging_over365:'1년 이상',
+    sort_overdue_desc:'연체일 ↓', sort_overdue_asc:'연체일 ↑', sort_balance_desc:'잔액 ↓', sort_balance_asc:'잔액 ↑', sort_date_desc:'날짜 ↓', sort_date_asc:'날짜 ↑',
+    total:'총', items:'건',
+    col_sales:'담당', col_nt:'NT코드', col_name:'고객명', col_count:'건', col_total_ar:'총 미수금', col_not_due:'미도래', col_overdue:'도래/경과',
+    card_customers:'거래처', card_total_ar:'총 미수금', card_not_due:'미도래', card_overdue_amt:'연체 금액',
+    total_ar_en:'Total AR', not_yet_due_en:'Not yet due', of_total:'% of total',
+    detail_date:'일자', detail_invoice:'인보이스', detail_amount:'금액 (฿)', detail_due:'만기일', detail_elapsed:'경과',
+    no_data:'아직 업로드된 AR 데이터가 없습니다.', no_data_sub:'관리자가 AR Aging 파일을 업로드하면 여기에 표시됩니다.',
+    no_results:'검색 결과 없음', login_req:'로그인이 필요합니다.', back_to_app:'앱으로 돌아가기',
+    last_update:'마지막 업데이트: ', minimize:'최소화', fullscreen:'전체화면', restore:'복원', close:'닫기'
+  },
+  en: {
+    search_ph:'Search customer/invoice...', all_sales:'All Sales',
+    aging_all:'All', aging_current:'Not Due', aging_30:'≤ 30 days', aging_90:'≤ 90 days', aging_180:'≤ 180 days', aging_365:'< 1 year', aging_over365:'≥ 1 year',
+    sort_overdue_desc:'Overdue ↓', sort_overdue_asc:'Overdue ↑', sort_balance_desc:'Balance ↓', sort_balance_asc:'Balance ↑', sort_date_desc:'Date ↓', sort_date_asc:'Date ↑',
+    total:'Total', items:'items',
+    col_sales:'Sales', col_nt:'NT Code', col_name:'Customer', col_count:'Count', col_total_ar:'Total AR', col_not_due:'Not Due', col_overdue:'Due/Overdue',
+    card_customers:'Customers', card_total_ar:'Total AR', card_not_due:'Not Due', card_overdue_amt:'Overdue Amount',
+    total_ar_en:'Total AR', not_yet_due_en:'Not yet due', of_total:'% of total',
+    detail_date:'Date', detail_invoice:'Invoice', detail_amount:'Amount (฿)', detail_due:'Due Date', detail_elapsed:'Elapsed',
+    no_data:'No AR data uploaded yet.', no_data_sub:'Data will appear here once admin uploads an AR Aging file.',
+    no_results:'No results', login_req:'Login required.', back_to_app:'Back to app',
+    last_update:'Last update: ', minimize:'Minimize', fullscreen:'Fullscreen', restore:'Restore', close:'Close'
+  },
+  th: {
+    search_ph:'ค้นหาลูกค้า/ใบแจ้งหนี้...', all_sales:'เซลล์ทั้งหมด',
+    aging_all:'ทั้งหมด', aging_current:'ยังไม่ครบกำหนด', aging_30:'≤ 30 วัน', aging_90:'≤ 90 วัน', aging_180:'≤ 180 วัน', aging_365:'< 1 ปี', aging_over365:'≥ 1 ปี',
+    sort_overdue_desc:'ค้างชำระ ↓', sort_overdue_asc:'ค้างชำระ ↑', sort_balance_desc:'ยอดคงเหลือ ↓', sort_balance_asc:'ยอดคงเหลือ ↑', sort_date_desc:'วันที่ ↓', sort_date_asc:'วันที่ ↑',
+    total:'รวม', items:'รายการ',
+    col_sales:'เซลล์', col_nt:'รหัส NT', col_name:'ชื่อลูกค้า', col_count:'จำนวน', col_total_ar:'ยอดค้างทั้งหมด', col_not_due:'ยังไม่ครบ', col_overdue:'ครบกำหนด/เลย',
+    card_customers:'ลูกค้า', card_total_ar:'ยอดค้างทั้งหมด', card_not_due:'ยังไม่ครบ', card_overdue_amt:'ยอดเกินกำหนด',
+    total_ar_en:'ยอดค้างทั้งหมด', not_yet_due_en:'ยังไม่ครบกำหนด', of_total:'% ของทั้งหมด',
+    detail_date:'วันที่', detail_invoice:'ใบแจ้งหนี้', detail_amount:'จำนวนเงิน (฿)', detail_due:'วันครบกำหนด', detail_elapsed:'ผ่านไปแล้ว',
+    no_data:'ยังไม่มีข้อมูล AR ที่อัปโหลด', no_data_sub:'ข้อมูลจะแสดงที่นี่เมื่อผู้ดูแลอัปโหลดไฟล์ AR Aging',
+    no_results:'ไม่พบผลลัพธ์', login_req:'จำเป็นต้องเข้าสู่ระบบ', back_to_app:'กลับสู่แอป',
+    last_update:'อัปเดตล่าสุด: ', minimize:'ย่อ', fullscreen:'เต็มจอ', restore:'คืนค่า', close:'ปิด'
+  }
+};
+function _arT(k) {
+  var L = localStorage.getItem('appLang') || 'ko';
+  return (_arI18n[L] && _arI18n[L][k]) || _arI18n.ko[k] || k;
+}
+</script>
+<style>
+*{box-sizing:border-box;}
+body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;width:100%;height:100vh;height:100dvh;overflow:hidden;}
+.ar-main{position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;overflow:hidden;background:#f1f5f9;}
+.ar-main.minimized{display:none;}
+.ar-mini-bar{display:none;position:fixed;bottom:24px;right:24px;background:#1e40af;color:#fff;border-radius:14px;padding:10px 18px;box-shadow:0 4px 20px rgba(0,0,0,.25);cursor:pointer;z-index:9500;align-items:center;gap:8px;font-size:13px;font-weight:600;transition:transform .15s ease,box-shadow .15s ease;white-space:nowrap;}
+.ar-mini-bar:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.35);}
+.ar-mini-bar.show{display:flex;}
+/* 상단 헤더 바는 page-header.js가 렌더링 */
+.ar-ctrl-group{display:flex;align-items:center;gap:6px;margin-left:8px;}
+.ar-ctrl-btn{background:rgba(255,255,255,.15);border:none;cursor:pointer;color:#fff;padding:6px 10px;border-radius:6px;line-height:1;transition:background .15s;font-size:16px;}
+.ar-ctrl-btn:hover{background:rgba(255,255,255,.3);}
+.ar-fixed-section{flex-shrink:0;background:#f1f5f9;border-bottom:1px solid #e5e7eb;}
+.ar-filter-legend-row{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;gap:8px;flex-wrap:wrap;}
+.ar-filter-left{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.ar-filter-left select,.ar-filter-left input{padding:5px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:12px;}
+.ar-aging-legend{display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.ar-legend-item{display:flex;align-items:center;gap:4px;font-size:13px;font-weight:600;color:#475569;}
+.ar-legend-dot{width:12px;height:12px;border-radius:3px;}
+.ar-col-hdr{display:grid;grid-template-columns:60px 80px 60px minmax(100px,1fr) 34px 105px 105px 105px;gap:5px;padding:6px 16px;background:#e2e8f0;font-size:11px;font-weight:700;color:#475569;}
+.ar-body{flex:1;overflow:auto;padding:0 16px 12px 16px;}
+.ar-footer{background:#fff;border-top:1px solid #e5e7eb;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.ar-footer-left{font-size:12px;color:#6b7280;}
+.ar-footer-btn{padding:7px 16px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;}
+.ar-upload-status{font-size:13px;color:#059669;font-weight:600;}
+
+/* Summary cards */
+.ar-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;}
+.ar-card{background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+.ar-card-label{font-size:12px;color:#6b7280;font-weight:600;text-transform:uppercase;margin-bottom:4px;}
+.ar-card-value{font-size:22px;font-weight:800;color:#1e293b;}
+.ar-card-sub{font-size:11px;color:#9ca3af;margin-top:2px;}
+
+/* (aging bar removed) */
+
+/* Table */
+.ar-tbl{width:100%;border-collapse:collapse;font-size:13px;}
+.ar-tbl thead{background:#f8fafc;position:sticky;top:0;}
+.ar-tbl th{padding:10px 8px;text-align:left;font-weight:700;color:#475569;border-bottom:2px solid #e5e7eb;white-space:nowrap;cursor:pointer;user-select:none;}
+.ar-tbl th:hover{background:#e2e8f0;}
+.ar-tbl td{padding:8px;border-bottom:1px solid #f3f4f6;vertical-align:top;}
+.ar-tbl tr:hover{background:#f0f9ff;}
+.ar-tbl .num{text-align:right;font-variant-numeric:tabular-nums;}
+.ar-overdue-badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;}
+.ar-od-current{background:#dcfce7;color:#16a34a;}
+.ar-od-30{background:#fef3c7;color:#d97706;}
+.ar-od-60{background:#fed7aa;color:#ea580c;}
+.ar-od-90{background:#fecaca;color:#dc2626;}
+.ar-od-180{background:#fca5a5;color:#b91c1c;}
+.ar-od-365{background:#ef4444;color:#fff;}
+.ar-od-over{background:#991b1b;color:#fff;}
+.ar-tbl-scroll{overflow-x:auto;}
+.ar-no-data{text-align:center;padding:60px 20px;color:#9ca3af;font-size:15px;}
+
+/* Per-customer group */
+.ar-cust-group{border:1px solid #e2e8f0;border-radius:10px;margin-bottom:6px;overflow:hidden;}
+.ar-cust-hdr{padding:10px 12px;background:#f8fafc;display:grid;grid-template-columns:60px 80px 60px minmax(100px,1fr) 34px 105px 105px 105px;align-items:center;gap:5px;cursor:pointer;font-size:13px;color:#1e293b;min-height:42px;}
+.ar-cust-hdr:hover{background:#f0f4f8;}
+.ar-cust-detail{display:none;}
+.ar-cust-group.open .ar-cust-detail{display:block;}
+@media(max-width:700px){.ar-cust-hdr{grid-template-columns:44px 64px 50px minmax(60px,1fr) 28px 80px 80px 80px;font-size:10px;gap:3px;padding:5px 6px;}}
+
+/* Date badge */
+.ar-date-badge{background:#f1f5f9;color:#475569;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:600;display:inline-block;}
+.ar-update-info{text-align:center;font-size:11px;color:#9ca3af;margin-top:12px;}
+
+@media(max-width:700px){
+  .ar-summary{grid-template-columns:1fr 1fr;}
+  .ar-card-value{font-size:18px;}
+  .ar-filter{width:100%;}
+  .ar-filter select,.ar-filter input{flex:1;}
+}
+</style>
+</head>
+<body>
+
+<!-- Minimize bar -->
+<div class="ar-mini-bar" id="arMiniBar" onclick="_arRestore()">
+  <span style="font-size:18px;">💰</span>
+  <span>미수금 현황 (AR Aging)</span>
+</div>
+
+<!-- Main container -->
+<div id="arMain" class="ar-main">
+
+<!-- Header (page-header.js가 렌더링) -->
+<div id="pageTopBar"></div>
+
+<!-- Fixed section: dashboard + filter/legend + column header -->
+<div id="arFixedSection" class="ar-fixed-section" style="display:none;">
+  <!-- Summary cards -->
+  <div class="ar-summary" id="arSummaryCards" style="padding:12px 16px 0 16px;"></div>
+
+  <!-- Filter bar + Legend (same row) -->
+  <div class="ar-filter-legend-row">
+    <div class="ar-filter-left">
+      <input type="text" id="arSearchInput" data-ar-i18n-ph="search_ph" placeholder="고객명/인보이스 검색..." oninput="_arRenderTable()" style="width:160px;">
+      <select id="arSalesFilter" onchange="_arApplySalesFilter()" style="min-width:90px;">
+        <option value="" data-ar-i18n="all_sales">전체 담당</option>
+      </select>
+      <select id="arAgingFilter" onchange="_arRenderTable()">
+        <option value="all" data-ar-i18n="aging_all">전체</option>
+        <option value="current" data-ar-i18n="aging_current">미도래</option>
+        <option value="1-30" data-ar-i18n="aging_30">30일 이하</option>
+        <option value="31-90" data-ar-i18n="aging_90">90일 이하</option>
+        <option value="91-180" data-ar-i18n="aging_180">180일 이하</option>
+        <option value="181-365" data-ar-i18n="aging_365">1년 미만</option>
+        <option value="over365" data-ar-i18n="aging_over365">1년 이상</option>
+      </select>
+      <select id="arSortField" onchange="_arRenderTable()">
+        <option value="overdue_desc" data-ar-i18n="sort_overdue_desc">연체일 ↓</option>
+        <option value="overdue_asc" data-ar-i18n="sort_overdue_asc">연체일 ↑</option>
+        <option value="balance_desc" data-ar-i18n="sort_balance_desc">잔액 ↓</option>
+        <option value="balance_asc" data-ar-i18n="sort_balance_asc">잔액 ↑</option>
+        <option value="date_desc" data-ar-i18n="sort_date_desc">날짜 ↓</option>
+        <option value="date_asc" data-ar-i18n="sort_date_asc">날짜 ↑</option>
+      </select>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <span style="font-size:12px;color:#6b7280;" data-ar-i18n="total">총</span>
+        <span id="arTotalCount" style="font-size:13px;font-weight:700;color:#2563eb;">0</span>
+        <span style="font-size:12px;color:#6b7280;" data-ar-i18n="items">건</span>
+      </div>
+      <div id="arUploadStatus"></div>
+    </div>
+    <div id="arAgingLegend" class="ar-aging-legend"></div>
+  </div>
+
+  <!-- Column header (sticky) -->
+  <div class="ar-col-hdr" id="arColHdr">
+    <span data-ar-i18n="col_sales">담당</span><span data-ar-i18n="col_nt">NT코드</span><span>ERP</span><span data-ar-i18n="col_name">고객명</span><span style="text-align:center;" data-ar-i18n="col_count">건</span><span style="text-align:right;" data-ar-i18n="col_total_ar">총 미수금</span><span style="text-align:right;" data-ar-i18n="col_not_due">미도래</span><span style="text-align:right;" data-ar-i18n="col_overdue">도래/경과</span>
+  </div>
+</div>
+
+<!-- Body (scrollable — only customer rows) -->
+<div class="ar-body" id="arBody">
+  <div id="arTableBody"></div>
+
+  <!-- No data -->
+  <div id="arNoData" class="ar-no-data" style="display:none;">
+    <div style="font-size:48px;margin-bottom:12px;">📊</div>
+    <div data-ar-i18n="no_data">아직 업로드된 AR 데이터가 없습니다.</div>
+    <div style="font-size:13px;margin-top:6px;" data-ar-i18n="no_data_sub">관리자가 AR Aging 파일을 업로드하면 여기에 표시됩니다.</div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="ar-footer">
+  <div class="ar-footer-left">
+    <span id="arFooterInfo"></span>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <button class="ar-footer-btn" onclick="_arLoadFromFirestore()" style="background:#16a34a;color:#fff;">🔄 Refresh</button>
+    <button class="ar-footer-btn" id="arBtnUpload" onclick="document.getElementById('arFileInput').click();" style="display:none;background:#f59e0b;color:#fff;">📤 Upload</button>
+    <input type="file" accept=".xlsx,.xls,.csv" id="arFileInput" style="display:none;" onchange="_arHandleFile(this)">
+    <button class="ar-footer-btn" onclick="_arExportExcel()" style="background:#2563eb;color:#fff;">📥 Excel</button>
+    <button class="ar-footer-btn" onclick="location.href='index.html'" style="background:#6b7280;color:#fff;">Close</button>
+  </div>
+</div>
+
+</div><!-- /arMain -->
+
+<script>
+// ── i18n 정적 HTML 적용 ──
+function _arApplyStaticI18n() {
+  // data-ar-i18n: textContent 교체
+  document.querySelectorAll('[data-ar-i18n]').forEach(function(el) {
+    var k = el.getAttribute('data-ar-i18n');
+    if (k) el.textContent = _arT(k);
+  });
+  // data-ar-i18n-ph: placeholder 교체
+  document.querySelectorAll('[data-ar-i18n-ph]').forEach(function(el) {
+    var k = el.getAttribute('data-ar-i18n-ph');
+    if (k) el.placeholder = _arT(k);
+  });
+}
+// ── Window controls ──
+function _arMinimize() {
+  document.getElementById('arMain').classList.add('minimized');
+  document.getElementById('arMiniBar').classList.add('show');
+}
+function _arRestore() {
+  document.getElementById('arMiniBar').classList.remove('show');
+  document.getElementById('arMain').classList.remove('minimized');
+}
+var _arIsFS = true; // starts fullscreen
+function _arToggleFS() {
+  var main = document.getElementById('arMain');
+  var btn = document.getElementById('arFsBtn');
+  _arIsFS = !_arIsFS;
+  if (_arIsFS) {
+    // fullscreen: position:fixed inset:0
+    main.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;overflow:hidden;background:#f1f5f9;border-radius:0;';
+    btn.innerHTML = '&#x26F6;';
+    btn.title = _arT('fullscreen');
+  } else {
+    // windowed: 90vh centered
+    main.style.cssText = 'position:fixed;top:5vh;left:5vw;width:90vw;height:90vh;display:flex;flex-direction:column;overflow:hidden;background:#f1f5f9;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.3);';
+    btn.innerHTML = '&#x2750;';
+    btn.title = _arT('restore');
+  }
+}
+
+var _arData = []; // parsed AR rows for current user
+var _arAllData = []; // all parsed rows (admin)
+var _arIsAdmin = false;
+var _arCurrentUser = null;
+var _arCustMaster = {}; // ERP → {name, erp, sales, hospital}
+
+var HARDCODED_ADMINS = ['T2408087'];
+function _isAdmin(u) {
+  if (!u) return false;
+  return HARDCODED_ADMINS.includes(u.empid) || u.role === 'admin';
+}
+
+// ── Init ──
+window.addEventListener('DOMContentLoaded', function() {
+  // 공용 헤더 렌더 (좌측 타이틀 + 우측 상태 텍스트 + 창 컨트롤)
+  var _arHdr = renderPageTopBar({
+    titleHtml: '💰 <span id="arTitle">미수금 현황 (AR Aging)</span>',
+    showBack: false, theme: 'gradient',
+    background: 'linear-gradient(135deg,#1e40af 0%,#2563eb 100%)',
+    extraClass: 'ar-top-bar'
+  });
+  _arHdr.rightSlot.innerHTML =
+    '<span id="arUpdateInfo" style="font-size:11px;color:rgba(255,255,255,.7);"></span>' +
+    '<div class="ar-ctrl-group">' +
+      '<button class="ar-ctrl-btn" onclick="_arMinimize()" title="' + _arT('minimize') + '">&#x2015;</button>' +
+      '<button class="ar-ctrl-btn" id="arFsBtn" onclick="_arToggleFS()" title="' + _arT('fullscreen') + '">&#x26F6;</button>' +
+      '<button class="ar-ctrl-btn" onclick="location.href=\'index.html\'" title="' + _arT('close') + '">&#x2715;</button>' +
+    '</div>';
+  // 정적 HTML 국제화 적용 (필터 옵션, 컬럼 헤더, 빈 상태 등)
+  _arApplyStaticI18n();
+
+  // Firebase Auth 상태가 persistence(IndexedDB)에서 복원될 때까지 대기.
+  // 복원 전에 Firestore read 가 날아가면 "Missing or insufficient permissions" 로 실패한다.
+  function _arWaitForFbAuth(timeoutMs) {
+    return new Promise(function(resolve) {
+      try {
+        if (firebase.auth && firebase.auth().currentUser) { resolve(firebase.auth().currentUser); return; }
+        var done = false;
+        var unsub = firebase.auth().onAuthStateChanged(function(u) {
+          if (done) return;
+          done = true;
+          try { unsub(); } catch(e){}
+          resolve(u || null);
+        });
+        setTimeout(function() {
+          if (done) return;
+          done = true;
+          try { unsub(); } catch(e){}
+          resolve(firebase.auth().currentUser || null);
+        }, timeoutMs || 6000);
+      } catch(e) { resolve(null); }
+    });
+  }
+
+  var attempts = 0;
+  var checkUser = setInterval(function() {
+    attempts++;
+    var user = null;
+    try {
+      // sessionStorage (same tab)
+      user = JSON.parse(sessionStorage.getItem('current_user') || 'null');
+      // localStorage fallback (auto login)
+      if (!user && localStorage.getItem('auto_login') === 'true') {
+        user = JSON.parse(localStorage.getItem('current_user_persist') || 'null');
+      }
+      // core.js fallback
+      if (!user && typeof getCurrentUser === 'function') {
+        user = getCurrentUser();
+      }
+    } catch(e) { console.warn('[AR] user parse error:', e); }
+
+    if (!user && attempts < 20) return; // wait up to 6 seconds
+    clearInterval(checkUser);
+
+    if (!user) {
+      // No user → show no data with login prompt
+      document.getElementById('arNoData').style.display = '';
+      document.getElementById('arNoData').innerHTML = '<div style="font-size:48px;margin-bottom:12px;">🔒</div><div>' + _arT('login_req') + '</div><div style="margin-top:12px;"><a href="index.html" style="color:#2563eb;font-weight:600;">' + _arT('back_to_app') + '</a></div>';
+      return;
+    }
+
+    _arCurrentUser = user;
+    _arIsAdmin = _isAdmin(user);
+    console.log('[AR] User:', user.empid, 'Admin:', _arIsAdmin);
+
+    if (_arIsAdmin) {
+      document.getElementById('arBtnUpload').style.display = '';
+    }
+    // Firebase Auth 복원 대기 후 Firestore 접근
+    _arWaitForFbAuth(6000).then(function(fbUser) {
+      if (!fbUser) {
+        console.warn('[AR] Firebase Auth 복원 실패 — 재로그인 필요');
+        document.getElementById('arNoData').style.display = '';
+        document.getElementById('arNoData').innerHTML = '<div style="font-size:48px;margin-bottom:12px;">🔒</div><div>' + _arT('login_req') + '</div><div style="margin-top:12px;"><a href="index.html" style="color:#2563eb;font-weight:600;">' + _arT('back_to_app') + '</a></div>';
+        return;
+      }
+      console.log('[AR] Firebase Auth ready:', fbUser.email);
+      // Admin: load customer master (for upload enrichment), then AR data
+      // Non-admin: AR data already has enriched fields, skip master load
+      if (_arIsAdmin) {
+        _arLoadCustMaster().then(function() { _arLoadFromFirestore(); });
+      } else {
+        _arLoadFromFirestore();
+      }
+    });
+  }, 300);
+
+});
+
+// ── File handling ──
+function _arHandleFile(input) {
+  if (input.files && input.files[0]) _arProcessFile(input.files[0]);
+}
+
+function _arProcessFile(file) {
+  var status = document.getElementById('arUploadStatus');
+  status.textContent = '파싱 중...';
+
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      // Find the right sheet (31.03.26 pattern or first)
+      var sheetName = wb.SheetNames.find(function(n) { return /^\d{2}\.\d{2}\.\d{2}$/.test(n); }) || wb.SheetNames[0];
+      var ws = wb.Sheets[sheetName];
+      var raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+
+      if (raw.length < 2) { status.textContent = '데이터가 부족합니다.'; return; }
+
+      // Detect header row
+      var hdrIdx = 0;
+      for (var hi = 0; hi < Math.min(5, raw.length); hi++) {
+        var hRow = raw[hi];
+        if (!hRow) continue;
+        var joined = hRow.map(function(c){return (c||'').toString().toLowerCase();}).join('|');
+        if (joined.indexOf('invoice') >= 0 || joined.indexOf('balance') >= 0 || joined.indexOf('customer') >= 0) {
+          hdrIdx = hi; break;
+        }
+      }
+
+      // Detect layout: check if column D(3) of first data row is numeric (=ERP) → 16-col layout
+      // or text (=custName) → 14-col layout
+      var firstDataRow = raw[hdrIdx + 1] || [];
+      var col3val = (firstDataRow[3] || '').toString().trim();
+      var is16col = /^\d+$/.test(col3val); // D column is pure number → ERP code → 16-col
+
+      console.log('[AR] Header row:', hdrIdx, 'D-col sample:', col3val, 'Layout:', is16col ? '16-col' : '14-col');
+
+      var rows = [];
+      for (var i = hdrIdx + 1; i < raw.length; i++) {
+        var r = raw[i];
+        if (!r || !r[1]) continue;
+
+        var saleNew, balance, custId, custErp, custName, clinic, dueDate, overdueDays, remark;
+
+        if (is16col) {
+          // 16-column layout: A:Date B:Invoice C:CustID D:CustERP E:CustName F:Clinic
+          // G:Type H:InvInclVat I:Balance J:BalAtDue K:Sale L:SaleNew
+          // M:CreditDays N:DueDate O:Overdue P:Remark
+          custId = (r[2] || '').toString().trim();
+          custErp = (r[3] || '').toString().trim();
+          custName = (r[4] || '').toString().trim();
+          clinic = (r[5] || '').toString().trim();
+          balance = _arNum(r[8]);       // I열 = Balance
+          saleNew = (r[11] || '').toString().trim().toUpperCase();  // L열 = Sale New
+          dueDate = _arFmtDate(r[13]);  // N열 = Due Date
+          overdueDays = parseInt(_arNum(r[14])) || 0;  // O열 = Overdue
+          remark = (r[15] || '').toString().trim();     // P열 = Remark
+        } else {
+          // 14-column layout: A:Date B:Invoice C:CustID D:CustName E:Clinic
+          // F:Type G:InvAmt H:Balance I:BalAtDue J:SaleNew
+          // K:CreditMonth L:DueDate M:Overdue N:Remark
+          custId = (r[2] || '').toString().trim();
+          custErp = '';
+          custName = (r[3] || '').toString().trim();
+          clinic = (r[4] || '').toString().trim();
+          balance = _arNum(r[8]);       // I열 = Balance At Due
+          saleNew = (r[9] || '').toString().trim().toUpperCase();   // J열 = Sale New
+          dueDate = _arFmtDate(r[11]);  // L열 = Due Date
+          overdueDays = parseInt(_arNum(r[12])) || 0;  // M열 = Overdue
+          remark = (r[13] || '').toString().trim();     // N열 = Remark
+        }
+
+        if (!saleNew) continue;
+
+        rows.push({
+          date: _arFmtDate(r[0]),
+          invoice: (r[1] || '').toString().trim(),
+          custId: custId,
+          custErp: custErp,
+          custName: custName,
+          clinic: clinic,
+          balance: balance,
+          saleNew: saleNew,
+          dueDate: dueDate,
+          overdueDays: overdueDays,
+          remark: remark
+        });
+      }
+
+      status.textContent = sheetName + ' 시트에서 ' + rows.length + '건 파싱 완료. Firestore 저장 중...';
+      _arSaveToFirestore(rows, sheetName, status);
+    } catch(err) {
+      status.textContent = '파싱 오류: ' + err.message;
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function _arNum(v) {
+  if (typeof v === 'number') return v;
+  if (!v) return 0;
+  return parseFloat(String(v).replace(/,/g, '')) || 0;
+}
+
+function _arFmtDate(v) {
+  if (!v) return '';
+  if (v instanceof Date) {
+    return v.getFullYear() + '-' + String(v.getMonth()+1).padStart(2,'0') + '-' + String(v.getDate()).padStart(2,'0');
+  }
+  var s = v.toString();
+  // Handle "2024-01-15 00:00:00" or "2024-01-15"
+  var m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return m[1] + '-' + m[2].padStart(2,'0') + '-' + m[3].padStart(2,'0');
+  return s;
+}
+
+// ── 증분 해시: 영업사원 문서가 실제로 바뀌었는지 판정 ──
+// invoices 배열을 invoice 번호 기준으로 정렬 후 핵심 필드만 JSON 화해 비교
+function _arDocHash(invoices) {
+  if (!Array.isArray(invoices) || !invoices.length) return 'e0';
+  var sorted = invoices.slice().sort(function(a, b) {
+    return String(a.invoice || '').localeCompare(String(b.invoice || ''));
+  });
+  var sig = sorted.map(function(r) {
+    return [r.invoice||'', r.date||'', r.custId||'', r.custErp||'', r.balance||0,
+            r.dueDate||'', r.overdueDays||0, (r.remark||'').trim()].join('|');
+  }).join('\n');
+  // 간단 해시 (djb2)
+  var h = 5381;
+  for (var i = 0; i < sig.length; i++) h = ((h << 5) + h + sig.charCodeAt(i)) | 0;
+  return invoices.length + '_' + (h >>> 0).toString(36);
+}
+
+// ── Firestore save — 증분 업로드: 바뀐 영업사원만 write, 사라진 영업은 tombstone ──
+async function _arSaveToFirestore(rows, sheetName, statusEl) {
+  try {
+    // Enrich: customer master 정보를 각 인보이스에 직접 저장 (로드 시 재조회 불필요)
+    rows.forEach(function(r) {
+      var master = _arLookupCust(r.custId, r.custErp);
+      if (master.name) r.custName = master.name;
+      if (master.hospital) r.clinic = master.hospital;
+      r.salesName = master.sales || r.saleNew || '';
+    });
+
+    // Group by saleNew
+    var grouped = {};
+    rows.forEach(function(r) {
+      if (!grouped[r.saleNew]) grouped[r.saleNew] = [];
+      grouped[r.saleNew].push(r);
+    });
+
+    // ── 0) 기존 ar_master 전체 로드 (변경분 판정용) ──
+    var existingSnap = await _arDb.collection('ar_master').get();
+    var existing = {};
+    existingSnap.forEach(function(doc) {
+      existing[doc.id] = { data: doc.data(), hash: doc.data().docHash || '' };
+    });
+
+    var FV = firebase.firestore.FieldValue;
+    var salesKeys = Object.keys(grouped);
+    var wroteCount = 0, skippedCount = 0, deletedCount = 0;
+
+    // ── 1) 바뀐 영업사원 문서만 set ──
+    for (var i = 0; i < salesKeys.length; i++) {
+      var key = salesKeys[i];
+      var invoices = grouped[key];
+      var totalBal = invoices.reduce(function(s, r) { return s + r.balance; }, 0);
+      var newHash = _arDocHash(invoices);
+      var prev = existing[key];
+      if (prev && prev.hash === newHash) {
+        skippedCount++;
+        continue;
+      }
+      await _arDb.collection('ar_master').doc(key).set({
+        saleNew: key,
+        invoices: invoices,
+        totalBalance: totalBal,
+        count: invoices.length,
+        sheetName: sheetName,
+        docHash: newHash,
+        uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updated_at: firebase.firestore.FieldValue.serverTimestamp(),
+        uploadedBy: _arCurrentUser.empid
+      });
+      wroteCount++;
+    }
+
+    // ── 2) 삭제된 영업사원 (기존엔 있고 새 업로드엔 없음) → delete + tombstone ──
+    var removedKeys = Object.keys(existing).filter(function(k) { return !grouped[k]; });
+    for (var ri = 0; ri < removedKeys.length; ri += 225) {
+      var delBatch = _arDb.batch();
+      removedKeys.slice(ri, ri + 225).forEach(function(k) {
+        delBatch.delete(_arDb.collection('ar_master').doc(k));
+        delBatch.set(_arDb.collection('ar_deletions').doc(k), {
+          saleNew: k,
+          deleted_by: _arCurrentUser.empid,
+          deleted_at: FV.serverTimestamp()
+        });
+        deletedCount++;
+      });
+      await delBatch.commit();
+    }
+
+    // ── 3) 메타 문서 업데이트 (version 유지 — 다른 클라이언트가 변경 감지) ──
+    try {
+      var newVersion = Date.now();
+      await _arDb.collection('ar_meta').doc('latest').set({
+        version: newVersion,
+        uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        uploadedBy: _arCurrentUser.empid,
+        salesCount: salesKeys.length,
+        totalInvoices: rows.length
+      });
+    } catch(metaErr) {
+      console.warn('[AR] meta update failed:', metaErr.message);
+    }
+    // 로컬 캐시 무효화 (내 화면도 새 데이터로)
+    await _arCacheClearAll();
+
+    statusEl.textContent = '✅ ' + rows.length + '건 (' + salesKeys.length + '명) — 변경 ' + wroteCount + ' · 유지 ' + skippedCount + ' · 삭제 ' + deletedCount;
+    _arLoadFromFirestore();
+  } catch(err) {
+    statusEl.textContent = '저장 오류: ' + err.message;
+    console.error(err);
+  }
+}
+
+// ── 관리자 유틸: 기존 ar_master 에 updated_at + docHash 일괄 기록 (1회 실행) ──
+window._arBackfillUpdatedAt = async function() {
+  if (!_arDb) { console.error('no _arDb'); return; }
+  var snap = await _arDb.collection('ar_master').get();
+  console.log('[AR backfill] total', snap.size);
+  var FV = firebase.firestore.FieldValue;
+  var done = 0;
+  for (var i = 0; i < snap.docs.length; i += 450) {
+    var batch = _arDb.batch();
+    snap.docs.slice(i, i + 450).forEach(function(doc) {
+      var d = doc.data();
+      var hash = _arDocHash(d.invoices || []);
+      batch.update(doc.ref, { updated_at: FV.serverTimestamp(), docHash: hash });
+    });
+    await batch.commit();
+    done += Math.min(450, snap.size - i);
+    console.log('[AR backfill] progress', done, '/', snap.size);
+  }
+  console.log('[AR backfill] done:', done);
+  return done;
+};
+
+// ── Customer Master from Firestore ──
+async function _arLoadCustMaster() {
+  try {
+    var snap = await _arDb.collection('customers').get();
+    _arCustMaster = {};
+    snap.forEach(function(doc) {
+      var d = doc.data();
+      var erp = doc.id || d.erp || '';
+      _arCustMaster[erp] = {
+        name: d.cust_name || d.name_th || d.name_en || '',
+        hospital: d.hospital || d.clinic || '',
+        sales: d.sales || ''
+      };
+      // Also map by custId (NT code) if present
+      if (d.custId) _arCustMaster[d.custId] = _arCustMaster[erp];
+    });
+    console.log('[AR] Customer master loaded:', Object.keys(_arCustMaster).length);
+  } catch(e) {
+    console.warn('[AR] Customer master load failed:', e.message);
+  }
+}
+
+function _arLookupCust(custId, custErp) {
+  var m = _arCustMaster[custErp] || _arCustMaster[custId] || null;
+  return m || { name: '', hospital: '', sales: '' };
+}
+
+// ── 동기화 텔레메트리 (Fire-and-forget) ──
+// core.js 와 동일한 로직을 ar.html 에 중복 로드 (standalone 페이지라 core.js 미사용)
+// HIT 은 기록 제외. 킬 스위치(app_config/telemetry.enabled===false)로 원격 중단 가능.
+var _arTelemetryEnabled = null;
+var _arTelemetryConfigPromise = null;
+function _arTelemetryConfigReady() {
+  if (_arTelemetryEnabled !== null) return Promise.resolve(_arTelemetryEnabled);
+  if (_arTelemetryConfigPromise) return _arTelemetryConfigPromise;
+  _arTelemetryConfigPromise = (function() {
+    try {
+      return _arDb.collection('app_config').doc('telemetry').get()
+        .then(function(doc) {
+          _arTelemetryEnabled = !doc.exists || doc.data().enabled !== false;
+          return _arTelemetryEnabled;
+        })
+        .catch(function() { _arTelemetryEnabled = true; return true; });
+    } catch(e) { _arTelemetryEnabled = true; return Promise.resolve(true); }
+  })();
+  return _arTelemetryConfigPromise;
+}
+function _arTelemetryDetectDevice() {
+  var ua = (navigator && navigator.userAgent) || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return 'iOS';
+  if (/Android/i.test(ua)) return 'Android';
+  return 'Desktop';
+}
+function _arTelemetryLog(mode, info) {
+  try {
+    if (mode === 'HIT') return;
+    _arTelemetryConfigReady().then(function(enabled) {
+      if (!enabled) return;
+      try {
+        var user = firebase.auth().currentUser;
+        if (!user) return;
+        var now = Date.now();
+        var expireAt = firebase.firestore.Timestamp.fromMillis(now + 30 * 86400 * 1000);
+        var empid = (user.email || '').split('@')[0].toUpperCase();
+        var me = _arCurrentUser || {};
+        var payload = {
+          uid: user.uid,
+          empid: empid,
+          nickname: me.nickname || '',
+          page: 'ar',
+          mode: mode || '',
+          docsRead: (info && typeof info.docsRead === 'number') ? info.docsRead : 0,
+          cachedCount: (info && typeof info.cachedCount === 'number') ? info.cachedCount : 0,
+          reason: (info && info.reason) || '',
+          device: _arTelemetryDetectDevice(),
+          ua: ((navigator && navigator.userAgent) || '').slice(0, 200),
+          version: (info && info.version) || '',
+          ts: firebase.firestore.FieldValue.serverTimestamp(),
+          expireAt: expireAt
+        };
+        _arDb.collection('sync_telemetry').add(payload).catch(function() {});
+      } catch(e) { /* silent */ }
+    }).catch(function() { /* silent */ });
+  } catch(e) { /* silent */ }
+}
+
+// ── IndexedDB 캐시 + 메타 버전 감지 ──
+// 서버에 메타 문서(meta/ar_latest) 1개만 두고 version 이 바뀌었을 때만 전체 재조회.
+// 변경 없으면 페이지 재방문 시 딱 1 read(meta 조회)로 끝난다.
+function _arOpenIDB() {
+  return new Promise(function(resolve, reject) {
+    var req = indexedDB.open('ar_cache_db', 1);
+    req.onupgradeneeded = function(e) {
+      var db = e.target.result;
+      if (!db.objectStoreNames.contains('data')) db.createObjectStore('data', { keyPath: 'key' });
+    };
+    req.onsuccess = function() { resolve(req.result); };
+    req.onerror = function() { reject(req.error); };
+  });
+}
+async function _arCacheGet(key) {
+  try {
+    var db = await _arOpenIDB();
+    var tx = db.transaction(['data'], 'readonly');
+    var req = tx.objectStore('data').get(key);
+    var res = await new Promise(function(resolve) {
+      req.onsuccess = function() { resolve(req.result || null); };
+      req.onerror = function() { resolve(null); };
+    });
+    db.close();
+    return res;
+  } catch(e) { console.warn('[AR] cache get failed:', e); return null; }
+}
+async function _arCacheSet(key, payload) {
+  try {
+    var db = await _arOpenIDB();
+    var tx = db.transaction(['data'], 'readwrite');
+    tx.objectStore('data').put(Object.assign({ key: key }, payload));
+    await new Promise(function(res, rej) { tx.oncomplete = res; tx.onerror = rej; });
+    db.close();
+  } catch(e) { console.warn('[AR] cache set failed:', e); }
+}
+async function _arCacheClearAll() {
+  try {
+    var db = await _arOpenIDB();
+    var tx = db.transaction(['data'], 'readwrite');
+    tx.objectStore('data').clear();
+    await new Promise(function(res, rej) { tx.oncomplete = res; tx.onerror = rej; });
+    db.close();
+  } catch(e) { console.warn('[AR] cache clear failed:', e); }
+}
+async function _arReadServerVersion() {
+  try {
+    var metaDoc = await _arDb.collection('ar_meta').doc('latest').get();
+    if (!metaDoc.exists) return null;
+    return metaDoc.data().version || null;
+  } catch(e) { console.warn('[AR] meta read failed:', e); return null; }
+}
+function _arCacheKey() {
+  if (_arIsAdmin) return 'admin';
+  var nick = (_arCurrentUser.nickname || _arCurrentUser.name || '').toUpperCase().trim();
+  return 'user_' + nick;
+}
+function _arApplyLoadedData(dataArr, uploadTimeMs) {
+  _arAllData = (dataArr || []).map(_arNormalize);
+  _arData = _arAllData;
+  _arBuildSalesFilter();
+  if (_arIsAdmin) _arApplySalesFilter(); // 본인 데이터 스코프 적용
+  _arRenderSummary();
+  _arRenderTable();
+  document.getElementById('arFixedSection').style.display = '';
+  document.getElementById('arNoData').style.display = 'none';
+  if (uploadTimeMs) {
+    var d = new Date(uploadTimeMs);
+    document.getElementById('arUpdateInfo').textContent = _arT('last_update') + d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+  }
+}
+
+// ── Firestore load ──
+// 변경 감지 패턴:
+//  (1) meta/ar_latest 에서 version 읽기 (1 read)
+//  (2) IndexedDB 캐시의 version 과 비교
+//      • 동일 → 캐시 사용, 서버 재조회 0건 (총 1 read)
+//      • 다름 + 캐시 있음 → 증분 (where updated_at > maxTsMs) + tombstones
+//      • 캐시 없음 → 전체 재조회
+async function _arLoadFromFirestore() {
+  try {
+    var cacheKey = _arCacheKey();
+    var cached = await _arCacheGet(cacheKey);
+    var serverVersion = await _arReadServerVersion(); // 1 read
+
+    // ── 캐시 HIT ──
+    if (cached && serverVersion && cached.version === serverVersion && cached.data) {
+      console.log('[AR] Cache HIT — version', serverVersion, 'items', cached.data.length);
+      if (!cached.data.length) { _arShowNoData(); return; }
+      _arApplyLoadedData(cached.data, cached.uploadTime);
+      return;
+    }
+    console.log('[AR] Cache MISS — serverVersion=', serverVersion, 'cachedVersion=', cached && cached.version, 'maxTsMs=', cached && cached.maxTsMs);
+
+    // ── Admin 증분 경로 ──
+    if (_arIsAdmin && cached && cached.docs && cached.maxTsMs && cached.maxTsMs > 0) {
+      try {
+        var tsObj = firebase.firestore.Timestamp.fromMillis(cached.maxTsMs);
+        var results = await Promise.all([
+          _arDb.collection('ar_master').where('updated_at', '>', tsObj).get(),
+          _arDb.collection('ar_deletions').where('deleted_at', '>', tsObj).get()
+        ]);
+        var changedSnap = results[0], delSnap = results[1];
+        var docMap = Object.assign({}, cached.docs || {});
+        var newMaxTs = cached.maxTsMs;
+        var uploadTimeMs = cached.uploadTime || null;
+        changedSnap.forEach(function(doc) {
+          var d = doc.data();
+          var tsMs = d.updated_at && typeof d.updated_at.toMillis === 'function' ? d.updated_at.toMillis() : 0;
+          if (tsMs > newMaxTs) newMaxTs = tsMs;
+          if (d.uploadedAt && typeof d.uploadedAt.toMillis === 'function') {
+            var upMs = d.uploadedAt.toMillis();
+            if (!uploadTimeMs || upMs > uploadTimeMs) uploadTimeMs = upMs;
+          }
+          docMap[doc.id] = { invoices: d.invoices || [], updated_at_ms: tsMs, uploadedAt: uploadTimeMs };
+        });
+        delSnap.forEach(function(doc) {
+          var d = doc.data();
+          var tsMs = d.deleted_at && typeof d.deleted_at.toMillis === 'function' ? d.deleted_at.toMillis() : 0;
+          if (tsMs > newMaxTs) newMaxTs = tsMs;
+          delete docMap[doc.id];
+        });
+        console.log('[AR] Incremental — changed=' + changedSnap.size + ' deleted=' + delSnap.size + ' newMaxTs=' + newMaxTs);
+        _arTelemetryLog('INCREMENTAL', { docsRead: changedSnap.size + delSnap.size, cachedCount: (cached.data || []).length, reason: 'version-mismatch' });
+
+        var rawArr = [];
+        Object.keys(docMap).forEach(function(k) {
+          rawArr = rawArr.concat(docMap[k].invoices || []);
+        });
+        if (!rawArr.length) { _arShowNoData(); return; }
+        _arApplyLoadedData(rawArr, uploadTimeMs);
+        await _arCacheSet(cacheKey, {
+          version: serverVersion || cached.version,
+          data: rawArr,
+          docs: docMap,
+          maxTsMs: newMaxTs,
+          uploadTime: uploadTimeMs
+        });
+        return;
+      } catch(e) {
+        console.warn('[AR] incremental path failed, falling back to full read:', e);
+        _arTelemetryLog('MISS', { reason: 'incremental-fail:' + (e && e.message || '') });
+      }
+    }
+
+    // ── Firestore 전체 재조회 (최초 방문 or 캐시 없음) ──
+    var snap;
+    if (_arIsAdmin) {
+      snap = await _arDb.collection('ar_master').get();
+    } else {
+      var nickname = (_arCurrentUser.nickname || _arCurrentUser.name || '').toUpperCase().trim();
+      if (!nickname) { _arShowNoData(); return; }
+      snap = await _arDb.collection('ar_master').doc(nickname).get();
+      if (!snap.exists) {
+        var names = [nickname];
+        if (_arCurrentUser.nickname) names.push(_arCurrentUser.nickname.toUpperCase().trim());
+        if (_arCurrentUser.name) names.push(_arCurrentUser.name.toUpperCase().trim());
+        var found = false;
+        for (var ni = 0; ni < names.length; ni++) {
+          var trySnap = await _arDb.collection('ar_master').doc(names[ni]).get();
+          if (trySnap.exists) { snap = trySnap; found = true; break; }
+        }
+        if (!found) { _arShowNoData(); return; }
+      }
+    }
+
+    // 데이터 추출 + 증분용 docs 맵 / maxTs 계산
+    var rawArr2 = [], uploadTimeMs2 = null;
+    var docMap2 = {};
+    var maxTsMs2 = 0;
+    if (_arIsAdmin) {
+      snap.forEach(function(doc) {
+        var d = doc.data();
+        var invArr = d.invoices || [];
+        rawArr2 = rawArr2.concat(invArr);
+        var tsMs = d.updated_at && typeof d.updated_at.toMillis === 'function' ? d.updated_at.toMillis() : 0;
+        if (tsMs > maxTsMs2) maxTsMs2 = tsMs;
+        if (d.uploadedAt && !uploadTimeMs2) {
+          try { uploadTimeMs2 = d.uploadedAt.toDate().getTime(); } catch(e) {}
+        }
+        docMap2[doc.id] = { invoices: invArr, updated_at_ms: tsMs, uploadedAt: uploadTimeMs2 };
+      });
+    } else {
+      var dd = snap.data();
+      rawArr2 = dd.invoices || [];
+      try { uploadTimeMs2 = dd.uploadedAt.toDate().getTime(); } catch(e) {}
+    }
+
+    if (!rawArr2.length) { _arShowNoData(); return; }
+
+    _arApplyLoadedData(rawArr2, uploadTimeMs2);
+
+    // 텔레메트리: FULL read 실행. docsRead 는 실제 네트워크로 받은 문서 수 (admin=감시 대상 수, 일반=1)
+    _arTelemetryLog('FULL', {
+      docsRead: _arIsAdmin ? (snap.size || 0) : 1,
+      cachedCount: (cached && cached.data && cached.data.length) || 0,
+      reason: cached ? 'version-change-no-incremental' : 'cold-start'
+    });
+
+    // ── self-heal: 메타 문서가 없으면 최초 1회 생성 (admin만 쓰기 가능) → 다음 접속부터 캐시 HIT ──
+    if (!serverVersion && _arIsAdmin) {
+      try {
+        var initVer = Date.now();
+        await _arDb.collection('ar_meta').doc('latest').set({
+          version: initVer,
+          uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          uploadedBy: _arCurrentUser.empid,
+          bootstrapped: true
+        }, { merge: true });
+        serverVersion = initVer;
+        console.log('[AR] ar_meta/latest 초기 생성 → version=', initVer);
+      } catch(e) { console.warn('[AR] meta init failed:', e && e.message); }
+    }
+
+    if (serverVersion) {
+      await _arCacheSet(cacheKey, {
+        version: serverVersion,
+        data: rawArr2,
+        docs: _arIsAdmin ? docMap2 : null,
+        maxTsMs: maxTsMs2,
+        uploadTime: uploadTimeMs2
+      });
+    }
+  } catch(err) {
+    console.error('[AR] Load error:', err);
+    _arShowNoData();
+    document.getElementById('arNoData').innerHTML = '<div style="font-size:48px;margin-bottom:12px;">⚠️</div><div style="color:#ef4444;">로드 오류: ' + err.message + '</div><div style="font-size:13px;margin-top:6px;color:#6b7280;">Firestore 권한을 확인하세요.</div>';
+  }
+}
+
+// Normalize invoice data — 저장된 데이터 그대로 사용 (마스터 재조회 안 함)
+function _arNormalize(r) {
+  return {
+    date: r.date || '',
+    invoice: r.invoice || '',
+    custId: r.custId || '',
+    custErp: r.custErp || '',
+    custName: r.custName || r.custErp || '-',
+    clinic: r.clinic || '',
+    type: r.type || '',
+    balance: Number(r.balance || r.balAtDue || r.invAmt || 0) || 0,
+    saleNew: (r.saleNew || '').toString().toUpperCase(),
+    salesName: r.salesName || r.saleNew || '',
+    dueDate: r.dueDate || '',
+    overdueDays: parseInt(r.overdueDays) || 0,
+    remark: r.remark || ''
+  };
+}
+
+function _arShowNoData() {
+  document.getElementById('arFixedSection').style.display = 'none';
+  document.getElementById('arNoData').style.display = '';
+}
+
+// ── Summary render ──
+function _arRenderSummary() {
+  var data = _arData;
+  var totalBal = 0, totalInv = data.length, custSet = {};
+  var aging = { current:0, d30:0, d90:0, d180:0, d365:0, over:0 };
+
+  data.forEach(function(r) {
+    totalBal += r.balance;
+    custSet[r.custName] = true;
+    var od = r.overdueDays;
+    if (od <= 0) aging.current += r.balance;
+    else if (od <= 30) aging.d30 += r.balance;
+    else if (od <= 90) aging.d90 += r.balance;
+    else if (od <= 180) aging.d180 += r.balance;
+    else if (od <= 365) aging.d365 += r.balance;
+    else aging.over += r.balance;
+  });
+
+  var custCount = Object.keys(custSet).length;
+  var overdueBal = totalBal - aging.current;
+
+  var cards = document.getElementById('arSummaryCards');
+  cards.innerHTML =
+    '<div class="ar-card"><div class="ar-card-label">' + _arT('card_customers') + '</div><div class="ar-card-value">' + custCount + '</div><div class="ar-card-sub">' + totalInv + ' ' + _arT('items') + '</div></div>' +
+    '<div class="ar-card"><div class="ar-card-label">' + _arT('card_total_ar') + '</div><div class="ar-card-value" style="color:#dc2626;">฿' + _arFmtNum(totalBal) + '</div><div class="ar-card-sub">' + _arT('total_ar_en') + '</div></div>' +
+    '<div class="ar-card"><div class="ar-card-label">' + _arT('card_not_due') + '</div><div class="ar-card-value" style="color:#16a34a;">฿' + _arFmtNum(aging.current) + '</div><div class="ar-card-sub">' + _arT('not_yet_due_en') + '</div></div>' +
+    '<div class="ar-card"><div class="ar-card-label">' + _arT('card_overdue_amt') + '</div><div class="ar-card-value" style="color:#ea580c;">฿' + _arFmtNum(overdueBal) + '</div><div class="ar-card-sub">' + (totalBal > 0 ? ((overdueBal/totalBal)*100).toFixed(1) : 0) + _arT('of_total') + '</div></div>';
+
+  // Legend (no bar)
+  var segs = [
+    { val: aging.current, color: '#16a34a', label: _arT('aging_current') },
+    { val: aging.d30, color: '#eab308', label: _arT('aging_30') },
+    { val: aging.d90, color: '#f97316', label: _arT('aging_90') },
+    { val: aging.d180, color: '#dc2626', label: _arT('aging_180') },
+    { val: aging.d365, color: '#b91c1c', label: _arT('aging_365') },
+    { val: aging.over, color: '#7f1d1d', label: _arT('aging_over365') }
+  ];
+  var legendEl = document.getElementById('arAgingLegend');
+  if (legendEl) {
+    var legendHtml = '';
+    segs.forEach(function(s) {
+      legendHtml += '<div class="ar-legend-item"><span class="ar-legend-dot" style="background:' + s.color + ';"></span>' + s.label + ' ฿' + _arFmtNum(s.val) + '</div>';
+    });
+    legendEl.innerHTML = legendHtml;
+  }
+}
+
+// ── Sales rep filter ──
+// 관리자/Office 외 사용자는 본인 닉네임으로 고정
+function _arIsScopedUser(u) {
+  if (!u) return false;
+  var dept = String(u.dept || '').trim().toLowerCase();
+  var HARDCODED_ADMINS = ['T2408087'];
+  var isAdmin = HARDCODED_ADMINS.indexOf(u.empid) > -1 || u.role === 'admin';
+  if (isAdmin) return false;
+  if (dept === 'office') return false;
+  return true;
+}
+function _arBuildSalesFilter() {
+  var sel = document.getElementById('arSalesFilter');
+  if (!sel) return;
+  var salesSet = {};
+  _arAllData.forEach(function(r) { if (r.saleNew) salesSet[r.saleNew] = true; });
+  var salesList = Object.keys(salesSet).sort();
+  var me = getCurrentUser();
+  if (me && _arIsScopedUser(me)) {
+    var nick = (me.nickname || '').trim();
+    var fixed = '';
+    if (nick) {
+      for (var i = 0; i < salesList.length; i++) {
+        if (salesList[i].trim().toLowerCase() === nick.toLowerCase()) { fixed = salesList[i]; break; }
+      }
+      if (!fixed) fixed = nick;
+    }
+    if (fixed) {
+      sel.innerHTML = '<option value="' + fixed + '" selected>' + fixed + '</option>';
+      sel.value = fixed;
+    } else {
+      sel.innerHTML = '<option value="__NONE__" selected>-</option>';
+      sel.value = '__NONE__';
+    }
+    sel.disabled = true;
+    sel.style.opacity = '0.7';
+    sel.style.cursor = 'not-allowed';
+    return;
+  }
+  sel.innerHTML = '<option value="">' + _arT('all_sales') + '</option>';
+  salesList.forEach(function(s) {
+    sel.innerHTML += '<option value="' + s + '">' + s + '</option>';
+  });
+}
+
+function _arApplySalesFilter() {
+  var sel = document.getElementById('arSalesFilter');
+  var salesVal = sel ? sel.value : '';
+  var me = getCurrentUser();
+  // 관리자/Office 외: 본인 닉네임으로 강제 필터
+  if (me && _arIsScopedUser(me)) {
+    var nick = (me.nickname || '').trim().toLowerCase();
+    if (nick) {
+      _arData = _arAllData.filter(function(r) { return (r.saleNew || '').trim().toLowerCase() === nick; });
+    } else {
+      _arData = [];
+    }
+  } else if (salesVal) {
+    _arData = _arAllData.filter(function(r) { return r.saleNew === salesVal; });
+  } else {
+    _arData = _arAllData.slice();
+  }
+  _arRenderSummary();
+  _arRenderTable();
+}
+
+// ── Table render ──
+function _arRenderTable() {
+  var search = (document.getElementById('arSearchInput').value || '').toLowerCase();
+  var agingFilter = document.getElementById('arAgingFilter').value;
+  var sortField = document.getElementById('arSortField').value;
+
+  var filtered = _arData.filter(function(r) {
+    if (search && r.custName.toLowerCase().indexOf(search) < 0 && r.invoice.toLowerCase().indexOf(search) < 0 && (r.clinic||'').toLowerCase().indexOf(search) < 0 && (r.custId||'').toLowerCase().indexOf(search) < 0 && (r.custErp||'').toLowerCase().indexOf(search) < 0 && (r.saleNew||'').toLowerCase().indexOf(search) < 0) return false;
+    if (agingFilter !== 'all') {
+      var od = r.overdueDays;
+      if (agingFilter === 'current' && od > 0) return false;
+      if (agingFilter === '1-30' && (od <= 0 || od > 30)) return false;
+      if (agingFilter === '31-90' && (od <= 30 || od > 90)) return false;
+      if (agingFilter === '91-180' && (od <= 90 || od > 180)) return false;
+      if (agingFilter === '181-365' && (od <= 180 || od > 365)) return false;
+      if (agingFilter === 'over365' && od <= 365) return false;
+    }
+    return true;
+  });
+
+  // Sort
+  filtered.sort(function(a, b) {
+    if (sortField === 'overdue_desc') return b.overdueDays - a.overdueDays;
+    if (sortField === 'overdue_asc') return a.overdueDays - b.overdueDays;
+    if (sortField === 'balance_desc') return b.balance - a.balance;
+    if (sortField === 'balance_asc') return a.balance - b.balance;
+    if (sortField === 'date_desc') return (b.date || '').localeCompare(a.date || '');
+    if (sortField === 'date_asc') return (a.date || '').localeCompare(b.date || '');
+    return 0;
+  });
+
+  // Group by customer (use custErp or custId as key)
+  var custGroups = {};
+  var custOrder = [];
+  filtered.forEach(function(r) {
+    var groupKey = r.custErp || r.custId || r.custName;
+    if (!custGroups[groupKey]) {
+      custGroups[groupKey] = {
+        name: r.custName || r.custErp || '-',
+        id: r.custId,
+        erp: r.custErp,
+        clinic: r.clinic || '',
+        saleNew: r.saleNew,
+        salesName: r.salesName || r.saleNew || '',
+        rows: [],
+        totalBal: 0, currentBal: 0, overdueBal: 0,
+        // 그룹 정렬용 집계
+        maxOverdue: -Infinity, minOverdue: Infinity,
+        maxDate: '', minDate: '\uFFFF'
+      };
+      custOrder.push(groupKey);
+    }
+    var _g = custGroups[groupKey];
+    _g.rows.push(r);
+    _g.totalBal += r.balance;
+    if (r.overdueDays <= 0) _g.currentBal += r.balance;
+    else _g.overdueBal += r.balance;
+    if (r.overdueDays > _g.maxOverdue) _g.maxOverdue = r.overdueDays;
+    if (r.overdueDays < _g.minOverdue) _g.minOverdue = r.overdueDays;
+    var _d = r.date || '';
+    if (_d && _d > _g.maxDate) _g.maxDate = _d;
+    if (_d && _d < _g.minDate) _g.minDate = _d;
+  });
+
+  // Sort groups by selected sortField (기본: balance_desc)
+  // 개별 인보이스는 이미 위에서 filtered.sort 로 정렬됨.
+  // 그룹도 같은 기준의 집계값(max/min overdue, max/min date, totalBal)으로 정렬해야
+  // 사용자가 고른 정렬이 실제로 반영됨. (이전에는 항상 totalBal desc 로 덮어써서 버그)
+  custOrder.sort(function(a, b) {
+    var ga = custGroups[a], gb = custGroups[b];
+    if (sortField === 'overdue_desc') return gb.maxOverdue - ga.maxOverdue;
+    if (sortField === 'overdue_asc')  return ga.minOverdue - gb.minOverdue;
+    if (sortField === 'balance_desc') return gb.totalBal - ga.totalBal;
+    if (sortField === 'balance_asc')  return ga.totalBal - gb.totalBal;
+    if (sortField === 'date_desc')    return (gb.maxDate || '').localeCompare(ga.maxDate || '');
+    if (sortField === 'date_asc')     return (ga.minDate === '\uFFFF' ? '' : ga.minDate).localeCompare(gb.minDate === '\uFFFF' ? '' : gb.minDate);
+    return gb.totalBal - ga.totalBal;
+  });
+
+  var html = '';
+  if (filtered.length === 0) {
+    html = '<div style="padding:40px;text-align:center;color:#9ca3af;">' + _arT('no_results') + '</div>';
+  } else {
+    custOrder.forEach(function(key) {
+      var g = custGroups[key];
+      html += '<div class="ar-cust-group" onclick="this.classList.toggle(\'open\')">';
+      // ── Single-row header: 담당 | NT코드 | 고객명 | 건수 | 총 미수금 | 미도래 | 도래/경과 ──
+      html += '<div class="ar-cust-hdr">';
+      html += '<span style="font-size:11px;color:#fff;background:#2563eb;padding:1px 6px;border-radius:4px;font-weight:700;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _arEsc(g.saleNew) + '</span>';
+      html += '<span style="color:#6b7280;font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _arEsc(g.id || '-') + '</span>';
+      html += '<span style="color:#9ca3af;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _arEsc(g.erp || '-') + '</span>';
+      html += '<span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + _arEsc(g.name) + (g.clinic ? ' ('+_arEsc(g.clinic)+')' : '') + '">' + _arEsc(g.name) + '</span>';
+      html += '<span style="text-align:center;color:#6b7280;font-weight:600;">' + g.rows.length + '</span>';
+      html += '<span style="text-align:right;font-weight:800;color:#dc2626;white-space:nowrap;">฿' + _arFmtNum(g.totalBal) + '</span>';
+      html += '<span style="text-align:right;font-weight:700;color:#16a34a;white-space:nowrap;">฿' + _arFmtNum(g.currentBal) + '</span>';
+      html += '<span style="text-align:right;font-weight:700;color:#ea580c;white-space:nowrap;">฿' + _arFmtNum(g.overdueBal) + '</span>';
+      html += '</div>';
+      // ── Detail table: 일자, 인보이스, 금액, 만기일, 경과기간 ──
+      html += '<div class="ar-cust-detail">';
+      html += '<table class="ar-tbl"><thead><tr><th>' + _arT('detail_date') + '</th><th>' + _arT('detail_invoice') + '</th><th>' + _arT('detail_amount') + '</th><th>' + _arT('detail_due') + '</th><th>' + _arT('detail_elapsed') + '</th></tr></thead><tbody>';
+      g.rows.forEach(function(r) {
+        var odBadge = _arOverdueBadge(r.overdueDays);
+        html += '<tr>';
+        html += '<td><span class="ar-date-badge">' + (r.date || '-') + '</span></td>';
+        html += '<td style="font-size:12px;color:#475569;">' + _arEsc(r.invoice) + '</td>';
+        html += '<td class="num" style="font-weight:700;color:' + (r.balance > 0 ? '#1e293b' : '#16a34a') + ';">฿' + _arFmtNum(r.balance) + '</td>';
+        html += '<td><span class="ar-date-badge">' + (r.dueDate || '-') + '</span></td>';
+        html += '<td>' + odBadge + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div></div>';
+    });
+  }
+
+  document.getElementById('arTableBody').innerHTML = html;
+  var tc = document.getElementById('arTotalCount');
+  if (tc) tc.textContent = filtered.length;
+}
+
+function _arOverdueBadge(days) {
+  if (days <= 0) return '<span class="ar-overdue-badge ar-od-current">' + _arT('aging_current') + '</span>';
+  if (days <= 30) return '<span class="ar-overdue-badge ar-od-30">' + days + 'd</span>';
+  if (days <= 60) return '<span class="ar-overdue-badge ar-od-60">' + days + 'd</span>';
+  if (days <= 90) return '<span class="ar-overdue-badge ar-od-90">' + days + 'd</span>';
+  if (days <= 180) return '<span class="ar-overdue-badge ar-od-180">' + days + 'd</span>';
+  if (days <= 365) return '<span class="ar-overdue-badge ar-od-365">' + days + 'd</span>';
+  return '<span class="ar-overdue-badge ar-od-over">' + days + 'd</span>';
+}
+
+function _arFmtNum(n) {
+  if (n === null || n === undefined || isNaN(n)) n = 0;
+  n = Number(n) || 0;
+  if (n === 0) return '0';
+  return Math.round(n).toLocaleString('en-US');
+}
+
+function _arEsc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Excel Export ──
+function _arExportExcel() {
+  if (!_arData || _arData.length === 0) { alert('내보낼 데이터가 없습니다.'); return; }
+  var rows = [['담당','NT코드','ERP코드','고객명','병원/클리닉','인보이스','일자','금액(฿)','만기일','경과일','비고']];
+  _arData.forEach(function(r) {
+    rows.push([r.saleNew, r.custId, r.custErp, r.custName, r.clinic, r.invoice, r.date, r.balance, r.dueDate, r.overdueDays, r.remark]);
+  });
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+  // Auto column widths
+  ws['!cols'] = [
+    {wch:10},{wch:12},{wch:10},{wch:25},{wch:20},{wch:18},{wch:12},{wch:15},{wch:12},{wch:8},{wch:20}
+  ];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'AR Aging');
+  var today = new Date();
+  var fname = 'AR_Aging_' + today.getFullYear() + String(today.getMonth()+1).padStart(2,'0') + String(today.getDate()).padStart(2,'0') + '.xlsx';
+  XLSX.writeFile(wb, fname);
+}
+</script>
+</body>
+</html>

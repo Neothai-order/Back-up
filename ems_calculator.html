@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMS Rate Calculator</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', 'Apple SD Gothic Neo', sans-serif;
+    background: #f0f4f8;
+    color: #1a202c;
+    min-height: 100vh;
+  }
+  .header {
+    background: #1a1a1a;
+    color: white;
+    padding: 14px 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  .header h1 { font-size: 20px; font-weight: 700; }
+  .header p { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+  .main {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 24px 16px;
+  }
+  .calc-card {
+    background: white;
+    border-radius: 14px;
+    padding: 28px 24px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    margin-bottom: 20px;
+  }
+  .calc-card h2 {
+    font-size: 17px;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .input-group { margin-bottom: 18px; }
+  .input-group label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 6px;
+  }
+  .weight-input-wrap {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .weight-input-wrap input {
+    flex: 1;
+    padding: 12px 14px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s;
+    background: #fafafa;
+  }
+  .weight-input-wrap input:focus {
+    border-color: #2563eb;
+    background: white;
+  }
+  .unit-toggle {
+    display: flex;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .unit-btn {
+    padding: 10px 14px;
+    border: none;
+    background: #f8fafc;
+    font-size: 13px;
+    font-weight: 600;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .unit-btn.active {
+    background: #2563eb;
+    color: white;
+  }
+  .unit-btn:not(.active):hover { background: #e2e8f0; }
+
+  /* Dimension inputs */
+  .dim-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .dim-row input {
+    flex: 1;
+    padding: 10px 10px;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    outline: none;
+    text-align: center;
+    background: #fafafa;
+    min-width: 0;
+  }
+  .dim-row input:focus { border-color: #2563eb; background: white; }
+  .dim-row span { color: #94a3b8; font-size: 13px; flex-shrink: 0; }
+
+  .btn-calc {
+    width: 100%;
+    padding: 14px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 4px;
+  }
+  .btn-calc:hover { background: #1d4ed8; }
+  .btn-calc:active { transform: scale(0.98); }
+
+  /* Result */
+  .result-box {
+    display: none;
+    margin-top: 20px;
+    padding: 20px;
+    border-radius: 12px;
+    background: #eff6ff;
+    border: 2px solid #bfdbfe;
+  }
+  .result-box.show { display: block; }
+  .result-box.error { background: #fef2f2; border-color: #fecaca; }
+  .result-price {
+    font-size: 36px;
+    font-weight: 800;
+    color: #1d4ed8;
+    text-align: center;
+  }
+  .result-box.error .result-price { color: #dc2626; font-size: 16px; font-weight: 600; }
+  .result-label {
+    font-size: 13px;
+    color: #64748b;
+    text-align: center;
+    margin-top: 4px;
+  }
+  .result-details {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #bfdbfe;
+  }
+  .result-box.error .result-details { border-top-color: #fecaca; }
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #475569;
+    padding: 3px 0;
+  }
+  .detail-row .val { font-weight: 600; color: #1e293b; }
+  .note {
+    margin-top: 10px;
+    font-size: 11px;
+    color: #94a3b8;
+    line-height: 1.5;
+  }
+
+  /* Rate table */
+  .table-toggle {
+    background: none;
+    border: none;
+    color: #2563eb;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .table-toggle:hover { text-decoration: underline; }
+  .rate-table-wrap { display: none; margin-top: 12px; }
+  .rate-table-wrap.show { display: block; }
+  .rate-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .rate-table th {
+    background: #f1f5f9;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 700;
+    color: #475569;
+    border-bottom: 2px solid #e2e8f0;
+  }
+  .rate-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #334155;
+  }
+  .rate-table tr:hover td { background: #f8fafc; }
+  .rate-table tr.highlight td { background: #dbeafe; font-weight: 700; }
+
+  .surcharge-info {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 12px;
+    color: #92400e;
+    line-height: 1.6;
+  }
+  .surcharge-info strong { color: #78350f; }
+
+  @media (max-width: 400px) {
+    .calc-card { padding: 20px 16px; }
+    .dim-row input { padding: 8px 6px; font-size: 13px; }
+  }
+</style>
+</head>
+<body oncontextmenu="event.preventDefault();">
+
+<div class="header">
+  <h1>EMS Rate Calculator</h1>
+  <p>Thailand Post EMS Domestic Rate</p>
+</div>
+
+<div class="main">
+  <div class="calc-card">
+    <h2>Weight</h2>
+    <div class="input-group">
+      <label>Weight</label>
+      <div class="weight-input-wrap">
+        <input type="number" id="weightInput" placeholder="0.00" step="0.01" min="0" inputmode="decimal">
+        <div class="unit-toggle">
+          <button class="unit-btn active" data-unit="kg" onclick="setUnit('kg')">kg</button>
+          <button class="unit-btn" data-unit="g" onclick="setUnit('g')">g</button>
+        </div>
+      </div>
+    </div>
+
+    <h2>Box Size (optional)</h2>
+    <div class="input-group">
+      <label>W x L x H (cm)</label>
+      <div class="dim-row">
+        <input type="number" id="dimW" placeholder="W" step="0.1" min="0" inputmode="decimal">
+        <span>x</span>
+        <input type="number" id="dimL" placeholder="L" step="0.1" min="0" inputmode="decimal">
+        <span>x</span>
+        <input type="number" id="dimH" placeholder="H" step="0.1" min="0" inputmode="decimal">
+        <span>cm</span>
+      </div>
+    </div>
+
+    <button class="btn-calc" onclick="calculate()">Calculate Rate</button>
+
+    <div class="result-box" id="resultBox">
+      <div class="result-price" id="resultPrice"></div>
+      <div class="result-label" id="resultLabel"></div>
+      <div class="result-details" id="resultDetails"></div>
+    </div>
+  </div>
+
+  <div class="calc-card">
+    <button class="table-toggle" onclick="toggleTable()">
+      <span id="tableArrow">&#9654;</span>&nbsp; Full Rate Table
+    </button>
+    <div class="rate-table-wrap" id="rateTableWrap">
+      <table class="rate-table" id="rateTable">
+        <thead>
+          <tr><th>Weight</th><th>Rate (Baht)</th></tr>
+        </thead>
+        <tbody id="rateTableBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="surcharge-info">
+    <strong>Note</strong><br>
+    - Remote area: +15 THB/piece<br>
+    - Max 30 kg, W+L+H &le; 120 cm, longest side &le; 60 cm<br>
+    - Overweight (&gt;70 kg vol.): +1,750 THB<br>
+    - Oversize (any side &gt;100 cm): +750 THB<br>
+    - Loss/damage compensation: max 2,000 THB<br>
+    - Delivery: 1-2 business days
+  </div>
+</div>
+
+<script>
+// ── EMS Domestic Rate Table (Thailand Post, 2025) ──
+const EMS_RATES = [
+  { maxKg: 0.02,  rate: 32  },
+  { maxKg: 0.1,   rate: 37  },
+  { maxKg: 0.25,  rate: 42  },
+  { maxKg: 0.5,   rate: 52  },
+  { maxKg: 1.0,   rate: 67  },
+  { maxKg: 1.5,   rate: 82  },
+  { maxKg: 2.0,   rate: 97  },
+  { maxKg: 2.5,   rate: 122 },
+  { maxKg: 3.0,   rate: 137 },
+  { maxKg: 3.5,   rate: 157 },
+  { maxKg: 4.0,   rate: 177 },
+  { maxKg: 4.5,   rate: 197 },
+  { maxKg: 5.0,   rate: 217 },
+  { maxKg: 5.5,   rate: 242 },
+  { maxKg: 6.0,   rate: 267 },
+  { maxKg: 6.5,   rate: 292 },
+  { maxKg: 7.0,   rate: 317 },
+  { maxKg: 7.5,   rate: 342 },
+  { maxKg: 8.0,   rate: 367 },
+  { maxKg: 8.5,   rate: 397 },
+  { maxKg: 9.0,   rate: 427 },
+  { maxKg: 9.5,   rate: 457 },
+  { maxKg: 10.0,  rate: 487 },
+  { maxKg: 11.0,  rate: 502 },
+  { maxKg: 12.0,  rate: 517 },
+  { maxKg: 13.0,  rate: 532 },
+  { maxKg: 14.0,  rate: 547 },
+  { maxKg: 15.0,  rate: 562 },
+  { maxKg: 16.0,  rate: 577 },
+  { maxKg: 17.0,  rate: 592 },
+  { maxKg: 18.0,  rate: 607 },
+  { maxKg: 19.0,  rate: 622 },
+  { maxKg: 20.0,  rate: 637 },
+  { maxKg: 21.0,  rate: 652 },
+  { maxKg: 22.0,  rate: 667 },
+  { maxKg: 23.0,  rate: 682 },
+  { maxKg: 24.0,  rate: 697 },
+  { maxKg: 25.0,  rate: 712 },
+  { maxKg: 26.0,  rate: 727 },
+  { maxKg: 27.0,  rate: 742 },
+  { maxKg: 28.0,  rate: 757 },
+  { maxKg: 29.0,  rate: 772 },
+  { maxKg: 30.0,  rate: 787 },
+];
+
+let currentUnit = 'kg';
+
+function setUnit(unit) {
+  currentUnit = unit;
+  document.querySelectorAll('.unit-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.unit === unit);
+  });
+  const input = document.getElementById('weightInput');
+  if (unit === 'g') {
+    input.placeholder = '0';
+    input.step = '1';
+  } else {
+    input.placeholder = '0.00';
+    input.step = '0.01';
+  }
+}
+
+function formatWeight(kg) {
+  if (kg < 1) return (kg * 1000).toFixed(0) + ' g';
+  return kg.toFixed(kg % 1 === 0 ? 0 : 1) + ' kg';
+}
+
+function weightLabel(maxKg, prevMaxKg) {
+  if (prevMaxKg === 0) return '<= ' + formatWeight(maxKg);
+  return formatWeight(prevMaxKg) + ' ~ ' + formatWeight(maxKg);
+}
+
+function getRate(weightKg) {
+  for (const tier of EMS_RATES) {
+    if (weightKg <= tier.maxKg) return tier;
+  }
+  return null;
+}
+
+function calculate() {
+  const box = document.getElementById('resultBox');
+  const priceEl = document.getElementById('resultPrice');
+  const labelEl = document.getElementById('resultLabel');
+  const detailsEl = document.getElementById('resultDetails');
+
+  let weightVal = parseFloat(document.getElementById('weightInput').value);
+  if (isNaN(weightVal) || weightVal <= 0) {
+    box.className = 'result-box show error';
+    priceEl.textContent = 'Please enter weight.';
+    labelEl.textContent = '';
+    detailsEl.innerHTML = '';
+    return;
+  }
+
+  let weightKg = currentUnit === 'g' ? weightVal / 1000 : weightVal;
+
+  // Volumetric weight (W x L x H / 6000)
+  const w = parseFloat(document.getElementById('dimW').value) || 0;
+  const l = parseFloat(document.getElementById('dimL').value) || 0;
+  const h = parseFloat(document.getElementById('dimH').value) || 0;
+  let volWeightKg = 0;
+  let totalDim = 0;
+  let longestSide = 0;
+  let hasDimensions = w > 0 && l > 0 && h > 0;
+
+  if (hasDimensions) {
+    volWeightKg = (w * l * h) / 6000;
+    totalDim = w + l + h;
+    longestSide = Math.max(w, l, h);
+  }
+
+  let chargeableKg = Math.max(weightKg, volWeightKg);
+
+  if (chargeableKg > 30) {
+    box.className = 'result-box show error';
+    priceEl.textContent = 'Maximum weight is 30 kg.';
+    labelEl.textContent = '';
+    detailsEl.innerHTML = '';
+    return;
+  }
+
+  const tier = getRate(chargeableKg);
+  if (!tier) {
+    box.className = 'result-box show error';
+    priceEl.textContent = 'Weight out of range.';
+    labelEl.textContent = '';
+    detailsEl.innerHTML = '';
+    return;
+  }
+
+  let surcharges = [];
+  let totalSurcharge = 0;
+
+  if (hasDimensions) {
+    if (totalDim > 120) {
+      surcharges.push({ label: 'Oversize (W+L+H > 120cm)', amount: 0, warn: true });
+    }
+    if (longestSide > 100) {
+      surcharges.push({ label: 'Oversize (side > 100cm)', amount: 750 });
+      totalSurcharge += 750;
+    }
+  }
+
+  let totalRate = tier.rate + totalSurcharge;
+
+  box.className = 'result-box show';
+  priceEl.textContent = totalRate.toLocaleString() + ' THB';
+  labelEl.textContent = 'EMS Domestic Rate';
+
+  let html = '';
+  html += '<div class="detail-row"><span>Actual Weight</span><span class="val">' + formatWeight(weightKg) + '</span></div>';
+
+  if (hasDimensions) {
+    html += '<div class="detail-row"><span>Dimensions</span><span class="val">' + w + ' x ' + l + ' x ' + h + ' cm</span></div>';
+    html += '<div class="detail-row"><span>Volumetric Weight</span><span class="val">' + formatWeight(volWeightKg) + '</span></div>';
+    html += '<div class="detail-row"><span>Chargeable Weight</span><span class="val">' + formatWeight(chargeableKg) + ' (max of actual/vol.)</span></div>';
+    if (totalDim > 120) {
+      html += '<div class="detail-row" style="color:#dc2626"><span>W+L+H</span><span class="val">' + totalDim.toFixed(1) + ' cm (exceeds 120cm limit!)</span></div>';
+    }
+  }
+
+  html += '<div class="detail-row"><span>Rate Tier</span><span class="val"><= ' + formatWeight(tier.maxKg) + '</span></div>';
+  html += '<div class="detail-row"><span>Base Rate</span><span class="val">' + tier.rate + ' THB</span></div>';
+
+  surcharges.forEach(s => {
+    if (s.warn) {
+      html += '<div class="detail-row" style="color:#dc2626"><span>' + s.label + '</span><span class="val">Check with post office</span></div>';
+    } else {
+      html += '<div class="detail-row"><span>' + s.label + '</span><span class="val">+' + s.amount + ' THB</span></div>';
+    }
+  });
+
+  if (totalSurcharge > 0) {
+    html += '<div class="detail-row" style="font-weight:700"><span>Total</span><span class="val">' + totalRate.toLocaleString() + ' THB</span></div>';
+  }
+
+  html += '<div class="note">* Remote area: additional 15 THB. Rate as of 2025, source: Thailand Post.</div>';
+  detailsEl.innerHTML = html;
+
+  // Highlight matching row in table
+  highlightTableRow(tier.maxKg);
+}
+
+function highlightTableRow(maxKg) {
+  document.querySelectorAll('#rateTable tr').forEach(tr => tr.classList.remove('highlight'));
+  const row = document.querySelector('#rateTable tr[data-max="' + maxKg + '"]');
+  if (row) row.classList.add('highlight');
+}
+
+function toggleTable() {
+  const wrap = document.getElementById('rateTableWrap');
+  const arrow = document.getElementById('tableArrow');
+  const isOpen = wrap.classList.toggle('show');
+  arrow.innerHTML = isOpen ? '&#9660;' : '&#9654;';
+}
+
+// Build rate table
+(function buildTable() {
+  const tbody = document.getElementById('rateTableBody');
+  let prev = 0;
+  EMS_RATES.forEach(tier => {
+    const tr = document.createElement('tr');
+    tr.dataset.max = tier.maxKg;
+    tr.innerHTML = '<td>' + weightLabel(tier.maxKg, prev) + '</td><td>' + tier.rate + ' THB</td>';
+    tbody.appendChild(tr);
+    prev = tier.maxKg;
+  });
+})();
+
+// Enter key triggers calculation
+document.querySelectorAll('input').forEach(inp => {
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') calculate(); });
+});
+</script>
+</body>
+</html>

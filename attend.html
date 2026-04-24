@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>출퇴근 — Neo Sales App</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a1a1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.min.css?v=199">
+<!-- Preconnect 힌트 (CDN/Firestore 연결 조기 수립) -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<!-- 외부 라이브러리 (Excel) -->
+<script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<!-- Google Maps -->
+<script defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw&libraries=places,geometry"></script>
+<script>
+var _lazyCache = {};
+function loadScript(url) {
+  if (_lazyCache[url]) return _lazyCache[url];
+  _lazyCache[url] = new Promise(function(resolve, reject) {
+    var s = document.createElement('script');
+    s.src = url;
+    s.onload = resolve;
+    s.onerror = function() { delete _lazyCache[url]; reject(new Error('Failed to load: ' + url)); };
+    document.head.appendChild(s);
+  });
+  return _lazyCache[url];
+}
+function loadHtml2Canvas() { return loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'); }
+function loadJsPDF()       { return loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'); }
+</script>
+<style>
+  body { margin:0; min-height:100vh; background:#f0f4f8; display:flex; flex-direction:column; }
+  /* 헤더 바 — page-header.js가 .page-top-bar 기본 스타일 제공. 여기선 attend 전용 padding만 오버라이드 */
+  .attend-top-bar { padding:14px 20px; }
+  /* 출퇴근 기록: 모달 카드 중앙 */
+  .attend-record-area {
+    flex:1; display:flex; align-items:center; justify-content:center; padding:16px;
+    background:rgba(0,0,0,.35);
+  }
+  .attend-record-area .attend-overlay { position:static !important; display:block !important; z-index:auto !important; background:none !important; }
+  .attend-record-area .attend-overlay .attend-modal { max-width:100%; width:100%; }
+  /* 출퇴근 집계: 헤더 아래 전체 */
+  .attend-summary-area {
+    flex:1; display:flex; flex-direction:column;
+  }
+  .attend-summary-area .attend-overlay { position:static !important; display:block !important; z-index:auto !important; background:none !important; flex:1; display:flex; flex-direction:column; }
+  .attend-summary-area .attend-overlay .attend-modal { max-width:100%; width:100%; flex:1; max-height:none; border-radius:0; box-shadow:none; }
+  .attend-summary-area .attend-overlay .attend-hdr { display:none !important; }
+  /* 최소화 바 */
+  .attend-mini-bar {
+    display:none; position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:#059669; color:#fff; padding:10px 24px; border-radius:20px;
+    font-size:13px; font-weight:700; cursor:pointer; z-index:99999;
+    box-shadow:0 4px 15px rgba(0,0,0,.3); align-items:center; gap:8px;
+  }
+  .attend-mini-bar.show { display:flex; }
+  /* 헤더 바 컨트롤 버튼 */
+  .bar-ctrl { display:flex; align-items:center; gap:4px; }
+  .bar-ctrl button {
+    background:#f3f4f6; border:1px solid #e5e7eb; color:#374151; width:34px; height:30px;
+    border-radius:6px; cursor:pointer; font-size:15px; display:flex; align-items:center; justify-content:center;
+  }
+  .bar-ctrl button:hover { background:#e5e7eb; }
+  /* 축소(복원) 모드: 헤더가 창 위에 붙음 */
+  .attend-summary-area.restored {
+    position:fixed; bottom:60px; right:20px; width:600px; height:500px;
+    box-shadow:0 8px 30px rgba(0,0,0,.3); border-radius:0 0 12px 12px; overflow:hidden; z-index:9999;
+  }
+  .attend-summary-area.restored + .restored-bar-placeholder { display:block; }
+  /* 축소 모드일 때 헤더 바를 창 위에 붙이기 */
+  .attend-top-bar.floating {
+    position:fixed; bottom:calc(60px + 500px); right:20px; width:600px; top:auto;
+    border-radius:12px 12px 0 0; border-bottom:1px solid #d1d5db;
+    box-shadow:0 -4px 15px rgba(0,0,0,.1);
+  }
+  /* 드래그 가능 커서 */
+  .attend-top-bar.floating { cursor:grab; }
+  .attend-top-bar.floating:active { cursor:grabbing; }
+  @media (max-width:700px) {
+    body { padding-top:50px; }
+    .bar-ctrl { display:none !important; }
+    #barBackBtn { display:inline-flex !important; }
+    .attend-summary-area.restored { width:calc(100% - 20px); right:10px; bottom:10px; height:50vh; }
+    .attend-top-bar.floating { width:calc(100% - 20px); right:10px; bottom:calc(10px + 50vh); margin-top:0; }
+  }
+</style>
+</head>
+<body oncontextmenu="event.preventDefault();">
+
+<!-- 상단 헤더 바 (공용 page-header.js로 렌더) -->
+<div id="pageTopBar"></div>
+
+<!-- 최소화 바 -->
+<div class="attend-mini-bar" id="attendMiniBar" onclick="_asSumRestore()">
+  <span>📊</span><span>출퇴근 집계</span>
+</div>
+
+<!-- 출퇴근 기록 모드 -->
+<div id="attendRecordPage" class="attend-record-area" style="display:none;" onclick="if(event.target===this)history.back()">
+  <div class="attend-overlay" id="attendOverlay">
+    <div class="attend-modal">
+      <div class="attend-hdr">
+        <h2>🕐 <span data-i18n="att_title">출퇴근 기록</span></h2>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="openAttendManual()" style="background:#f0f9ff;border:1.5px solid #bae6fd;color:#0284c7;width:34px;height:34px;border-radius:10px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;" title="Manual">📖</button>
+          <button class="modal-btn-close" onclick="history.back()">✕</button>
+        </div>
+      </div>
+      <div class="attend-body" id="attendBody">
+        <div class="attend-clock" id="attendClock"></div>
+        <div class="attend-date" id="attendDate"></div>
+        <div class="attend-status" id="attendStatus"></div>
+        <div class="attend-btns-grid">
+          <button class="attend-btn attend-btn-depart" id="attendBtnDepart" onclick="recordAttendance('depart')">
+            <span class="attend-btn-icon">🚗</span>
+            <span data-i18n="att_btn_depart">출발</span>
+          </button>
+          <button class="attend-btn attend-btn-return" id="attendBtnReturn" onclick="recordAttendance('return')">
+            <span class="attend-btn-icon">🏠</span>
+            <span data-i18n="att_btn_return">복귀</span>
+          </button>
+          <button class="attend-btn attend-btn-in" id="attendBtnIn" onclick="recordAttendance('in')">
+            <span class="attend-btn-icon">☀️</span>
+            <span data-i18n="att_btn_in">출근</span>
+          </button>
+          <button class="attend-btn attend-btn-out" id="attendBtnOut" onclick="recordAttendance('out')">
+            <span class="attend-btn-icon">🌙</span>
+            <span data-i18n="att_btn_out">퇴근</span>
+          </button>
+        </div>
+        <div class="attend-location" id="attendLocation"></div>
+        <div class="attend-history" id="attendHistory"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 출퇴근 집계 모드 -->
+<div id="attendSummaryPage" class="attend-summary-area" style="display:none;">
+  <div class="attend-overlay attend-fullscreen" id="attendSummaryOverlay">
+    <div class="attend-modal" id="attendSumModal" style="max-width:100%;width:100%;height:100%;max-height:100%;border-radius:0;box-shadow:none;">
+      <div class="attend-hdr">
+        <h2>📊 <span data-i18n="att_sum_title">출퇴근 집계</span></h2>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding:10px 16px 0 16px;background:#f8fafc;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <select id="asSMonthFilter" onchange="_asMonthFilterChange(this.value)" style="padding:10px 8px;border:1.5px solid #2563eb;border-radius:8px;font-size:13px;height:40px;font-weight:700;color:#2563eb;cursor:pointer;min-width:120px;background:#eff6ff;">
+            <option value="">월 선택</option>
+          </select>
+          <label style="font-size:12px;color:#6b7280;" data-i18n="att_sum_from">시작일</label>
+          <input type="date" id="asSDateFrom" style="padding:10px 8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;height:40px;" />
+          <label style="font-size:12px;color:#6b7280;" data-i18n="att_sum_to">종료일</label>
+          <input type="date" id="asSDateTo" style="padding:10px 8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;height:40px;" />
+          <select id="asSDeptFilter" style="padding:10px 8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;height:40px;">
+            <option value="" data-i18n="att_sum_all_group">전체 그룹</option>
+          </select>
+          <select id="asSSubDeptFilter" style="padding:10px 8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;height:40px;">
+            <option value="" data-i18n="att_sum_all_dept">전체 부서</option>
+          </select>
+          <select id="asSEmpFilter" style="padding:10px 8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;height:40px;min-width:0;">
+            <option value="" data-i18n="att_sum_all_emp">전체 직원</option>
+          </select>
+          <button onclick="loadAttendanceSummary()" style="padding:10px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;height:40px;" data-i18n="att_sum_search">조회</button>
+          <div style="flex:1;"></div>
+          <button onclick="exportAttendanceExcel()" style="padding:10px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;height:40px;">📥 Excel</button>
+          <button onclick="exportAttendancePDF()" style="padding:10px 16px;background:#dc2626;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;height:40px;">📄 PDF</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;padding-bottom:8px;border-bottom:1px solid #e5e7eb;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:14px;color:#374151;font-weight:700;white-space:nowrap;">
+            <input type="checkbox" onchange="_asToggleGlobalCb(this)" style="width:20px;height:20px;cursor:pointer;accent-color:#2563eb;">All
+          </label>
+        </div>
+      </div>
+      <div id="attendSummaryBody" style="padding:8px 12px;overflow-y:auto;flex:1;">
+        <div style="text-align:center;color:#9ca3af;padding:40px 0;" data-i18n="att_sum_placeholder">조회 버튼을 눌러주세요.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 지도 오버레이 -->
+<div id="attendMapOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:99999;align-items:center;justify-content:center;" onclick="if(event.target===this)closeAttendMap()">
+  <div style="background:#fff;border-radius:16px;width:92%;max-width:900px;height:85vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden;position:relative;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #e5e7eb;background:linear-gradient(135deg,#f0f9ff,#f8fafc);flex-shrink:0;">
+      <h3 id="attendMapTitle" style="margin:0;font-size:16px;font-weight:700;color:#1e293b;">📍 이동 경로</h3>
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <label id="attendHwyLabel" style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#374151;background:#f8fafc;padding:5px 12px;border-radius:8px;border:1px solid #e2e8f0;user-select:none;">
+          <input type="checkbox" id="attendHwyChk" onchange="_toggleHighwayRoute()" style="width:15px;height:15px;cursor:pointer;" />
+          <span>🛣️ 고속도로</span>
+        </label>
+        <span id="attendMapDist" style="font-size:14px;font-weight:700;color:#2563eb;background:#eff6ff;padding:6px 14px;border-radius:8px;"></span>
+        <button onclick="closeAttendMap()" style="background:#f1f5f9;border:none;font-size:18px;cursor:pointer;color:#6b7280;border-radius:8px;width:36px;height:36px;display:flex;align-items:center;justify-content:center;">✕</button>
+      </div>
+    </div>
+    <div id="attendMapContainer" style="flex:1;min-height:300px;"></div>
+  </div>
+</div>
+
+<!-- PDF 미리보기 오버레이 -->
+<div id="pdfPreviewOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:999999;flex-direction:column;align-items:center;" onclick="if(event.target===this)closePdfPreview()">
+  <div style="width:100%;background:#1e293b;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
+    <div style="display:flex;align-items:center;gap:14px;">
+      <span style="color:#fff;font-size:16px;font-weight:700;">📄 PDF Preview</span>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button id="pdfPreviewPrev" onclick="pdfPreviewPrev()" style="background:#334155;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:14px;cursor:pointer;">◀</button>
+        <span id="pdfPreviewPageLabel" style="color:#cbd5e1;font-size:13px;font-weight:600;min-width:50px;text-align:center;">1 / 1</span>
+        <button id="pdfPreviewNext" onclick="pdfPreviewNext()" style="background:#334155;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:14px;cursor:pointer;">▶</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button onclick="pdfPreviewSave()" style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;">💾 저장</button>
+      <button onclick="pdfPreviewEmail()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:8px 20px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:6px;">📧 이메일</button>
+      <button onclick="closePdfPreview()" style="background:#475569;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:16px;cursor:pointer;">✕</button>
+    </div>
+  </div>
+  <div style="flex:1;overflow-y:auto;padding:20px;display:flex;justify-content:center;">
+    <div id="pdfPreviewImg" style="max-width:600px;width:100%;background:#fff;box-shadow:0 8px 40px rgba(0,0,0,.4);border-radius:4px;overflow:hidden;"></div>
+  </div>
+</div>
+
+<!-- neoAlert / showToast -->
+<div id="neoAlertOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px 20px;max-width:340px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+    <div id="neoAlertMsg" style="font-size:15px;color:#1e293b;white-space:pre-line;line-height:1.6;"></div>
+    <button onclick="document.getElementById('neoAlertOverlay').style.display='none'" style="margin-top:18px;padding:10px 32px;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">확인</button>
+  </div>
+</div>
+<div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
+
+<!-- lang.js -->
+<script src="lang.min.js?v=168"></script>
+<!-- 공용 상단 헤더 모듈 -->
+<script src="page-header.js?v=1"></script>
+<script>
+(function() {
+  // showBack:false로 렌더 후, 오른쪽 슬롯에 기존 컨트롤 버튼 + 닫기 버튼 직접 삽입
+  var _hdr = renderPageTopBar({
+    title: '🕐 출퇴근 기록',
+    titleId: 'attendBarTitle',
+    showBack: false,
+    theme: 'light',
+    extraClass: 'attend-top-bar'
+  });
+  _hdr.rightSlot.innerHTML =
+    '<div class="bar-ctrl" id="barCtrlBtns" style="display:none;">' +
+      '<button onclick="_asSumMinimize()" title="최소화">&#x2015;</button>' +
+      '<button id="barFsBtn" onclick="_asSumToggleFS()" title="축소">&#x2750;</button>' +
+      '<button onclick="history.back()" title="닫기">&#x2715;</button>' +
+    '</div>' +
+    '<button class="pt-back" id="barBackBtn" onclick="history.back()" style="padding:6px 12px;font-size:16px;">✕</button>';
+})();
+</script>
+<!-- Firebase 초기화 + 유틸 (shared via firebase-init.js) -->
+<script src="firebase-init.js?v=1"></script>
+<script>
+var _fbAuth = firebase.auth();
+var _fbDb   = firebase.firestore();
+
+function getCurrentUser() {
+  var u = JSON.parse(sessionStorage.getItem('current_user') || 'null');
+  if (u) return u;
+  if (localStorage.getItem('auto_login') === 'true') {
+    return JSON.parse(localStorage.getItem('current_user_persist') || 'null');
+  }
+  return null;
+}
+
+function neoAlert(msg) {
+  var ov = document.getElementById('neoAlertOverlay');
+  var msgEl = document.getElementById('neoAlertMsg');
+  if (ov && msgEl) { msgEl.textContent = msg; ov.style.display = 'flex'; }
+  else alert(msg);
+}
+
+function showToast(msg) {
+  var c = document.getElementById('toastContainer');
+  if (!c) return;
+  var d = document.createElement('div');
+  d.textContent = msg;
+  d.style.cssText = 'background:#1e293b;color:#fff;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;pointer-events:auto;box-shadow:0 4px 12px rgba(0,0,0,.2);';
+  c.appendChild(d);
+  setTimeout(function(){ d.style.opacity='0'; d.style.transition='opacity .3s'; setTimeout(function(){ d.remove(); },300); }, 2500);
+}
+
+function _bringToFront(el) {}
+
+// 집계 최소화/최대화/복원
+var _asSumIsFS = true; // 기본: 최대화면
+function _asSumMinimize() {
+  document.getElementById('attendSummaryPage').style.display = 'none';
+  document.querySelector('.attend-top-bar').style.display = 'none';
+  document.getElementById('attendMiniBar').classList.add('show');
+}
+function _asSumRestore() {
+  document.getElementById('attendMiniBar').classList.remove('show');
+  var bar = document.querySelector('.attend-top-bar');
+  bar.style.display = '';
+  document.getElementById('attendSummaryPage').style.display = 'flex';
+  // 최대화 상태로 복원
+  _asSumIsFS = true;
+  document.getElementById('attendSummaryPage').classList.remove('restored');
+  bar.classList.remove('floating');
+  document.getElementById('barFsBtn').innerHTML = '&#x2750;';
+  document.getElementById('barFsBtn').title = '축소';
+}
+function _asSumToggleFS() {
+  var page = document.getElementById('attendSummaryPage');
+  var bar = document.querySelector('.attend-top-bar');
+  var btn = document.getElementById('barFsBtn');
+  _asSumIsFS = !_asSumIsFS;
+  if (_asSumIsFS) {
+    page.classList.remove('restored');
+    bar.classList.remove('floating');
+    // 드래그 위치 초기화
+    bar.style.right = ''; bar.style.bottom = '';
+    page.style.right = ''; page.style.bottom = '';
+    btn.innerHTML = '&#x2750;';
+    btn.title = '축소';
+  } else {
+    page.classList.add('restored');
+    bar.classList.add('floating');
+    btn.innerHTML = '&#x26F6;';
+    btn.title = '전체화면';
+  }
+}
+
+// 헤더 드래그 이동 (축소 모드에서만)
+(function() {
+  var bar = document.querySelector('.attend-top-bar');
+  var dragging = false, startX, startY, startRight, startBottom;
+
+  bar.addEventListener('mousedown', function(e) {
+    if (!bar.classList.contains('floating')) return;
+    if (e.target.tagName === 'BUTTON' || e.target.closest('.bar-ctrl')) return;
+    dragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    startRight = parseInt(bar.style.right || getComputedStyle(bar).right) || 20;
+    startBottom = parseInt(bar.style.bottom || getComputedStyle(bar).bottom) || 0;
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var dx = e.clientX - startX;
+    var dy = e.clientY - startY;
+    var newRight = startRight - dx;
+    var newBottom = startBottom - dy;
+    // 화면 범위 제한
+    var barW = bar.offsetWidth;
+    var barH = bar.offsetHeight;
+    var page = document.getElementById('attendSummaryPage');
+    var pageH = page ? page.offsetHeight : 500;
+    if (newRight < 0) newRight = 0;
+    if (newRight > window.innerWidth - barW) newRight = window.innerWidth - barW;
+    if (newBottom + barH + pageH > window.innerHeight) newBottom = window.innerHeight - barH - pageH;
+    if (newBottom < 0) newBottom = 0;
+    bar.style.right = newRight + 'px';
+    bar.style.bottom = (newBottom + pageH) + 'px';
+    page.style.right = newRight + 'px';
+    page.style.bottom = newBottom + 'px';
+  });
+
+  document.addEventListener('mouseup', function() { dragging = false; });
+
+  // 터치 드래그 (모바일)
+  bar.addEventListener('touchstart', function(e) {
+    if (!bar.classList.contains('floating')) return;
+    if (e.target.tagName === 'BUTTON' || e.target.closest('.bar-ctrl')) return;
+    var t = e.touches[0];
+    dragging = true;
+    startX = t.clientX; startY = t.clientY;
+    startRight = parseInt(bar.style.right || getComputedStyle(bar).right) || 20;
+    startBottom = parseInt(bar.style.bottom || getComputedStyle(bar).bottom) || 0;
+  }, {passive:true});
+  document.addEventListener('touchmove', function(e) {
+    if (!dragging) return;
+    var t = e.touches[0];
+    var dx = t.clientX - startX, dy = t.clientY - startY;
+    var newRight = startRight - dx, newBottom = startBottom - dy;
+    var barW = bar.offsetWidth, pageEl = document.getElementById('attendSummaryPage');
+    var pageH = pageEl ? pageEl.offsetHeight : 500;
+    if (newRight < 0) newRight = 0;
+    if (newRight > window.innerWidth - barW) newRight = window.innerWidth - barW;
+    if (newBottom + bar.offsetHeight + pageH > window.innerHeight) newBottom = window.innerHeight - bar.offsetHeight - pageH;
+    if (newBottom < 0) newBottom = 0;
+    bar.style.right = newRight + 'px';
+    bar.style.bottom = (newBottom + pageH) + 'px';
+    pageEl.style.right = newRight + 'px';
+    pageEl.style.bottom = newBottom + 'px';
+  }, {passive:true});
+  document.addEventListener('touchend', function() { dragging = false; });
+
+  // 더블클릭 → 최대화
+  bar.addEventListener('dblclick', function(e) {
+    if (e.target.tagName === 'BUTTON' || e.target.closest('.bar-ctrl')) return;
+    if (!_asSumIsFS) {
+      _asSumToggleFS();
+      // 드래그로 변경된 위치 초기화
+      bar.style.right = '';
+      bar.style.bottom = '';
+      var page = document.getElementById('attendSummaryPage');
+      if (page) { page.style.right = ''; page.style.bottom = ''; }
+    }
+  });
+})();
+
+var MENU_CONFIG_ITEMS = [];
+var HARDCODED_ADMINS = ['T2408087'];
+function _isAdmin(u) {
+  if (!u) return false;
+  return HARDCODED_ADMINS.includes(u.empid) || u.role === 'admin';
+}
+function _isApprover(u) {
+  if (!u) return false;
+  return HARDCODED_ADMINS.includes(u.empid) || u.role === 'admin' || u.role === 'approver';
+}
+function _ensurePermArray(v) {
+  if (Array.isArray(v)) return v;
+  if (typeof v === 'string' && v) { try { var p = JSON.parse(v); if (Array.isArray(p)) return p; } catch(e) {} }
+  return [];
+}
+
+// account.js의 apiGetAccounts 심 (core.js 미로드 — 계정 필터용)
+var _acctCache = [];
+async function apiGetAccounts() {
+  if (_acctCache.length) return { accounts: _acctCache };
+  try {
+    var snap = await _fbDb.collection('accounts').get();
+    var arr = []; snap.forEach(function(d) { var o = d.data(); if (!o.empid) o.empid = d.id; arr.push(o); });
+    _acctCache = arr;
+    return { accounts: arr };
+  } catch(e) { return { accounts: [] }; }
+}
+</script>
+<!-- attendance.js -->
+<script src="attendance.min.js?v=170"></script>
+<script>
+(function() {
+  var params = new URLSearchParams(location.search);
+  var mode = params.get('mode') || 'record';
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+
+  var titleEl = document.getElementById('attendBarTitle');
+
+  if (mode === 'summary') {
+    document.getElementById('attendSummaryPage').style.display = 'flex';
+    var isMobile = window.innerWidth <= 700;
+    if (!isMobile) {
+      document.getElementById('barCtrlBtns').style.display = 'flex';
+      document.getElementById('barBackBtn').style.display = 'none';
+    } else {
+      document.getElementById('barCtrlBtns').style.display = 'none';
+      document.getElementById('barBackBtn').style.display = '';
+    }
+    if (titleEl) {
+      var titles = { ko:'📊 출퇴근 집계', en:'📊 Attendance Summary', th:'📊 สรุปการเข้างาน' };
+      titleEl.textContent = titles[L] || titles.ko;
+    }
+    // openAttendanceSummary()의 초기화 로직만 실행 (open 클래스 추가 안 함)
+    _asInitMonthFilter();
+    var now = new Date();
+    var fromEl = document.getElementById('asSDateFrom');
+    var toEl = document.getElementById('asSDateTo');
+    if (fromEl && !fromEl.value) fromEl.value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-01';
+    if (toEl && !toEl.value) toEl.value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0') + '-' + String(now.getDate()).padStart(2,'0');
+    var level = _attendSummaryLevel();
+    var deptSel = document.getElementById('asSDeptFilter');
+    var subDeptSel = document.getElementById('asSSubDeptFilter');
+    var empSel = document.getElementById('asSEmpFilter');
+    if (level === 'all') {
+      if (deptSel) deptSel.style.display = '';
+      if (subDeptSel) subDeptSel.style.display = '';
+      if (empSel) empSel.style.display = '';
+      _loadAttendEmpFilter();
+    } else if (level === 'team') {
+      if (deptSel) deptSel.style.display = 'none';
+      if (subDeptSel) subDeptSel.style.display = 'none';
+      if (empSel) empSel.style.display = '';
+      _loadAttendEmpFilter('team');
+    } else if (level === 'subteam') {
+      if (deptSel) deptSel.style.display = 'none';
+      if (subDeptSel) subDeptSel.style.display = 'none';
+      if (empSel) empSel.style.display = '';
+      _loadAttendEmpFilter('subteam');
+    } else {
+      if (deptSel) deptSel.style.display = 'none';
+      if (subDeptSel) subDeptSel.style.display = 'none';
+      if (empSel) empSel.style.display = 'none';
+    }
+    // 기본 화면에서 자동 조회
+    setTimeout(function() { loadAttendanceSummary(); }, 300);
+  } else {
+    document.getElementById('attendRecordPage').style.display = 'flex';
+    if (titleEl) {
+      var titles = { ko:'🕐 출퇴근 기록', en:'🕐 Attendance', th:'🕐 บันทึกเวลา' };
+      titleEl.textContent = titles[L] || titles.ko;
+    }
+    _startAttendClock();
+    _loadTodayAttendance();
+  }
+
+  // Firebase Auth 복원
+  var user = getCurrentUser();
+  if (user && user.empid) {
+    var email = user.empid + '@neothai-order.firebaseapp.com';
+    var pw = user.pw_hash || user.pw || user.empid;
+    _fbAuth.signInWithEmailAndPassword(email, pw).catch(function(err) {
+      if (err.code === 'auth/user-not-found') {
+        _fbAuth.createUserWithEmailAndPassword(email, pw).catch(function(){});
+      }
+    });
+  }
+})();
+</script>
+
+<!-- Attendance Manual Overlay -->
+<div id="attendManualOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9500;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border-radius:20px;width:100%;max-width:480px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #f0f0f0;">
+      <h3 style="font-size:16px;color:#1e293b;display:flex;align-items:center;gap:8px;margin:0;">📖 <span data-i18n="att_manual_title">Attendance Guide</span></h3>
+      <button onclick="closeAttendManual()" style="background:none;border:none;font-size:22px;color:#9ca3af;cursor:pointer;padding:4px 8px;border-radius:8px;">&times;</button>
+    </div>
+    <div style="flex:1;overflow:hidden;position:relative;">
+      <div id="manualSlides" style="display:flex;transition:transform .35s cubic-bezier(.4,0,.2,1);height:100%;">
+        <!-- Slide 1 -->
+        <div style="min-width:100%;padding:28px 24px;overflow-y:auto;">
+          <h4 style="font-size:15px;font-weight:700;color:#1e293b;margin:0 0 20px;text-align:center;" data-i18n="att_manual_s1_title">What are the buttons for?</h4>
+          <div style="display:flex;gap:14px;margin-bottom:18px;padding:16px;background:#f8fafc;border-radius:14px;border:1px solid #e2e8f0;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:56px;">
+              <div style="display:flex;gap:8px;">
+                <div style="text-align:center;"><div style="font-size:24px;">🚗</div><div style="font-size:9px;font-weight:700;color:#6b7280;">Depart</div></div>
+                <div style="text-align:center;"><div style="font-size:24px;">🏠</div><div style="font-size:9px;font-weight:700;color:#6b7280;">Return</div></div>
+              </div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:14px;font-weight:700;color:#1e293b;margin-bottom:6px;">Depart / Return</div>
+              <div style="font-size:12.5px;color:#475569;line-height:1.6;" data-i18n="att_manual_s1_desc1">Records travel distance for vehicle fuel support calculation. Distance is measured via Google Maps driving route, not straight-line distance.</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:14px;margin-bottom:18px;padding:16px;background:#f8fafc;border-radius:14px;border:1px solid #e2e8f0;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;min-width:56px;">
+              <div style="display:flex;gap:8px;">
+                <div style="text-align:center;"><div style="font-size:24px;">☀️</div><div style="font-size:9px;font-weight:700;color:#6b7280;">Clock In</div></div>
+                <div style="text-align:center;"><div style="font-size:24px;">🌙</div><div style="font-size:9px;font-weight:700;color:#6b7280;">Clock Out</div></div>
+              </div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:14px;font-weight:700;color:#1e293b;margin-bottom:6px;">Clock In / Clock Out</div>
+              <div style="font-size:12.5px;color:#475569;line-height:1.6;" data-i18n="att_manual_s1_desc2">Records the start and end time of field work to calculate total working hours.</div>
+            </div>
+          </div>
+          <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:12px;padding:12px 14px;display:flex;gap:8px;align-items:flex-start;">
+            <span style="font-size:18px;flex-shrink:0;">📍</span>
+            <span style="font-size:11.5px;color:#92400e;line-height:1.55;font-weight:500;" data-i18n="att_manual_s1_notice">Distance is calculated based on Google Maps driving directions, reflecting actual road distance — not a straight line between two points.</span>
+          </div>
+        </div>
+        <!-- Slide 2 -->
+        <div style="min-width:100%;padding:28px 24px;overflow-y:auto;">
+          <h4 style="font-size:15px;font-weight:700;color:#1e293b;margin:0 0 20px;text-align:center;" data-i18n="att_manual_s2_title">How does it work?</h4>
+          <div style="display:flex;flex-direction:column;">
+            <div style="display:flex;gap:14px;padding-bottom:8px;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:40px;flex-shrink:0;">
+                <div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #f59e0b;background:#fffbeb;">🚗</div>
+                <div style="width:2px;flex:1;min-height:16px;margin:4px 0;background:#f59e0b;"></div>
+              </div>
+              <div style="flex:1;padding:6px 0 16px;">
+                <div style="font-size:13px;font-weight:700;color:#d97706;margin-bottom:4px;">① Depart</div>
+                <div style="font-size:12px;color:#64748b;line-height:1.55;" data-i18n="att_manual_s2_step1">Press when leaving. Your departure location is recorded.</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:14px;padding-bottom:8px;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:40px;flex-shrink:0;">
+                <div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #16a34a;background:#f0fdf4;">☀️</div>
+                <div style="width:2px;flex:1;min-height:16px;margin:4px 0;background:#16a34a;"></div>
+              </div>
+              <div style="flex:1;padding:6px 0 16px;">
+                <div style="font-size:13px;font-weight:700;color:#16a34a;margin-bottom:4px;">② Clock In</div>
+                <div style="font-size:12px;color:#64748b;line-height:1.55;" data-i18n="att_manual_s2_step2">Press upon arrival. Records work start time.</div>
+                <div style="display:inline-flex;align-items:center;gap:4px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:3px 8px;font-size:10.5px;font-weight:600;color:#16a34a;margin-top:6px;" data-i18n="att_manual_s2_step2_note">📏 Travel distance from origin → destination is calculated</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:14px;padding-bottom:8px;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:40px;flex-shrink:0;">
+                <div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #2563eb;background:#eff6ff;">🌙</div>
+                <div style="width:2px;flex:1;min-height:16px;margin:4px 0;background:#2563eb;"></div>
+              </div>
+              <div style="flex:1;padding:6px 0 16px;">
+                <div style="font-size:13px;font-weight:700;color:#2563eb;margin-bottom:4px;">③ Clock Out</div>
+                <div style="font-size:12px;color:#64748b;line-height:1.55;" data-i18n="att_manual_s2_step3">Press when work is finished. Working hours are calculated.</div>
+                <div style="display:inline-flex;align-items:center;gap:4px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:3px 8px;font-size:10.5px;font-weight:600;color:#2563eb;margin-top:6px;" data-i18n="att_manual_s2_step3_note">⏱️ Working hours = Clock Out − Clock In</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:14px;">
+              <div style="display:flex;flex-direction:column;align-items:center;width:40px;flex-shrink:0;">
+                <div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;border:2px solid #8b5cf6;background:#f5f3ff;">🏠</div>
+              </div>
+              <div style="flex:1;padding:6px 0 16px;">
+                <div style="font-size:13px;font-weight:700;color:#7c3aed;margin-bottom:4px;">④ Return</div>
+                <div style="font-size:12px;color:#64748b;line-height:1.55;" data-i18n="att_manual_s2_step4">Press after arriving back. Return travel distance is recorded.</div>
+                <div style="display:inline-flex;align-items:center;gap:4px;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:3px 8px;font-size:10.5px;font-weight:600;color:#7c3aed;margin-top:6px;" data-i18n="att_manual_s2_step4_note">📏 Travel distance from destination → home is calculated</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-top:1px solid #f0f0f0;">
+      <button id="manualPrevBtn" onclick="_manualGo(-1)" disabled style="background:none;border:1.5px solid #e2e8f0;color:#475569;padding:8px 16px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;">← Prev</button>
+      <div style="display:flex;gap:8px;">
+        <div class="manual-page-dot active" onclick="_manualGoTo(0)" style="width:20px;height:8px;border-radius:4px;background:#2563eb;cursor:pointer;transition:all .25s;"></div>
+        <div class="manual-page-dot" onclick="_manualGoTo(1)" style="width:8px;height:8px;border-radius:50%;background:#d1d5db;cursor:pointer;transition:all .25s;"></div>
+      </div>
+      <button id="manualNextBtn" onclick="_manualGo(1)" style="background:#2563eb;color:#fff;border:1.5px solid #2563eb;padding:8px 16px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;">Next →</button>
+    </div>
+  </div>
+</div>
+<script>
+var _manualPage = 0;
+function openAttendManual() {
+  _manualPage = 0;
+  document.getElementById('manualSlides').style.transform = 'translateX(0)';
+  _manualUpdateUI();
+  document.getElementById('attendManualOverlay').style.display = 'flex';
+}
+function closeAttendManual() {
+  document.getElementById('attendManualOverlay').style.display = 'none';
+}
+function _manualGo(dir) { _manualGoTo(_manualPage + dir); }
+function _manualGoTo(idx) {
+  if (idx < 0 || idx > 1) return;
+  _manualPage = idx;
+  document.getElementById('manualSlides').style.transform = 'translateX(-' + (idx * 100) + '%)';
+  _manualUpdateUI();
+}
+function _manualUpdateUI() {
+  document.getElementById('manualPrevBtn').disabled = (_manualPage === 0);
+  var dots = document.querySelectorAll('.manual-page-dot');
+  dots.forEach(function(d, i) {
+    if (i === _manualPage) { d.style.width = '20px'; d.style.borderRadius = '4px'; d.style.background = '#2563eb'; }
+    else { d.style.width = '8px'; d.style.borderRadius = '50%'; d.style.background = '#d1d5db'; }
+  });
+  var nextBtn = document.getElementById('manualNextBtn');
+  if (_manualPage === 1) {
+    nextBtn.textContent = 'Done ✓';
+    nextBtn.onclick = function() { closeAttendManual(); };
+  } else {
+    nextBtn.textContent = 'Next →';
+    nextBtn.onclick = function() { _manualGo(1); };
+  }
+}
+document.getElementById('attendManualOverlay').addEventListener('click', function(e) {
+  if (e.target === this) closeAttendManual();
+});
+</script>
+</body>
+</html>

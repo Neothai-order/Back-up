@@ -1,0 +1,62 @@
+# ═════════════════════════════════════════════
+# NeoThai Order App — .gitignore
+# ═════════════════════════════════════════════
+
+# ── Dependencies (재생성 가능) ──
+node_modules/
+functions/node_modules/
+
+# ── Firebase cache ──
+.firebase/
+.firebaserc.local
+
+# ── 🔑 Secrets / Credentials (절대 커밋 금지) ──
+.env
+.env.*
+functions/.env
+functions/.env.*
+*.key
+*.pem
+*-service-account*.json
+serviceAccount*.json
+*-credentials*.json
+google-credentials*.json
+
+# ── Python 가상환경 (ofm_app 등) ──
+venv/
+**/venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# ── OS / 임시 파일 ──
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+.fuse_hidden*
+*.tmp
+*~
+
+# ── 백업/롤백 임시 파일 ──
+*.bak
+*.backup
+_patch_*.js
+
+# ── IDE / 에디터 ──
+.claude/
+.vscode/
+.idea/
+*.iml
+
+# ── 빌드 / 로그 ──
+*.log
+deploy_log.txt
+dist/
+build/
+
+# ── 첨부/업로드 임시 저장소 (운영 중 누적될 수 있음) ──
+data_upload/*
+!data_upload/.gitkeep

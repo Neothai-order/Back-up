@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>일일 업무 보고 — Neo Sales App</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#059669">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.min.css?v=198">
+<!-- Preconnect 힌트 (CDN/Firestore 연결 조기 수립) -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
+<script src="lang.min.js?v=161"></script>
+<script src="page-header.js?v=2"></script>
+<style>
+*{box-sizing:border-box;}
+body{margin:0;background:#f9fafb;min-height:100vh;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
+
+/* Header — page-header.js가 렌더링 (id="drHeader"는 _drMinimize 선택자 호환용) */
+.dr-win-btn{background:none;border:none;cursor:pointer;color:rgba(255,255,255,.85);padding:6px 10px;border-radius:6px;line-height:1;transition:background .15s,color .15s;font-size:18px;}
+.dr-win-btn:hover{background:rgba(255,255,255,.2);color:#fff;}
+
+/* Toast */
+.dr-toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);background:#1e293b;color:#fff;padding:12px 24px;border-radius:12px;font-size:14px;font-weight:600;z-index:99999;opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.2);}
+.dr-toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+/* Layout */
+.dr-body{max-width:1000px;margin:0 auto;padding:16px;}
+.dr-date-bar{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
+.dr-date-bar input[type="date"]{padding:8px 14px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;color:#1e293b;background:#fff;}
+.dr-date-bar .dr-status-badge{font-size:12px;padding:4px 12px;border-radius:20px;font-weight:700;}
+
+.dr-columns{display:flex;gap:20px;}
+.dr-col-left{flex:1;min-width:0;}
+.dr-col-right{width:340px;flex-shrink:0;}
+
+@media(max-width:900px){
+  .dr-columns{flex-direction:column;}
+  .dr-col-right{width:100%;}
+}
+
+/* Cards */
+.dr-card{background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08);padding:18px;margin-bottom:16px;}
+.dr-card h3{margin:0 0 12px;font-size:15px;font-weight:700;color:#1e293b;}
+.dr-card label{display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;margin-top:12px;}
+.dr-card label:first-child{margin-top:0;}
+.dr-card textarea{width:100%;min-height:80px;border:1px solid #d1d5db;border-radius:8px;padding:10px;font-size:14px;resize:vertical;font-family:inherit;color:#1e293b;}
+.dr-card textarea:focus{outline:none;border-color:#059669;box-shadow:0 0 0 3px rgba(5,150,105,.12);}
+.dr-card input[type="number"]{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;color:#1e293b;}
+.dr-card input[type="number"]:focus{outline:none;border-color:#059669;box-shadow:0 0 0 3px rgba(5,150,105,.12);}
+
+/* Visit cards */
+.dr-visit-card{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px;margin-bottom:10px;}
+.dr-visit-card .vc-name{font-weight:700;color:#059669;font-size:14px;}
+.dr-visit-card .vc-meta{font-size:12px;color:#6b7280;margin-top:4px;}
+.dr-no-data{text-align:center;color:#9ca3af;padding:24px;font-size:14px;}
+
+/* Buttons */
+.dr-btn{padding:12px 24px;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;transition:all .15s;}
+.dr-btn-draft{background:#e5e7eb;color:#374151;}
+.dr-btn-draft:hover{background:#d1d5db;}
+.dr-btn-submit{background:linear-gradient(135deg,#10b981,#059669);color:#fff;}
+.dr-btn-submit:hover{background:linear-gradient(135deg,#059669,#047857);}
+.dr-btn-review{background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;}
+.dr-btn-review:hover{background:linear-gradient(135deg,#2563eb,#1d4ed8);}
+.dr-btns{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap;}
+
+/* Status badges */
+.badge-draft{background:#e5e7eb;color:#6b7280;}
+.badge-submitted{background:#dbeafe;color:#2563eb;}
+.badge-reviewed{background:#d1fae5;color:#059669;}
+
+/* Report list */
+.dr-report-item{display:flex;align-items:center;justify-content:space-between;background:#fff;border-radius:10px;padding:14px 16px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);cursor:pointer;transition:background .15s;}
+.dr-report-item:hover{background:#f0fdf4;}
+.dr-report-item .ri-date{font-weight:700;color:#1e293b;font-size:14px;}
+.dr-report-item .ri-name{font-size:12px;color:#6b7280;margin-top:2px;}
+.dr-report-item .ri-right{display:flex;align-items:center;gap:8px;}
+.dr-report-item .ri-visits{font-size:12px;color:#6b7280;}
+
+/* Tabs */
+.dr-tabs{display:flex;gap:4px;margin-bottom:16px;}
+.dr-tab{flex:1;padding:10px;font-size:14px;font-weight:700;border:none;cursor:pointer;background:#e5e7eb;color:#6b7280;border-radius:8px;transition:all .15s;text-align:center;}
+.dr-tab.active{background:#059669;color:#fff;}
+
+/* Review overlay */
+.dr-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center;}
+.dr-overlay.show{display:flex;}
+.dr-modal{background:#fff;border-radius:16px;padding:24px;max-width:440px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.dr-modal h3{margin:0 0 16px;font-size:16px;font-weight:700;color:#1e293b;}
+.dr-modal textarea{width:100%;min-height:80px;border:1px solid #d1d5db;border-radius:8px;padding:10px;font-size:14px;resize:vertical;font-family:inherit;}
+.dr-modal-btns{display:flex;gap:10px;margin-top:16px;justify-content:flex-end;}
+
+/* Minimized bar */
+.dr-minimized{display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:10px 24px;border-radius:24px;font-size:14px;font-weight:700;cursor:pointer;z-index:99999;box-shadow:0 4px 12px rgba(0,0,0,.2);white-space:nowrap;}
+</style>
+</head>
+<body oncontextmenu="event.preventDefault();">
+
+<!-- Header (page-header.js가 렌더링 — id="drHeader"는 _drMinimize 호환) -->
+<div id="drHeader"></div>
+
+<!-- Main body -->
+<div class="dr-body" id="drMainBody">
+  <!-- Date bar -->
+  <div class="dr-date-bar">
+    <input type="date" id="drDatePicker" onchange="_drOnDateChange()">
+    <span id="drCurrentStatus"></span>
+  </div>
+
+  <!-- Tabs: form vs list -->
+  <div class="dr-tabs">
+    <button class="dr-tab active" id="drTabForm" onclick="_drSwitchTab('form')">작성</button>
+    <button class="dr-tab" id="drTabList" onclick="_drSwitchTab('list')">목록</button>
+  </div>
+
+  <!-- Form view -->
+  <div id="drFormView">
+    <div class="dr-columns">
+      <div class="dr-col-left">
+        <div class="dr-card">
+          <h3 id="drFormTitle">업무 보고 작성</h3>
+          <label id="lblOrders">주문 건수</label>
+          <input type="number" id="drOrders" min="0" value="0">
+          <label id="lblQuotes">견적 건수</label>
+          <input type="number" id="drQuotes" min="0" value="0">
+          <label id="lblAchievements">주요 성과</label>
+          <textarea id="drAchievements" rows="3"></textarea>
+          <label id="lblIssues">이슈/문제점</label>
+          <textarea id="drIssues" rows="3"></textarea>
+          <label id="lblTomorrow">내일 계획</label>
+          <textarea id="drTomorrow" rows="3"></textarea>
+          <div class="dr-btns">
+            <button class="dr-btn dr-btn-draft" id="btnDraft" onclick="_drSaveDraft()">임시 저장</button>
+            <button class="dr-btn dr-btn-submit" id="btnSubmit" onclick="_drSubmit()">제출</button>
+          </div>
+        </div>
+      </div>
+      <div class="dr-col-right">
+        <div class="dr-card">
+          <h3 id="drVisitsTitle">방문 활동</h3>
+          <div id="drVisitsList">
+            <div class="dr-no-data" id="drNoVisits">이 날의 방문 기록이 없습니다</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- List view -->
+  <div id="drListView" style="display:none;">
+    <div id="drReportList">
+      <div class="dr-no-data" id="drNoReports">보고서가 없습니다</div>
+    </div>
+  </div>
+</div>
+
+<!-- Review modal -->
+<div class="dr-overlay" id="drReviewOverlay">
+  <div class="dr-modal">
+    <h3 id="drReviewModalTitle">보고서 검토</h3>
+    <div id="drReviewContent"></div>
+    <label id="lblReviewComment" style="font-size:13px;font-weight:600;color:#374151;display:block;margin-top:12px;">검토 의견</label>
+    <textarea id="drReviewComment" rows="3"></textarea>
+    <div class="dr-modal-btns">
+      <button class="dr-btn dr-btn-draft" onclick="_drCloseReview()">닫기</button>
+      <button class="dr-btn dr-btn-review" id="btnMarkReviewed" onclick="_drMarkReviewed()">검토 완료</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="dr-toast" id="drToast"></div>
+
+<!-- Minimized bar -->
+<div class="dr-minimized" id="drMinBar" onclick="_drRestore()">📋 <span id="drMinLabel">일일 업무 보고</span></div>
+
+<script src="firebase-init.js?v=1"></script>
+<script>
+// ── Firebase (shared via firebase-init.js) ──
+var _db = firebase.firestore();
+
+// ── Auth ──
+function getCurrentUser() {
+  var u = JSON.parse(sessionStorage.getItem('current_user') || 'null');
+  if (u) return u;
+  if (localStorage.getItem('auto_login') === 'true') {
+    return JSON.parse(localStorage.getItem('current_user_persist') || 'null');
+  }
+  return null;
+}
+
+function _isAdmin(u) {
+  if (!u) return false;
+  var HARDCODED_ADMINS = ['T2408087'];
+  return HARDCODED_ADMINS.includes(u.empid) || u.role === 'admin';
+}
+
+// ── i18n ──
+var _drLang = localStorage.getItem('lang') || 'ko';
+var _drI18n = {
+  dr_title:          { ko:'일일 업무 보고', en:'Daily Work Report', th:'รายงานประจำวัน' },
+  dr_date:           { ko:'날짜', en:'Date', th:'วันที่' },
+  dr_visits:         { ko:'방문 활동', en:'Visit Activities', th:'กิจกรรมการเยี่ยม' },
+  dr_orders:         { ko:'주문 건수', en:'Orders', th:'คำสั่งซื้อ' },
+  dr_quotes:         { ko:'견적 건수', en:'Quotes', th:'ใบเสนอราคา' },
+  dr_achievements:   { ko:'주요 성과', en:'Key Achievements', th:'ผลสำเร็จ' },
+  dr_issues:         { ko:'이슈/문제점', en:'Issues', th:'ปัญหา' },
+  dr_tomorrow:       { ko:'내일 계획', en:"Tomorrow's Plan", th:'แผนวันพรุ่งนี้' },
+  dr_save_draft:     { ko:'임시 저장', en:'Save Draft', th:'บันทึกร่าง' },
+  dr_submit:         { ko:'제출', en:'Submit', th:'ส่ง' },
+  dr_review:         { ko:'검토', en:'Review', th:'ตรวจสอบ' },
+  dr_reviewed:       { ko:'검토 완료', en:'Reviewed', th:'ตรวจสอบแล้ว' },
+  dr_draft:          { ko:'임시 저장', en:'Draft', th:'ร่าง' },
+  dr_submitted:      { ko:'제출 완료', en:'Submitted', th:'ส่งแล้ว' },
+  dr_comment:        { ko:'검토 의견', en:'Review Comment', th:'ความคิดเห็น' },
+  dr_no_visits:      { ko:'이 날의 방문 기록이 없습니다', en:'No visits recorded', th:'ไม่มีบันทึกการเยี่ยม' },
+  dr_no_reports:     { ko:'보고서가 없습니다', en:'No reports', th:'ไม่มีรายงาน' },
+  dr_saved:          { ko:'저장되었습니다', en:'Saved', th:'บันทึกแล้ว' },
+  dr_submit_confirm: { ko:'제출하시겠습니까? 제출 후 수정이 제한됩니다.', en:'Submit? Editing will be restricted.', th:'ส่งรายงาน? การแก้ไขจะถูกจำกัด' },
+  dr_write:          { ko:'작성', en:'Write', th:'เขียน' },
+  dr_list:           { ko:'목록', en:'List', th:'รายการ' },
+  dr_report_review:  { ko:'보고서 검토', en:'Report Review', th:'ตรวจสอบรายงาน' },
+  dr_close:          { ko:'닫기', en:'Close', th:'ปิด' },
+  dr_visit_type:     { ko:'유형', en:'Type', th:'ประเภท' },
+  dr_visit_result:   { ko:'결과', en:'Result', th:'ผลลัพธ์' },
+  dr_visit_purpose:  { ko:'목적', en:'Purpose', th:'วัตถุประสงค์' }
+};
+
+function _t(key) {
+  var entry = _drI18n[key];
+  if (!entry) return key;
+  return entry[_drLang] || entry['ko'] || key;
+}
+
+// ── State ──
+var _drCurrentDate = '';
+var _drCurrentReport = null;
+var _drCurrentDocId = null;
+var _drVisits = [];
+var _drTab = 'form';
+var _drReviewDocId = null;
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', function() {
+  // 공용 헤더 렌더 (mount='drHeader'로 기존 ID 재사용)
+  var _drHdr = renderPageTopBar({
+    mount: 'drHeader',
+    titleHtml: '📋 <span id="drHeaderTitle">일일 업무 보고</span>',
+    showBack: false, theme: 'gradient',
+    background: 'linear-gradient(135deg,#10b981,#059669)',
+    extraClass: 'dr-header'
+  });
+  _drHdr.rightSlot.innerHTML =
+    '<button class="dr-win-btn" onclick="_drMinimize()" title="최소화">&#x2015;</button>' +
+    '<button class="dr-win-btn" id="drFsBtn" onclick="_drToggleFs()" title="전체화면">&#x25A1;</button>' +
+    '<button class="dr-win-btn" onclick="history.back()" title="닫기">&#x2715;</button>';
+
+  var user = getCurrentUser();
+  if (!user) {
+    location.href = 'index.html';
+    return;
+  }
+  _applyI18n();
+  var today = new Date();
+  var yyyy = today.getFullYear();
+  var mm = String(today.getMonth() + 1).padStart(2, '0');
+  var dd = String(today.getDate()).padStart(2, '0');
+  _drCurrentDate = yyyy + '-' + mm + '-' + dd;
+  document.getElementById('drDatePicker').value = _drCurrentDate;
+  _drLoadReport();
+  _drLoadVisits();
+  _drLoadReportList();
+});
+
+function _applyI18n() {
+  document.getElementById('drHeaderTitle').textContent = _t('dr_title');
+  document.getElementById('drMinLabel').textContent = _t('dr_title');
+  document.getElementById('drVisitsTitle').textContent = _t('dr_visits');
+  document.getElementById('lblOrders').textContent = _t('dr_orders');
+  document.getElementById('lblQuotes').textContent = _t('dr_quotes');
+  document.getElementById('lblAchievements').textContent = _t('dr_achievements');
+  document.getElementById('lblIssues').textContent = _t('dr_issues');
+  document.getElementById('lblTomorrow').textContent = _t('dr_tomorrow');
+  document.getElementById('btnDraft').textContent = _t('dr_save_draft');
+  document.getElementById('btnSubmit').textContent = _t('dr_submit');
+  document.getElementById('drNoVisits').textContent = _t('dr_no_visits');
+  document.getElementById('drNoReports').textContent = _t('dr_no_reports');
+  document.getElementById('drTabForm').textContent = _t('dr_write');
+  document.getElementById('drTabList').textContent = _t('dr_list');
+  document.getElementById('drReviewModalTitle').textContent = _t('dr_report_review');
+  document.getElementById('lblReviewComment').textContent = _t('dr_comment');
+  document.getElementById('btnMarkReviewed').textContent = _t('dr_reviewed');
+}
+
+// ── Date change ──
+function _drOnDateChange() {
+  _drCurrentDate = document.getElementById('drDatePicker').value;
+  _drCurrentReport = null;
+  _drCurrentDocId = null;
+  _drLoadReport();
+  _drLoadVisits();
+}
+
+// ── Tabs ──
+function _drSwitchTab(tab) {
+  _drTab = tab;
+  document.getElementById('drTabForm').classList.toggle('active', tab === 'form');
+  document.getElementById('drTabList').classList.toggle('active', tab === 'list');
+  document.getElementById('drFormView').style.display = tab === 'form' ? '' : 'none';
+  document.getElementById('drListView').style.display = tab === 'list' ? '' : 'none';
+  if (tab === 'list') _drLoadReportList();
+}
+
+// ── Load visit_logs ──
+function _drLoadVisits() {
+  var user = getCurrentUser();
+  if (!user || !_drCurrentDate) return;
+  var listEl = document.getElementById('drVisitsList');
+  listEl.innerHTML = '<div class="dr-no-data" style="padding:16px;color:#9ca3af;">로딩 중...</div>';
+
+  _db.collection('visit_logs')
+    .where('empid', '==', user.empid)
+    .where('date', '==', _drCurrentDate)
+    .get()
+    .then(function(snap) {
+      _drVisits = [];
+      snap.forEach(function(doc) {
+        _drVisits.push(doc.data());
+      });
+      _drRenderVisits();
+    })
+    .catch(function(err) {
+      console.error('visit_logs load error:', err);
+      listEl.innerHTML = '<div class="dr-no-data">' + _t('dr_no_visits') + '</div>';
+    });
+}
+
+function _drRenderVisits() {
+  var listEl = document.getElementById('drVisitsList');
+  if (_drVisits.length === 0) {
+    listEl.innerHTML = '<div class="dr-no-data">' + _t('dr_no_visits') + '</div>';
+    return;
+  }
+  var html = '';
+  _drVisits.forEach(function(v) {
+    html += '<div class="dr-visit-card">';
+    html += '<div class="vc-name">' + _esc(v.customer_name || v.company_name || '-') + '</div>';
+    html += '<div class="vc-meta">';
+    if (v.visit_type) html += '<span>' + _t('dr_visit_type') + ': ' + _esc(v.visit_type) + '</span> &nbsp;';
+    if (v.purpose) html += '<span>' + _t('dr_visit_purpose') + ': ' + _esc(v.purpose) + '</span> &nbsp;';
+    if (v.result) html += '<span>' + _t('dr_visit_result') + ': ' + _esc(v.result) + '</span>';
+    html += '</div></div>';
+  });
+  listEl.innerHTML = html;
+}
+
+// ── Load report for current date ──
+function _drLoadReport() {
+  var user = getCurrentUser();
+  if (!user || !_drCurrentDate) return;
+
+  _db.collection('daily_reports')
+    .where('empid', '==', user.empid)
+    .where('date', '==', _drCurrentDate)
+    .limit(1)
+    .get()
+    .then(function(snap) {
+      if (!snap.empty) {
+        var doc = snap.docs[0];
+        _drCurrentDocId = doc.id;
+        _drCurrentReport = doc.data();
+        _drFillForm(_drCurrentReport);
+        _drShowStatus(_drCurrentReport.status);
+        _drToggleFormEditable(_drCurrentReport.status !== 'submitted' && _drCurrentReport.status !== 'reviewed');
+      } else {
+        _drCurrentDocId = null;
+        _drCurrentReport = null;
+        _drClearForm();
+        _drShowStatus(null);
+        _drToggleFormEditable(true);
+      }
+    })
+    .catch(function(err) {
+      console.error('report load error:', err);
+    });
+}
+
+function _drFillForm(data) {
+  document.getElementById('drOrders').value = data.orders_count || 0;
+  document.getElementById('drQuotes').value = data.quotes_count || 0;
+  document.getElementById('drAchievements').value = data.key_achievements || '';
+  document.getElementById('drIssues').value = data.issues || '';
+  document.getElementById('drTomorrow').value = data.tomorrow_plan || '';
+}
+
+function _drClearForm() {
+  document.getElementById('drOrders').value = 0;
+  document.getElementById('drQuotes').value = 0;
+  document.getElementById('drAchievements').value = '';
+  document.getElementById('drIssues').value = '';
+  document.getElementById('drTomorrow').value = '';
+}
+
+function _drShowStatus(status) {
+  var el = document.getElementById('drCurrentStatus');
+  if (!status) {
+    el.innerHTML = '';
+    return;
+  }
+  var cls = 'badge-' + status;
+  var label = status === 'draft' ? _t('dr_draft') : status === 'submitted' ? _t('dr_submitted') : _t('dr_reviewed');
+  el.innerHTML = '<span class="dr-status-badge ' + cls + '">' + label + '</span>';
+}
+
+function _drToggleFormEditable(editable) {
+  var ids = ['drOrders', 'drQuotes', 'drAchievements', 'drIssues', 'drTomorrow'];
+  ids.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (editable) {
+      el.removeAttribute('disabled');
+      el.style.opacity = '1';
+    } else {
+      el.setAttribute('disabled', 'disabled');
+      el.style.opacity = '0.6';
+    }
+  });
+  document.getElementById('btnDraft').style.display = editable ? '' : 'none';
+  document.getElementById('btnSubmit').style.display = editable ? '' : 'none';
+}
+
+// ── Save draft ──
+function _drSaveDraft() {
+  _drSaveReport('draft');
+}
+
+// ── Submit ──
+function _drSubmit() {
+  if (!confirm(_t('dr_submit_confirm'))) return;
+  _drSaveReport('submitted');
+}
+
+function _drSaveReport(status) {
+  var user = getCurrentUser();
+  if (!user) return;
+
+  var visitArray = _drVisits.map(function(v) {
+    return {
+      customer_name: v.customer_name || v.company_name || '',
+      visit_type: v.visit_type || '',
+      purpose: v.purpose || '',
+      result: v.result || ''
+    };
+  });
+
+  var data = {
+    empid: user.empid,
+    emp_name: user.name || user.emp_name || '',
+    date: _drCurrentDate,
+    dept: user.dept || user.department || '',
+    visits: visitArray,
+    orders_count: parseInt(document.getElementById('drOrders').value) || 0,
+    quotes_count: parseInt(document.getElementById('drQuotes').value) || 0,
+    key_achievements: document.getElementById('drAchievements').value.trim(),
+    issues: document.getElementById('drIssues').value.trim(),
+    tomorrow_plan: document.getElementById('drTomorrow').value.trim(),
+    status: status
+  };
+
+  if (status === 'submitted') {
+    data.submitted_at = firebase.firestore.FieldValue.serverTimestamp();
+  }
+
+  if (_drCurrentDocId) {
+    _db.collection('daily_reports').doc(_drCurrentDocId).update(data)
+      .then(function() {
+        _drCurrentReport = data;
+        _drShowStatus(status);
+        if (status === 'submitted') _drToggleFormEditable(false);
+        _showDrToast(_t('dr_saved'));
+      })
+      .catch(function(err) {
+        console.error('save error:', err);
+        alert('Error: ' + err.message);
+      });
+  } else {
+    data.created_at = firebase.firestore.FieldValue.serverTimestamp();
+    _db.collection('daily_reports').add(data)
+      .then(function(ref) {
+        _drCurrentDocId = ref.id;
+        _drCurrentReport = data;
+        _drShowStatus(status);
+        if (status === 'submitted') _drToggleFormEditable(false);
+        _showDrToast(_t('dr_saved'));
+      })
+      .catch(function(err) {
+        console.error('save error:', err);
+        alert('Error: ' + err.message);
+      });
+  }
+}
+
+// ── Report list ──
+function _drLoadReportList() {
+  var user = getCurrentUser();
+  if (!user) return;
+  var listEl = document.getElementById('drReportList');
+  listEl.innerHTML = '<div class="dr-no-data" style="padding:16px;color:#9ca3af;">로딩 중...</div>';
+
+  var query;
+  if (_isAdmin(user)) {
+    query = _db.collection('daily_reports').orderBy('date', 'desc').limit(50);
+  } else {
+    query = _db.collection('daily_reports').where('empid', '==', user.empid).orderBy('date', 'desc').limit(30);
+  }
+
+  query.get()
+    .then(function(snap) {
+      if (snap.empty) {
+        listEl.innerHTML = '<div class="dr-no-data">' + _t('dr_no_reports') + '</div>';
+        return;
+      }
+      var html = '';
+      snap.forEach(function(doc) {
+        var d = doc.data();
+        var statusCls = 'badge-' + (d.status || 'draft');
+        var statusLabel = d.status === 'submitted' ? _t('dr_submitted') : d.status === 'reviewed' ? _t('dr_reviewed') : _t('dr_draft');
+        var visitCount = (d.visits && d.visits.length) || 0;
+
+        html += '<div class="dr-report-item" onclick="_drOpenReport(\'' + doc.id + '\',\'' + (d.date || '') + '\',\'' + (d.empid || '') + '\')">';
+        html += '<div>';
+        html += '<div class="ri-date">' + _esc(d.date || '') + '</div>';
+        html += '<div class="ri-name">' + _esc(d.emp_name || d.empid || '') + (d.dept ? ' · ' + _esc(d.dept) : '') + '</div>';
+        html += '</div>';
+        html += '<div class="ri-right">';
+        html += '<span class="ri-visits">' + _t('dr_visits') + ': ' + visitCount + '</span>';
+        html += '<span class="dr-status-badge ' + statusCls + '">' + statusLabel + '</span>';
+        html += '</div></div>';
+      });
+      listEl.innerHTML = html;
+    })
+    .catch(function(err) {
+      console.error('list load error:', err);
+      listEl.innerHTML = '<div class="dr-no-data">Error loading reports</div>';
+    });
+}
+
+function _drOpenReport(docId, date, empid) {
+  var user = getCurrentUser();
+  if (!user) return;
+
+  // If admin viewing someone else's report, open review modal
+  if (_isAdmin(user) && empid !== user.empid) {
+    _drOpenReviewModal(docId);
+    return;
+  }
+
+  // Otherwise navigate to that date
+  document.getElementById('drDatePicker').value = date;
+  _drCurrentDate = date;
+  _drLoadReport();
+  _drLoadVisits();
+  _drSwitchTab('form');
+}
+
+// ── Admin review ──
+function _drOpenReviewModal(docId) {
+  _drReviewDocId = docId;
+  _db.collection('daily_reports').doc(docId).get()
+    .then(function(doc) {
+      if (!doc.exists) return;
+      var d = doc.data();
+      var html = '';
+      html += '<p><strong>' + _t('dr_date') + ':</strong> ' + _esc(d.date) + '</p>';
+      html += '<p><strong>이름:</strong> ' + _esc(d.emp_name || d.empid) + '</p>';
+      if (d.visits && d.visits.length > 0) {
+        html += '<p><strong>' + _t('dr_visits') + ':</strong></p>';
+        d.visits.forEach(function(v) {
+          html += '<div class="dr-visit-card">';
+          html += '<div class="vc-name">' + _esc(v.customer_name || '-') + '</div>';
+          html += '<div class="vc-meta">' + _esc(v.visit_type || '') + ' · ' + _esc(v.result || '') + '</div>';
+          html += '</div>';
+        });
+      }
+      html += '<p><strong>' + _t('dr_orders') + ':</strong> ' + (d.orders_count || 0) + '</p>';
+      html += '<p><strong>' + _t('dr_quotes') + ':</strong> ' + (d.quotes_count || 0) + '</p>';
+      if (d.key_achievements) html += '<p><strong>' + _t('dr_achievements') + ':</strong><br>' + _esc(d.key_achievements).replace(/\n/g, '<br>') + '</p>';
+      if (d.issues) html += '<p><strong>' + _t('dr_issues') + ':</strong><br>' + _esc(d.issues).replace(/\n/g, '<br>') + '</p>';
+      if (d.tomorrow_plan) html += '<p><strong>' + _t('dr_tomorrow') + ':</strong><br>' + _esc(d.tomorrow_plan).replace(/\n/g, '<br>') + '</p>';
+      if (d.review_comment) html += '<p><strong>' + _t('dr_comment') + ':</strong><br>' + _esc(d.review_comment).replace(/\n/g, '<br>') + '</p>';
+
+      document.getElementById('drReviewContent').innerHTML = html;
+      document.getElementById('drReviewComment').value = d.review_comment || '';
+
+      // Hide review button if already reviewed
+      document.getElementById('btnMarkReviewed').style.display = d.status === 'reviewed' ? 'none' : '';
+
+      document.getElementById('drReviewOverlay').classList.add('show');
+    });
+}
+
+function _drCloseReview() {
+  document.getElementById('drReviewOverlay').classList.remove('show');
+  _drReviewDocId = null;
+}
+
+function _drMarkReviewed() {
+  if (!_drReviewDocId) return;
+  var user = getCurrentUser();
+  if (!user) return;
+
+  _db.collection('daily_reports').doc(_drReviewDocId).update({
+    status: 'reviewed',
+    reviewed_by: user.empid,
+    reviewed_at: firebase.firestore.FieldValue.serverTimestamp(),
+    review_comment: document.getElementById('drReviewComment').value.trim()
+  })
+  .then(function() {
+    _showDrToast(_t('dr_reviewed'));
+    _drCloseReview();
+    _drLoadReportList();
+  })
+  .catch(function(err) {
+    console.error('review error:', err);
+    alert('Error: ' + err.message);
+  });
+}
+
+// ── Window controls ──
+function _drMinimize() {
+  document.getElementById('drHeader').style.display = 'none';
+  document.getElementById('drMainBody').style.display = 'none';
+  document.getElementById('drMinBar').style.display = 'block';
+}
+
+function _drRestore() {
+  document.getElementById('drHeader').style.display = '';
+  document.getElementById('drMainBody').style.display = '';
+  document.getElementById('drMinBar').style.display = 'none';
+}
+
+var _drIsFs = false;
+function _drToggleFs() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(function(){});
+    _drIsFs = true;
+  } else {
+    document.exitFullscreen();
+    _drIsFs = false;
+  }
+}
+
+// ── Toast ──
+function _showDrToast(msg) {
+  var t = document.getElementById('drToast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, 2500);
+}
+
+// ── Escape HTML ──
+function _esc(str) {
+  if (!str) return '';
+  var d = document.createElement('div');
+  d.appendChild(document.createTextNode(str));
+  return d.innerHTML;
+}
+</script>
+</body>
+</html>

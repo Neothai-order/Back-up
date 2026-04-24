@@ -1,0 +1,86 @@
+{
+  "version": "2026-04-23b",
+  "currency": "THB",
+  "vehicleClass": 1,
+  "note": "Class 1 (4-wheel/승용차) 기준 예상 통행료. 출처: EXAT 공식 PDF(2018-09-01~), DMT(2024-12~2029-12), DOH Motorway 7/9. matchKeywords는 한/영/태 3개국어를 포함 — Google Directions locale에 상관없이 매칭.",
+  "systems": [
+    {
+      "id": "exat_chalerm",
+      "displayName": { "ko": "차럼 마하 나콘", "en": "Chalerm Maha Nakhon", "th": "ทางพิเศษเฉลิมมหานคร" },
+      "matchKeywords": ["ทางพิเศษเฉลิมมหานคร", "เฉลิมมหานคร", "Chalerm Maha Nakhon", "Chaloem Maha Nakhon", "First Stage Expressway", "차럼 마하 나콘", "차럼마하나콘", "짜럼마하나콘", "짜럼 마하 나콘"],
+      "pricing": "flat",
+      "fare": 50
+    },
+    {
+      "id": "exat_sirat",
+      "displayName": { "ko": "스리 랏", "en": "Si Rat", "th": "ทางพิเศษศรีรัช" },
+      "matchKeywords": ["ทางพิเศษศรีรัช", "ศรีรัช", "Si Rat", "Sri Rat", "Srirat", "Second Stage Expressway", "스리 랏", "스리랏", "시랏", "시 랏"],
+      "pricing": "flat",
+      "fare": 50
+    },
+    {
+      "id": "exat_chalong",
+      "displayName": { "ko": "찰롱 랏", "en": "Chalong Rat", "th": "ทางพิเศษฉลองรัช" },
+      "matchKeywords": ["ทางพิเศษฉลองรัช", "ฉลองรัช", "Chalong Rat", "Chaloem Rat", "Ramindra - At Narong", "찰롱 랏", "찰롱랏", "찰롬 랏"],
+      "pricing": "flat",
+      "fare": 40
+    },
+    {
+      "id": "exat_udon",
+      "displayName": { "ko": "우돈 랏타야 (방빠인)", "en": "Udon Ratthaya", "th": "ทางพิเศษอุดรรัถยา" },
+      "matchKeywords": ["ทางพิเศษอุดรรัถยา", "อุดรรัถยา", "Udon Ratthaya", "Udon Rattaya", "Bang Pa-in", "Bang Pa-In", "Pak Kret", "우돈 랏타야", "우돈랏타야", "방빠인"],
+      "pricing": "flat",
+      "fare": 45
+    },
+    {
+      "id": "exat_prachim",
+      "displayName": { "ko": "프라침 랏타야 (스리랏-외곽)", "en": "Prachim Ratthaya (Si Rat - Outer Ring)", "th": "ทางพิเศษประจิมรัถยา" },
+      "matchKeywords": ["ทางพิเศษประจิมรัถยา", "ประจิมรัถยา", "Prachim Ratthaya", "Si Rat - Outer Ring", "프라침 랏타야", "프라침랏타야"],
+      "pricing": "flat",
+      "fare": 65
+    },
+    {
+      "id": "exat_burapha",
+      "displayName": { "ko": "부라파 위티 (방나-촌부리)", "en": "Burapha Withi", "th": "ทางพิเศษบูรพาวิถี" },
+      "matchKeywords": ["ทางพิเศษบูรพาวิถี", "บูรพาวิถี", "Burapha Withi", "Bang Na - Chon Buri", "Bang Na-Chon Buri", "부라파 위티", "부라파위티", "방나-촌부리"],
+      "pricing": "per_km",
+      "perKm": 1.3,
+      "minFare": 20,
+      "maxFare": 110
+    },
+    {
+      "id": "exat_kanchana",
+      "displayName": { "ko": "칸차나피섹 (방플리-숙사왓)", "en": "Kanchanaphisek Expressway", "th": "ทางพิเศษกาญจนาภิเษก" },
+      "matchKeywords": ["ทางพิเศษกาญจนาภิเษก", "กาญจนาภิเษก", "Kanchanaphisek Expressway", "Bang Phli - Suksawat", "Bang Phli-Suksawat", "칸차나피섹", "방플리-숙사왓"],
+      "pricing": "per_km",
+      "perKm": 1.2,
+      "minFare": 15,
+      "maxFare": 55
+    },
+    {
+      "id": "dmt",
+      "displayName": { "ko": "돈므앙 톨웨이", "en": "Don Mueang Tollway", "th": "ดอนเมืองโทลล์เวย์" },
+      "matchKeywords": ["ดอนเมืองโทลล์เวย์", "ทางยกระดับอุตราภิมุข", "ดอนเมือง โทลล์เวย์", "Don Mueang Tollway", "Don Muang Tollway", "Viphavadi Tollway", "Utraphimuk", "돈므앙 톨웨이", "돈므앙톨웨이", "돈무앙 톨웨이", "비파와디 톨웨이"],
+      "pricing": "flat",
+      "fare": 130
+    },
+    {
+      "id": "doh_m7",
+      "displayName": { "ko": "모터웨이 7 (방콕-파타야)", "en": "Motorway 7", "th": "ทางหลวงพิเศษหมายเลข 7" },
+      "matchKeywords": ["ทางหลวงพิเศษหมายเลข 7", "หมายเลข 7", "Motorway 7", "Route 7", "Bangkok - Chonburi - Pattaya", "Bangkok-Chonburi-Pattaya", "Map Ta Phut", "모터웨이 7", "방콕-파타야", "7번 고속도로"],
+      "pricing": "per_km",
+      "perKm": 1.2,
+      "minFare": 30,
+      "maxFare": 155
+    },
+    {
+      "id": "doh_m9",
+      "displayName": { "ko": "모터웨이 9 (외곽순환)", "en": "Motorway 9 (Outer Ring)", "th": "ทางหลวงพิเศษหมายเลข 9" },
+      "matchKeywords": ["ทางหลวงพิเศษหมายเลข 9", "หมายเลข 9", "Motorway 9", "Route 9", "Kanchanaphisek Outer Ring", "모터웨이 9", "외곽순환", "9번 고속도로"],
+      "pricing": "per_km",
+      "perKm": 0.9,
+      "minFare": 15,
+      "maxFare": 85
+    }
+  ]
+}

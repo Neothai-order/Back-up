@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>내 주변 치과 — Neo Sales App</title>
+<link rel="stylesheet" href="style.min.css?v=198">
+<!-- Preconnect 힌트 (CDN/Firestore 연결 조기 수립) -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://maps.googleapis.com" crossorigin>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="page-header.js?v=2"></script>
+<script src="firebase-init.js?v=1"></script>
+<script>
+// ── Firebase 초기화 (shared via firebase-init.js) ──
+var _ndDb = firebase.firestore();
+// Firestore 오프라인 영속화 (IndexedDB) — core.js 와 동일한 캐시를 공유해
+// 페이지 진입마다 customers 컬렉션을 재페치하지 않도록 한다.
+try {
+  _ndDb.enablePersistence({ synchronizeTabs: true }).catch(function(err) {
+    if (err && err.code === 'failed-precondition') {
+      console.warn('[Firestore] persistence failed-precondition (multi-tab)');
+    } else if (err && err.code === 'unimplemented') {
+      console.warn('[Firestore] persistence unavailable in this browser');
+    } else {
+      console.warn('[Firestore] persistence error:', err && err.code);
+    }
+  });
+} catch(e) { console.warn('[Firestore] persistence init error:', e); }
+var GMAPS_KEY = 'AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw';
+
+function getCurrentUser() {
+  var u = JSON.parse(sessionStorage.getItem('current_user') || 'null');
+  if (u) return u;
+  if (localStorage.getItem('auto_login') === 'true') {
+    return JSON.parse(localStorage.getItem('current_user_persist') || 'null');
+  }
+  return null;
+}
+
+// ── 내장 i18n ──
+var _ndI18n = {
+  ko: {
+    title:'🦷 내 주변 치과',
+    loading:'데이터 불러오는 중...',
+    locating:'현재 위치 확인 중...',
+    loc_denied:'위치 권한이 거부되어 방콕 중심으로 표시합니다.',
+    loc_error:'위치를 가져올 수 없어 방콕 중심으로 표시합니다.',
+    login_req:'로그인이 필요합니다.',
+    back_to_app:'앱으로 돌아가기',
+    radius:'반경',
+    search_ph:'고객명 / 주소 검색...',
+    all_teams:'전체 팀',
+    sort_distance:'거리순',
+    sort_name:'이름순',
+    within:'반경',
+    of_total:'/ 전체',
+    customers:'거래처',
+    geocoding:'좌표 변환 중',
+    no_results:'조건에 맞는 거래처가 없습니다.',
+    km:'km',
+    m:'m',
+    open_map:'구글 지도 열기',
+    call:'전화',
+    directions:'길찾기',
+    detail:'상세',
+    no_address:'(주소 없음)',
+    no_phone:'(전화 없음)',
+    distance:'거리',
+    address:'주소',
+    phone:'전화',
+    team:'팀',
+    sales:'담당',
+    find_other:'🌐 주변 다른 치과 찾기 (Google Maps)',
+    legend_active:'거래',
+    legend_vip:'VIP',
+    legend_inactive:'미거래',
+    legend_mypos:'내 위치'
+  },
+  en: {
+    title:'🦷 Nearby Dentists',
+    loading:'Loading data...',
+    locating:'Getting current location...',
+    loc_denied:'Location permission denied. Centering on Bangkok.',
+    loc_error:'Cannot get location. Centering on Bangkok.',
+    login_req:'Login required.',
+    back_to_app:'Back to app',
+    radius:'Radius',
+    search_ph:'Search name / address...',
+    all_teams:'All Teams',
+    sort_distance:'By distance',
+    sort_name:'By name',
+    within:'Within',
+    of_total:'/ total',
+    customers:'customers',
+    geocoding:'Geocoding',
+    no_results:'No customers match.',
+    km:'km',
+    m:'m',
+    open_map:'Open in Google Maps',
+    call:'Call',
+    directions:'Directions',
+    detail:'Detail',
+    no_address:'(no address)',
+    no_phone:'(no phone)',
+    distance:'Distance',
+    address:'Address',
+    phone:'Phone',
+    team:'Team',
+    sales:'Sales',
+    find_other:'🌐 Find other dentists nearby (Google Maps)',
+    legend_active:'Active',
+    legend_vip:'VIP',
+    legend_inactive:'Non-active',
+    legend_mypos:'My Location'
+  },
+  th: {
+    title:'🦷 ทันตแพทย์ใกล้ฉัน',
+    loading:'กำลังโหลดข้อมูล...',
+    locating:'กำลังระบุตำแหน่ง...',
+    loc_denied:'ไม่อนุญาตตำแหน่ง แสดงศูนย์กลางกรุงเทพฯ',
+    loc_error:'ไม่สามารถระบุตำแหน่ง แสดงศูนย์กลางกรุงเทพฯ',
+    login_req:'จำเป็นต้องเข้าสู่ระบบ',
+    back_to_app:'กลับสู่แอป',
+    radius:'รัศมี',
+    search_ph:'ค้นหาชื่อ / ที่อยู่...',
+    all_teams:'ทุกทีม',
+    sort_distance:'ตามระยะทาง',
+    sort_name:'ตามชื่อ',
+    within:'ภายใน',
+    of_total:'/ ทั้งหมด',
+    customers:'ลูกค้า',
+    geocoding:'กำลังแปลงพิกัด',
+    no_results:'ไม่พบลูกค้าที่ตรงกับเงื่อนไข',
+    km:'กม.',
+    m:'ม.',
+    open_map:'เปิดใน Google Maps',
+    call:'โทร',
+    directions:'เส้นทาง',
+    detail:'รายละเอียด',
+    no_address:'(ไม่มีที่อยู่)',
+    no_phone:'(ไม่มีโทรศัพท์)',
+    distance:'ระยะทาง',
+    address:'ที่อยู่',
+    phone:'โทรศัพท์',
+    team:'ทีม',
+    sales:'เซลล์',
+    find_other:'🌐 ค้นหาทันตแพทย์อื่น ๆ ใกล้เคียง (Google Maps)',
+    legend_active:'ซื้อขาย',
+    legend_vip:'VIP',
+    legend_inactive:'ไม่ซื้อขาย',
+    legend_mypos:'ตำแหน่งของฉัน'
+  }
+};
+function _ndT(k) {
+  var L = localStorage.getItem('appLang') || 'ko';
+  return (_ndI18n[L] && _ndI18n[L][k]) || _ndI18n.ko[k] || k;
+}
+</script>
+<style>
+*{box-sizing:border-box;}
+body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;width:100%;height:100vh;height:100dvh;overflow:hidden;}
+.nd-main{position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;overflow:hidden;background:#f1f5f9;}
+.nd-ctrl{flex-shrink:0;background:#fff;border-bottom:1px solid #e5e7eb;padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.nd-ctrl select,.nd-ctrl input{padding:6px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;background:#fff;}
+.nd-ctrl .nd-radius{display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;font-weight:600;}
+.nd-ctrl .nd-radius input[type=range]{width:140px;}
+.nd-stats{font-size:12px;color:#64748b;margin-left:auto;font-weight:600;}
+.nd-stats b{color:#0d9488;font-weight:800;}
+.nd-body{flex:1;display:flex;overflow:hidden;}
+.nd-map-wrap{flex:1;min-width:0;position:relative;}
+#ndMap{width:100%;height:100%;background:#e5e7eb;}
+.nd-list-wrap{width:380px;max-width:45%;flex-shrink:0;background:#fff;border-left:1px solid #e5e7eb;overflow-y:auto;}
+.nd-card{padding:12px 14px;border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background .12s;}
+.nd-card:hover{background:#f0fdfa;}
+.nd-card.active{background:#ccfbf1;border-left:3px solid #0d9488;padding-left:11px;}
+.nd-card-row1{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+.nd-card-erp{background:#0d9488;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;}
+.nd-card-name{font-size:14px;font-weight:700;color:#0f172a;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.nd-card-dist{font-size:12px;font-weight:800;color:#0d9488;white-space:nowrap;}
+.nd-card-clinic{font-size:11px;color:#0d9488;font-weight:700;margin:2px 0 4px;line-height:1.3;}
+.nd-card-addr{font-size:11px;color:#64748b;line-height:1.35;margin-bottom:6px;max-height:30px;overflow:hidden;}
+.nd-card-actions{display:flex;gap:6px;}
+.nd-card-actions button{flex:1;padding:5px 6px;font-size:11px;font-weight:700;border:1px solid #d1d5db;background:#f8fafc;color:#475569;border-radius:6px;cursor:pointer;}
+.nd-card-actions button:hover{background:#e2e8f0;}
+.nd-card-actions button.primary{background:#0d9488;color:#fff;border-color:#0d9488;}
+.nd-card-actions button.primary:hover{background:#0b7a72;}
+/* ── 상태별 카드 스타일 ── */
+.nd-card.nd-vip{background:linear-gradient(90deg,#eff6ff 0%,#fff 60%);}
+.nd-card.nd-vip:hover{background:linear-gradient(90deg,#dbeafe 0%,#f0f9ff 60%);}
+.nd-card.nd-vip .nd-card-erp{background:#2563eb;}
+.nd-card.nd-vip .nd-card-dist{color:#2563eb;}
+.nd-card.nd-vip.active{background:#dbeafe;border-left:3px solid #2563eb;}
+.nd-card.nd-inactive{background:#f8fafc;opacity:.78;}
+.nd-card.nd-inactive:hover{background:#f1f5f9;opacity:1;}
+.nd-card.nd-inactive .nd-card-erp{background:#94a3b8;}
+.nd-card.nd-inactive .nd-card-name{color:#64748b;}
+.nd-card.nd-inactive .nd-card-dist{color:#64748b;}
+.nd-card.nd-inactive.active{background:#e2e8f0;border-left:3px solid #64748b;}
+.nd-vip-crown{display:inline-block;margin-right:3px;font-size:13px;filter:drop-shadow(0 1px 1px rgba(217,119,6,.5));}
+.nd-status-badge{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:800;margin-left:4px;vertical-align:middle;}
+.nd-status-badge.vip{background:#fef3c7;color:#b45309;border:1px solid #fbbf24;}
+.nd-status-badge.inactive{background:#e2e8f0;color:#475569;}
+/* 범례 (50% 확대 + 클릭 가능 필터) */
+.nd-legend{position:absolute;top:12px;right:12px;background:rgba(255,255,255,.96);backdrop-filter:blur(6px);padding:10px 13px;border-radius:10px;box-shadow:0 3px 12px rgba(0,0,0,.15);font-size:14px;z-index:500;border:1px solid #e2e8f0;user-select:none;touch-action:manipulation;}
+.nd-legend-row{display:flex;align-items:center;gap:8px;margin:5px 0;white-space:nowrap;cursor:pointer;padding:5px 7px;border-radius:6px;transition:background .12s,opacity .15s,transform .1s;font-weight:600;color:#1e293b;touch-action:manipulation;-webkit-tap-highlight-color:rgba(37,99,235,.25);}
+.nd-legend-row:hover{background:#f1f5f9;}
+.nd-legend-row:active{transform:scale(.96);background:#e2e8f0;}
+.nd-legend-row.nd-legend-off{opacity:.35;text-decoration:line-through;}
+.nd-legend-row.nd-legend-off:hover{opacity:.6;background:#f8fafc;}
+/* 솔로 선택된 항목은 파란 보더로 강조 */
+.nd-legend-row.nd-legend-solo{background:#eff6ff;border-left:3px solid #2563eb;padding-left:4px;}
+.nd-legend-row.nd-legend-solo:hover{background:#dbeafe;}
+.nd-legend-dot{width:18px;height:18px;border-radius:50%;border:2.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.15);flex-shrink:0;}
+.nd-legend-crown{font-size:16px;margin-left:-3px;filter:drop-shadow(0 1px 1px rgba(217,119,6,.4));}
+.nd-legend-mypos-icon{width:18px;height:18px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.2);flex-shrink:0;}
+.nd-empty{padding:40px 20px;text-align:center;color:#94a3b8;font-size:13px;}
+.nd-find-other{display:block;margin:12px;padding:10px;background:#eff6ff;color:#1e40af;text-align:center;font-weight:700;font-size:12px;border:1px solid #bfdbfe;border-radius:8px;text-decoration:none;}
+.nd-find-other:hover{background:#dbeafe;}
+.nd-progress{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:6px 14px;border-radius:16px;font-size:11px;font-weight:600;z-index:9999;display:none;box-shadow:0 4px 12px rgba(0,0,0,.2);}
+.nd-progress.show{display:block;}
+.gm-style .gm-style-iw-c{padding:0 !important;overflow:hidden !important;}
+.gm-style .gm-style-iw-d{overflow:hidden !important;max-height:none !important;}
+.gm-style .gm-style-iw-c button[title="Close"]{top:4px !important;right:4px !important;background:rgba(255,255,255,.88) !important;border-radius:50% !important;opacity:1 !important;z-index:10;}
+.nd-iw{min-width:240px;max-width:280px;margin:-10px;overflow:hidden;border-radius:8px;}
+.nd-iw-body{padding:10px 12px 12px;}
+.nd-iw-title{font-size:14px;font-weight:800;color:#0f172a;margin-bottom:2px;}
+.nd-iw-clinic{font-size:11px;color:#0d9488;font-weight:700;margin-bottom:4px;line-height:1.3;}
+.nd-iw-sub{font-size:11px;color:#64748b;line-height:1.4;margin-bottom:8px;}
+.nd-iw-actions{display:flex;gap:6px;}
+.nd-iw-actions a{flex:1;padding:5px;font-size:11px;font-weight:700;border-radius:6px;text-align:center;text-decoration:none;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;}
+.nd-iw-actions a.primary{background:#0d9488;color:#fff;border-color:#0d9488;}
+.nd-iw-actions a.nd-disabled{opacity:.4;cursor:not-allowed;pointer-events:none;filter:grayscale(.6);}
+.nd-card-actions button.nd-disabled,
+.nd-card-actions button[disabled]{opacity:.4;cursor:not-allowed;background:#f8fafc;color:#94a3b8;border-color:#e2e8f0;}
+/* ── 데스크탑 상단 바 내 반경 슬라이더 + 통계 ── */
+.nd-top-radius{display:flex;align-items:center;gap:8px;color:#fff;font-size:12px;font-weight:700;}
+.nd-top-radius input[type=range]{width:140px;accent-color:#fff;vertical-align:middle;}
+.nd-top-radius #ndRadiusLabelTop{min-width:42px;text-align:right;}
+.nd-top-stats{font-size:12px;font-weight:700;color:#fff;padding-left:10px;margin-left:2px;border-left:1px solid rgba(255,255,255,.35);}
+.nd-top-stats b{color:#fef3c7;font-weight:800;}
+/* 데스크탑: 기존 .nd-ctrl 내 반경/통계 숨김 (상단 바로 이전) */
+@media (min-width:781px){
+  .nd-ctrl .nd-radius{display:none;}
+  .nd-stats{display:none;}
+}
+@media (max-width:780px){
+  .nd-body{flex-direction:column;}
+  .nd-map-wrap{height:45vh;flex:none;}
+  .nd-list-wrap{width:100%;max-width:none;flex:1;min-height:0;border-left:none;border-top:1px solid #e5e7eb;}
+  /* 모바일은 상단 바 슬라이더 숨김 */
+  .nd-top-radius{display:none !important;}
+  /* ── 반경 슬라이더(40%) + 통계(60%) 한 줄 ── */
+  .nd-ctrl .nd-radius{order:11;flex:0 0 40%;max-width:40%;padding-top:6px;border-top:1px dashed #e5e7eb;margin-top:2px;gap:4px;font-size:11px;}
+  .nd-ctrl .nd-radius input[type=range]{flex:1;min-width:0;width:auto;}
+  .nd-ctrl .nd-radius #ndRadiusLabel{font-size:11px;white-space:nowrap;}
+  .nd-stats{order:12;flex:1;margin-left:0;padding:6px 0 0 8px;border-top:1px dashed #e5e7eb;margin-top:2px;text-align:right;font-size:11px;line-height:1.3;width:auto;}
+  /* ── 범례: 우측 상단 모서리에 flush 로 붙이고 15% 축소 ── */
+  .nd-legend{top:0;right:0;padding:8px 11px;font-size:13px;border-radius:0 0 0 10px;transform:scale(.85);transform-origin:top right;box-shadow:0 2px 8px rgba(0,0,0,.12);}
+  .nd-legend-row{margin:4px 0;gap:7px;}
+  .nd-legend-dot{width:16px;height:16px;}
+  .nd-legend-mypos-icon{width:16px;height:16px;}
+  /* ── 모바일 카드 컴팩트화 (이름/코드/거리/주소/우편번호 유지) ── */
+  .nd-card{padding:7px 11px;}
+  .nd-card-row1{margin-bottom:2px;gap:6px;}
+  .nd-card-erp{font-size:10px;padding:1px 6px;border-radius:8px;}
+  .nd-card-name{font-size:12px;}
+  .nd-card-dist{font-size:11px;}
+  .nd-card-clinic{font-size:10px;margin:1px 0 2px;line-height:1.25;}
+  .nd-card-addr{font-size:10px;line-height:1.3;margin-bottom:4px;max-height:26px;}
+  .nd-card-actions{gap:5px;}
+  .nd-card-actions button{padding:4px 4px;font-size:10px;border-radius:5px;}
+}
+</style>
+</head>
+<body>
+<div id="pageTopBar"></div>
+
+<div class="nd-main">
+  <div class="nd-ctrl">
+    <input type="text" id="ndSearch" placeholder="고객명/주소" style="width:160px;">
+    <select id="ndTeam"></select>
+    <select id="ndSort">
+      <option value="distance" data-nd-i18n="sort_distance">거리순</option>
+      <option value="name" data-nd-i18n="sort_name">이름순</option>
+    </select>
+    <div class="nd-radius">
+      <span data-nd-i18n="radius">반경</span>
+      <input type="range" id="ndRadius" min="1" max="50" step="1" value="10">
+      <span id="ndRadiusLabel">10 km</span>
+    </div>
+    <button id="ndGeocodeBtn" type="button" style="display:none;padding:6px 12px;border:1px solid #0d9488;background:#ccfbf1;color:#0d9488;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">📍 좌표 변환</button>
+    <div class="nd-stats" id="ndStats"></div>
+  </div>
+
+  <div class="nd-body">
+    <div class="nd-map-wrap">
+      <div id="ndMap"></div>
+      <div class="nd-legend" id="ndLegend">
+        <div class="nd-legend-row" data-nd-filter="active" title="클릭하여 필터 토글"><span class="nd-legend-dot" style="background:#14b8a6;"></span><span data-nd-i18n="legend_active">거래</span></div>
+        <div class="nd-legend-row" data-nd-filter="vip" title="클릭하여 필터 토글"><span class="nd-legend-dot" style="background:#2563eb;"></span><span class="nd-legend-crown">👑</span><span data-nd-i18n="legend_vip">VIP</span></div>
+        <div class="nd-legend-row" data-nd-filter="inactive" title="클릭하여 필터 토글"><span class="nd-legend-dot" style="background:#94a3b8;"></span><span data-nd-i18n="legend_inactive">미거래</span></div>
+        <div class="nd-legend-row" data-nd-action="mypos" title="내 위치로 이동"><span class="nd-legend-mypos-icon"></span><span data-nd-i18n="legend_mypos">내 위치</span></div>
+      </div>
+    </div>
+    <div class="nd-list-wrap">
+      <a class="nd-find-other" id="ndFindOther" href="#" target="_blank" data-nd-i18n="find_other">🌐 주변 다른 치과 찾기</a>
+      <div id="ndList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="nd-progress" id="ndProgress"></div>
+
+<script>
+// ══════════════════════════════════════════════════════
+// 내 주변 치과 — 메인 로직
+// ══════════════════════════════════════════════════════
+var _customers = [];
+var _myPos = null;
+var _map = null;
+var _markers = [];
+var _infoWin = null;
+var _activeCard = null;
+var _geocoder = null;
+var _filterRadius = 10;       // km (위치 확인 후 동적 결정: 방콕 도심 5 / 외곽 20)
+// 방콕 도심 중심점 (시암/사이암 스퀘어 근처) — 이 지점에서 15km 이내면 도심으로 판정
+var _BKK_CENTER = { lat: 13.7563, lng: 100.5018 };
+var _BKK_INNER_RADIUS_KM = 15;   // 도심 판정 반경
+var _RADIUS_IN_BKK = 5;          // 도심 기본 반경 (km)
+var _RADIUS_OUT_BKK = 20;        // 외곽 기본 반경 (km)
+var _filterTeam = '';
+var _filterSearch = '';
+var _sortMode = 'distance';
+// ── 범례(상태) 필터 — 기본 모두 켜짐 ──
+var _filterStatus = { active: true, vip: true, inactive: true };
+
+// ── 로그인 확인 ──
+(function _checkAuth() {
+  var u = getCurrentUser();
+  if (!u) {
+    document.body.innerHTML = '<div style="padding:40px;text-align:center;">'
+      + '<div style="font-size:50px;margin-bottom:16px;">🔒</div>'
+      + '<div style="font-size:18px;margin-bottom:20px;">' + _ndT('login_req') + '</div>'
+      + '<a href="index.html" style="background:#0d9488;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;">'
+      + _ndT('back_to_app') + '</a></div>';
+    throw new Error('not logged in');
+  }
+})();
+
+// ── 정적 i18n 적용 ──
+function _ndApplyStaticI18n() {
+  document.querySelectorAll('[data-nd-i18n]').forEach(function(el) {
+    var k = el.getAttribute('data-nd-i18n');
+    if (k) el.textContent = _ndT(k);
+  });
+  // placeholder
+  var sEl = document.getElementById('ndSearch');
+  if (sEl) sEl.placeholder = _ndT('search_ph');
+}
+
+// ── 고객 이름 필드 폴백 ──
+function _ndGetName(c) {
+  return (c.name_th || c.name_en || c.cust_name || c.name || '').trim();
+}
+// ── 클리닉/병원 이름 ──
+function _ndGetClinic(c) {
+  return (c.clinic || '').trim();
+}
+// ── 전화번호 정제 ──
+// Firestore 의 tel/phone 필드는 종종 ", 02-123-4567" / "021234567, 081..." 처럼
+// 선행 구두점이나 여러 번호가 들어있어 tel: URI 로 바로 쓰면 "," 가 들어감.
+// 여기서 첫 번호만 추출하고 숫자/+만 남겨 반환.
+function _ndCleanPhoneDisplay(tel) {
+  if (!tel) return '';
+  // 공백/콤마/세미콜론/슬래시 로 분리 → 첫 유효 토큰
+  var first = String(tel).split(/[,;\/]+/).map(function(s){return s.trim();}).filter(Boolean)[0] || '';
+  // 선두의 구두점/공백 제거
+  return first.replace(/^[\s.,;:/\\]+/, '').trim();
+}
+function _ndCleanPhoneDial(tel) {
+  var disp = _ndCleanPhoneDisplay(tel);
+  if (!disp) return '';
+  // tel: URI 용 — 숫자/+만 남김 (공백/하이픈/괄호 제거)
+  return disp.replace(/[^\d+]/g, '');
+}
+
+// ── 고객 상태 판정 (마커 색상용) ──
+// 반환: 'vip' | 'inactive' | 'active' (기본)
+function _ndGetStatus(c) {
+  var st = (c.status || c.cust_status || '').toString().trim().toUpperCase();
+  if (st === 'VIP') return 'vip';
+  if (!st) return 'active';
+  if (st === 'ACTIVE' || st === 'PENDING' || st === 'APPROVED') return 'active';
+  // NOT USE, INACTIVE, REJECTED, CLOSED 등 나머지는 모두 비활성
+  return 'inactive';
+}
+// ── 고객이름과 클리닉이름이 "의미있게 다른지" 판정 ──
+// (공백/대소문자 무시, 한쪽이 다른쪽 substring 이면 동일 취급)
+function _ndNameDiffers(name, clinic) {
+  if (!name || !clinic) return false;
+  var n = name.toLowerCase().replace(/\s+/g, '');
+  var cl = clinic.toLowerCase().replace(/\s+/g, '');
+  if (!n || !cl) return false;
+  if (n === cl) return false;
+  if (n.indexOf(cl) >= 0) return false;  // clinic 이 name 에 포함
+  if (cl.indexOf(n) >= 0) return false;  // name 이 clinic 에 포함
+  return true;
+}
+
+// ── Haversine 거리 (km) ──
+function _haversine(lat1, lng1, lat2, lng2) {
+  var R = 6371;
+  var dLat = (lat2 - lat1) * Math.PI / 180;
+  var dLng = (lng2 - lng1) * Math.PI / 180;
+  var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+          Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+          Math.sin(dLng/2)*Math.sin(dLng/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ── 거리 포맷 ──
+function _fmtDist(km) {
+  if (km < 1) return Math.round(km * 1000) + ' ' + _ndT('m');
+  return km.toFixed(1) + ' ' + _ndT('km');
+}
+
+// ── 진행 상태 표시 ──
+function _showProgress(msg) {
+  var el = document.getElementById('ndProgress');
+  if (!msg) { el.classList.remove('show'); return; }
+  el.textContent = msg;
+  el.classList.add('show');
+}
+
+// ── Google Maps API 동적 로드 ──
+function _loadGMaps() {
+  return new Promise(function(resolve, reject) {
+    if (window.google && window.google.maps) return resolve();
+    // gm_authFailure 는 Google Maps 가 API 키/레퍼러/빌링 문제로 인증 실패 시 호출
+    window.gm_authFailure = function() {
+      console.error('[NearbyDentists] gm_authFailure: API key / referrer / billing issue');
+      _showMapError('Google Maps 인증 실패 — 브라우저 콘솔을 확인하세요.\n\n'
+        + '가능한 원인:\n'
+        + '1) API 키 HTTP 레퍼러 제한 (현재 URL: ' + location.host + ')\n'
+        + '2) Maps JavaScript API 미활성화\n'
+        + '3) 결제 계정 미설정');
+    };
+    var s = document.createElement('script');
+    s.src = 'https://maps.googleapis.com/maps/api/js?key=' + GMAPS_KEY + '&libraries=places&loading=async&v=weekly';
+    s.async = true;
+    s.defer = true;
+    s.onload = resolve;
+    s.onerror = function() { reject(new Error('Maps script failed to load (네트워크/차단)')); };
+    document.head.appendChild(s);
+  });
+}
+
+// ── 지도 에러 오버레이 ──
+function _showMapError(msg) {
+  var el = document.getElementById('ndMap');
+  if (!el) return;
+  el.innerHTML = '<div style="height:100%;display:flex;align-items:center;justify-content:center;padding:40px;text-align:center;background:#fef2f2;">'
+    + '<div>'
+    + '<div style="font-size:48px;margin-bottom:12px;">⚠️</div>'
+    + '<div style="font-size:15px;font-weight:700;color:#991b1b;margin-bottom:8px;">지도를 불러올 수 없습니다</div>'
+    + '<pre style="font-size:11px;color:#64748b;white-space:pre-wrap;text-align:left;max-width:480px;margin:0 auto;background:#fff;padding:12px;border-radius:8px;border:1px solid #fecaca;">' + msg + '</pre>'
+    + '</div></div>';
+}
+
+// ── 방콕 도심/외곽에 따라 기본 반경 결정 ──
+function _applyDefaultRadius(pos) {
+  var distToBkk = _haversine(pos.lat, pos.lng, _BKK_CENTER.lat, _BKK_CENTER.lng);
+  var inBkk = distToBkk <= _BKK_INNER_RADIUS_KM;
+  _filterRadius = inBkk ? _RADIUS_IN_BKK : _RADIUS_OUT_BKK;
+  console.log('[NearbyDentists] location distance to BKK center:', distToBkk.toFixed(1), 'km → default radius:', _filterRadius, 'km');
+  // 슬라이더/라벨 동기화 (하단 nd-ctrl + 상단 pageTopBar 양쪽)
+  var slider = document.getElementById('ndRadius');
+  var sliderTop = document.getElementById('ndRadiusTop');
+  var label = document.getElementById('ndRadiusLabel');
+  var labelTop = document.getElementById('ndRadiusLabelTop');
+  if (slider) slider.value = _filterRadius;
+  if (sliderTop) sliderTop.value = _filterRadius;
+  if (label) label.textContent = _filterRadius + ' km';
+  if (labelTop) labelTop.textContent = _filterRadius + ' km';
+}
+
+// ── 위치 캐시 (현재 위치 재획득 비용 절감) ──
+// 거래처 데이터는 Firestore IndexedDB 영속화가 담당하므로 별도 sessionStorage 캐시 제거.
+var _ND_LOC_CACHE_KEY = 'nd_location_cache_v1';
+var _ND_LOC_CACHE_TTL = 10 * 60 * 1000;   // 10 분
+function _ndReadLocCache() {
+  try {
+    var raw = sessionStorage.getItem(_ND_LOC_CACHE_KEY);
+    if (!raw) return null;
+    var obj = JSON.parse(raw);
+    if (!obj || !obj.ts || !obj.pos) return null;
+    if (Date.now() - obj.ts > _ND_LOC_CACHE_TTL) return null;
+    return obj.pos;
+  } catch(e) { return null; }
+}
+function _ndWriteLocCache(pos) {
+  try { sessionStorage.setItem(_ND_LOC_CACHE_KEY, JSON.stringify({ ts: Date.now(), pos: pos })); } catch(e) {}
+}
+
+// ── 현재 위치 획득 (세션 캐시 우선) ──
+function _getMyLocation() {
+  return new Promise(function(resolve) {
+    var cached = _ndReadLocCache();
+    if (cached) {
+      console.log('[NearbyDentists] location from cache');
+      return resolve(cached);
+    }
+    _showProgress(_ndT('locating'));
+    if (!navigator.geolocation) {
+      _showProgress(null);
+      return resolve({ lat: 13.7563, lng: 100.5018, fallback: true });
+    }
+    navigator.geolocation.getCurrentPosition(function(pos) {
+      _showProgress(null);
+      var p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      _ndWriteLocCache(p);
+      resolve(p);
+    }, function() {
+      _showProgress(null);
+      alert(_ndT('loc_denied'));
+      resolve({ lat: 13.7563, lng: 100.5018, fallback: true });
+    }, { timeout: 10000, maximumAge: 60000, enableHighAccuracy: false });
+  });
+}
+
+// ── 현재 사용자가 관리자 여부 (core.js HARDCODED_ADMINS 와 동기화) ──
+var _ND_HARDCODED_ADMINS = ['T2408087'];
+function _ndIsAdmin(user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  return _ND_HARDCODED_ADMINS.indexOf(user.empid) > -1;
+}
+
+// ── 영업부 본인 담당 필터 (customer.js 와 동일 로직) ──
+function _ndMineOnly(c, user) {
+  var salesName = (c.sales || '').trim().toUpperCase();
+  if (user.empid && salesName.indexOf(user.empid.toUpperCase()) > -1) return true;
+  if (user.name && salesName.toLowerCase() === user.name.toLowerCase()) return true;
+  if (user.nickname && salesName.toLowerCase() === user.nickname.toLowerCase()) return true;
+  return false;
+}
+
+// ── 고객 데이터 로드 ──
+// Firestore IndexedDB 영속화가 켜져 있으므로, 먼저 { source: 'cache' } 로 시도 →
+// 캐시 적중이면 즉시 렌더 + 백그라운드에서 서버 최신본 페치. 캐시가 비어 있으면
+// 바로 서버 페치 1회 수행.
+function _loadCustomers() {
+  return _ndDb.collection('customers').get({ source: 'cache' }).then(function(snap) {
+    if (snap.empty) throw new Error('cache-empty');
+    _applyCustomerSnap(snap, false);
+    // 캐시로 즉시 렌더한 뒤 백그라운드에서 서버 최신본으로 조용히 갱신
+    setTimeout(function() { _loadCustomersFromFirestore(true); }, 100);
+  }).catch(function() {
+    // 캐시 없음 or 에러 → 서버 페치
+    return _loadCustomersFromFirestore(false);
+  });
+}
+function _applyCustomerSnap(snap, isBackground) {
+  var user = getCurrentUser();
+  var isSales = user && user.dept === 'Sales';
+  var isAdmin = _ndIsAdmin(user);
+  var all = snap.docs.map(function(d) {
+    var c = d.data();
+    c._docId = d.id;
+    return c;
+  }).filter(function(c) {
+    return c.address && typeof c.address === 'string' && c.address.trim();
+  });
+  var next;
+  if (isSales && !isAdmin) {
+    next = all.filter(function(c) { return _ndMineOnly(c, user); });
+  } else {
+    next = all;
+  }
+  _customers = next;
+  console.log('[NearbyDentists]', isBackground ? 'bg refresh:' : 'fresh load:', next.length, '| isSales:', isSales, '| isAdmin:', isAdmin);
+}
+function _loadCustomersFromFirestore(isBackground) {
+  if (!isBackground) _showProgress(_ndT('loading'));
+  return _ndDb.collection('customers').get({ source: 'server' }).then(function(snap) {
+    _applyCustomerSnap(snap, isBackground);
+    if (!isBackground) _showProgress(null);
+    // 백그라운드 갱신 후 조용히 재렌더
+    if (isBackground && _map) {
+      _populateTeamSelect();
+      _renderAll();
+      _updateGeocodeBtn();
+    }
+  }).catch(function(err) {
+    if (!isBackground) _showProgress(null);
+    console.error('[NearbyDentists] load error:', err);
+    if (!isBackground) throw err;
+  });
+}
+
+// ── 팀 셀렉트 채우기 ──
+function _populateTeamSelect() {
+  var teams = {};
+  _customers.forEach(function(c) {
+    var tm = c.sales_team || c.team || '';
+    if (tm) teams[tm] = true;
+  });
+  var sel = document.getElementById('ndTeam');
+  sel.innerHTML = '<option value="">' + _ndT('all_teams') + '</option>';
+  Object.keys(teams).sort().forEach(function(tm) {
+    var o = document.createElement('option');
+    o.value = tm;
+    o.textContent = tm;
+    sel.appendChild(o);
+  });
+}
+
+// ── 고객 좌표 확보 (캐시 우선, 없으면 geocode 후 Firestore 저장) ──
+var _geocodeQueue = [];
+var _geocodeTotal = 0;
+var _geocodeDone = 0;
+
+function _needsGeocode(c) {
+  if (!c.geo || typeof c.geo.lat !== 'number' || typeof c.geo.lng !== 'number') return true;
+  // 주소 변경 감지 (Method 1 폴백: Cloud Function이 실패한 경우 대비)
+  var curAddr = (c.address || '').trim();
+  var savedAddr = (c.geo.src_address || '').trim();
+  if (savedAddr && savedAddr !== curAddr) return true;
+  return false;
+}
+
+// 한 번 눌렀을 때 최대 N개까지만 (API 쿼타/비용 보호)
+var _GEOCODE_BATCH_LIMIT = 50;        // 수동 버튼: 1회 50건
+var _GEOCODE_AUTO_LIMIT = 500;         // 자동(본인 담당 한정): 최대 500건
+var _GEOCODE_ADMIN_AUTO = 0;          // 관리자는 자동 변환 OFF (수동 버튼으로만)
+
+function _enqueueGeocoding(limitOverride) {
+  var candidates = _customers.filter(_needsGeocode);
+  if (candidates.length === 0) return;
+  var lim = typeof limitOverride === 'number' ? limitOverride : _GEOCODE_BATCH_LIMIT;
+  _geocodeQueue = candidates.slice(0, lim);
+  _geocodeTotal = _geocodeQueue.length;
+  _geocodeDone = 0;
+  console.log('[NearbyDentists] geocoding batch:', _geocodeTotal, '/', candidates.length, 'remaining');
+  _processGeocodeQueue();
+}
+
+// 좌표가 필요한 고객 수 반환
+function _countNeedsGeocode() {
+  return _customers.filter(_needsGeocode).length;
+}
+
+var _geocodeAborted = false;
+function _processGeocodeQueue() {
+  if (_geocodeAborted || _geocodeQueue.length === 0) {
+    _showProgress(null);
+    _renderAll();
+    _updateGeocodeBtn();
+    return;
+  }
+  var batch = _geocodeQueue.splice(0, 3); // 3개씩 병렬
+  _showProgress(_ndT('geocoding') + ' ' + (_geocodeDone + 1) + '/' + _geocodeTotal);
+  Promise.all(batch.map(_geocodeOne)).then(function() {
+    _geocodeDone += batch.length;
+    if (_geocodeDone % 10 === 0 || _geocodeQueue.length === 0) _renderAll();
+    setTimeout(_processGeocodeQueue, 300);
+  });
+}
+
+function _geocodeOne(c) {
+  return new Promise(function(resolve) {
+    if (!_geocoder) {
+      try { _geocoder = new google.maps.Geocoder(); }
+      catch(e) { console.error('[NearbyDentists] Geocoder 생성 실패:', e); _geocodeAborted = true; return resolve(); }
+    }
+    if (!c.address) { c.geo = null; return resolve(); }
+    _geocoder.geocode({ address: c.address, region: 'th' }, function(results, status) {
+      if (status === 'OK' && results && results[0]) {
+        var loc = results[0].geometry.location;
+        // ⚠️ src_address 필수 — 다른 클라이언트가 "이미 처리된 주소"를 식별해
+        //    중복 지오코딩 요청을 스킵하는 용도. 반드시 유지할 것.
+        //    (2026-04-19: 이 필드 누락 + 서버 Cloud Function 조합으로
+        //     47M 인보케이션 / ฿4,249 과금 사건 발생. 서버 함수는 이후 영구 제거됨)
+        c.geo = {
+          lat: loc.lat(),
+          lng: loc.lng(),
+          geocoded_at: Date.now(),
+          src_address: (c.address || '').trim(),
+          source: 'client'
+        };
+        if (c._docId) {
+          _ndDb.collection('customers').doc(c._docId).update({ geo: c.geo }).catch(function(e) {
+            console.warn('[NearbyDentists] geo save failed:', c._docId, e.message);
+          });
+        }
+      } else if (status === 'OVER_QUERY_LIMIT' || status === 'REQUEST_DENIED') {
+        console.warn('[NearbyDentists] geocode aborted — status:', status);
+        _geocodeAborted = true;
+        c.geo = null;
+      } else {
+        c.geo = null;
+      }
+      resolve();
+    });
+  });
+}
+
+// 수동 좌표 변환 버튼 상태 업데이트
+function _updateGeocodeBtn() {
+  var btn = document.getElementById('ndGeocodeBtn');
+  if (!btn) return;
+  var n = _countNeedsGeocode();
+  if (n === 0) { btn.style.display = 'none'; return; }
+  btn.style.display = '';
+  btn.textContent = '📍 좌표 변환 (' + Math.min(n, _GEOCODE_BATCH_LIMIT) + '/' + n + ')';
+  btn.disabled = false;
+}
+
+// ── 지도 초기화 ──
+function _initMap() {
+  try {
+    _map = new google.maps.Map(document.getElementById('ndMap'), {
+      center: _myPos,
+      zoom: 13,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: true,
+      gestureHandling: 'greedy'
+    });
+  } catch(e) {
+    console.error('[NearbyDentists] Map 생성 실패:', e);
+    _showMapError('지도 초기화 실패: ' + e.message);
+    return;
+  }
+  _infoWin = new google.maps.InfoWindow();
+  // 지도 바깥(마커/인포창 이외) 클릭 → InfoWindow 닫고 리스트 카드 하이라이트 해제
+  _map.addListener('click', function() {
+    _infoWin.close();
+    _clearCardHighlight();
+  });
+  // 지도 드래그 시에도 카드 하이라이트 해제 (InfoWindow 는 유지)
+  _map.addListener('dragstart', function() {
+    _clearCardHighlight();
+  });
+  // InfoWindow 의 X 버튼 클릭 시에도 카드 하이라이트 해제
+  _infoWin.addListener('closeclick', function() {
+    _clearCardHighlight();
+  });
+  // ── 모바일 DOM 폴백: #ndMap 내부를 탭했는데 InfoWindow/마커/Google 컨트롤이
+  //    아니라면 InfoWindow 닫고 카드 하이라이트 해제 (일부 터치 환경에서
+  //    _map 'click' 이벤트가 InfoWindow 위쪽에서 먹히는 경우 대응) ──
+  var _ndMapEl = document.getElementById('ndMap');
+  if (_ndMapEl) {
+    var _ndDismissIfOutside = function(ev) {
+      var t = ev.target;
+      while (t && t !== _ndMapEl) {
+        if (t.classList) {
+          // InfoWindow, 마커 라벨, 구글 컨트롤 내부 클릭은 무시
+          if (t.classList.contains('gm-style-iw')
+              || t.classList.contains('gm-style-iw-a')
+              || t.classList.contains('gm-style-iw-c')
+              || t.classList.contains('gm-style-iw-d')
+              || t.classList.contains('gm-style-iw-t')
+              || t.classList.contains('gm-style-iw-ch')
+              || t.classList.contains('gm-ui-hover-effect')
+              || t.classList.contains('gm-control-active')
+              || t.classList.contains('gm-fullscreen-control')
+              || t.classList.contains('nd-iw')
+              || t.classList.contains('nd-iw-body')
+              || t.classList.contains('nd-iw-actions')
+              || t.classList.contains('nd-iw-title')
+              || t.classList.contains('nd-legend')
+              || t.classList.contains('nd-legend-row')) return;
+        }
+        // 버튼/링크도 무시 (InfoWindow 내부 a/button)
+        if (t.tagName === 'A' || t.tagName === 'BUTTON') return;
+        t = t.parentNode;
+      }
+      _infoWin.close();
+      _clearCardHighlight();
+    };
+    _ndMapEl.addEventListener('click', _ndDismissIfOutside, true);
+    _ndMapEl.addEventListener('touchend', function(ev) {
+      // 탭 인식: 터치 이동이 거의 없을 때만 (드래그 제외)
+      if (ev.changedTouches && ev.changedTouches.length === 1) {
+        _ndDismissIfOutside(ev);
+      }
+    }, true);
+  }
+  // 내 위치 마커
+  new google.maps.Marker({
+    position: _myPos,
+    map: _map,
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 10,
+      fillColor: '#3b82f6',
+      fillOpacity: 1,
+      strokeColor: '#fff',
+      strokeWeight: 3
+    },
+    zIndex: 9999,
+    title: 'Me'
+  });
+  // 반경 원
+  _radiusCircle = new google.maps.Circle({
+    map: _map,
+    center: _myPos,
+    radius: _filterRadius * 1000,
+    fillColor: '#0d9488',
+    fillOpacity: 0.05,
+    strokeColor: '#0d9488',
+    strokeOpacity: 0.4,
+    strokeWeight: 1
+  });
+}
+var _radiusCircle = null;
+
+// ── VIP 마커용 SVG (blue circle + gold crown) ──
+var _ND_VIP_SVG =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="44" height="54" viewBox="0 0 44 54">'
+  + '<path d="M7 6 L14 14 L22 2 L30 14 L37 6 L37 18 L7 18 Z" fill="#fbbf24" stroke="#b45309" stroke-width="1.2" stroke-linejoin="round"/>'
+  + '<circle cx="12" cy="9" r="1.6" fill="#dc2626"/>'
+  + '<circle cx="22" cy="5" r="1.8" fill="#dc2626"/>'
+  + '<circle cx="32" cy="9" r="1.6" fill="#dc2626"/>'
+  + '<circle cx="22" cy="36" r="16" fill="#2563eb" stroke="#fff" stroke-width="2.5"/>'
+  + '</svg>';
+var _ND_VIP_ICON_URL = 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(_ND_VIP_SVG);
+
+// ── 상태별 마커 아이콘 반환 ──
+function _ndMarkerIcon(status) {
+  if (status === 'vip') {
+    return {
+      url: _ND_VIP_ICON_URL,
+      scaledSize: new google.maps.Size(44, 54),
+      anchor: new google.maps.Point(22, 36),
+      labelOrigin: new google.maps.Point(22, 36)
+    };
+  }
+  if (status === 'inactive') {
+    return {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 13,
+      fillColor: '#94a3b8',    // slate-400 (회색)
+      fillOpacity: 0.78,
+      strokeColor: '#f1f5f9',
+      strokeWeight: 2
+    };
+  }
+  // active (기본)
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    scale: 14,
+    fillColor: '#14b8a6',      // teal
+    fillOpacity: 0.95,
+    strokeColor: '#fff',
+    strokeWeight: 2
+  };
+}
+
+// ── 마커 생성/갱신 ──
+function _renderMarkers(visible) {
+  // 기존 마커 제거
+  _markers.forEach(function(m) { m.setMap(null); });
+  _markers = [];
+  visible.forEach(function(c, idx) {
+    if (!c.geo) return;
+    var status = _ndGetStatus(c);
+    var labelColor = status === 'vip' ? '#fff' : (status === 'inactive' ? '#475569' : '#0f172a');
+    var marker = new google.maps.Marker({
+      position: { lat: c.geo.lat, lng: c.geo.lng },
+      map: _map,
+      label: {
+        text: (c.erp || '?').substring(0, 8),
+        fontSize: '10px',
+        fontWeight: '700',
+        color: labelColor
+      },
+      icon: _ndMarkerIcon(status),
+      zIndex: status === 'vip' ? 1000 : (status === 'inactive' ? 10 : 100),
+      title: (status === 'vip' ? '[VIP] ' : (status === 'inactive' ? '[Non-active] ' : '')) + (_ndGetName(c) || c.erp || '')
+    });
+    marker.addListener('click', function() {
+      _openInfoWindow(c, marker);
+      _highlightCard(c._docId);
+    });
+    c._marker = marker;
+    _markers.push(marker);
+  });
+}
+
+// ── InfoWindow ──
+function _openInfoWindow(c, marker) {
+  var dist = c._dist != null ? _fmtDist(c._dist) : '-';
+  var addr = c.address || _ndT('no_address');
+  var telRaw = c.phone || c.tel || '';
+  var telDial = _ndCleanPhoneDial(telRaw);
+  var dirUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + c.geo.lat + ',' + c.geo.lng;
+  var custName = _ndGetName(c) || c.erp || '-';
+  var clinicName = _ndGetClinic(c);
+  var showClinic = _ndNameDiffers(custName, clinicName);
+  var status = _ndGetStatus(c);
+  var iwCrown = status === 'vip' ? '<span class="nd-vip-crown">👑</span> ' : '';
+  var iwBadge = '';
+  if (status === 'vip') iwBadge = '<span class="nd-status-badge vip">VIP</span>';
+  else if (status === 'inactive') iwBadge = '<span class="nd-status-badge inactive">' + _escape((c.status || 'Inactive')) + '</span>';
+
+  var html = '<div class="nd-iw">'
+    + '<div class="nd-iw-body">'
+    + '<div class="nd-iw-title">' + iwCrown + _escape(custName) + iwBadge + '</div>'
+    + (showClinic ? '<div class="nd-iw-clinic">🏥 ' + _escape(clinicName) + '</div>' : '')
+    + '<div class="nd-iw-sub">'
+    +   '<b>' + (c.erp || '') + '</b> · ' + dist + '<br>'
+    +   _escape(addr)
+    + '</div>'
+    + '<div class="nd-iw-actions">'
+    + (telDial
+        ? '<a href="tel:' + telDial + '">📞 ' + _ndT('call') + '</a>'
+        : '<a class="nd-disabled" aria-disabled="true" title="' + _escape(_ndT('no_phone')) + '">📞 ' + _ndT('call') + '</a>')
+    + '<a href="' + dirUrl + '" target="_blank" class="primary">🧭 ' + _ndT('directions') + '</a>'
+    + '</div>'
+    + '</div></div>';
+  _infoWin.setContent(html);
+  _infoWin.open(_map, marker);
+}
+
+function _escape(s) {
+  return String(s || '').replace(/[&<>"']/g, function(ch) {
+    return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch];
+  });
+}
+
+// ── 리스트 렌더 ──
+function _renderList(visible) {
+  var listEl = document.getElementById('ndList');
+  if (!visible.length) {
+    listEl.innerHTML = '<div class="nd-empty">' + _ndT('no_results') + '</div>';
+    return;
+  }
+  var html = '';
+  visible.forEach(function(c) {
+    var dist = c._dist != null ? _fmtDist(c._dist) : '-';
+    var addr = c.address || _ndT('no_address');
+    var telRaw = c.phone || c.tel || '';
+    var telDial = _ndCleanPhoneDial(telRaw);
+    var dirUrl = 'https://www.google.com/maps/dir/?api=1&destination=' + c.geo.lat + ',' + c.geo.lng;
+    var custName = _ndGetName(c) || '-';
+    var clinicName = _ndGetClinic(c);
+    var showClinic = _ndNameDiffers(custName, clinicName);
+    var status = _ndGetStatus(c);
+    var cardCls = 'nd-card' + (status === 'vip' ? ' nd-vip' : (status === 'inactive' ? ' nd-inactive' : ''));
+    var crownHtml = status === 'vip' ? '<span class="nd-vip-crown" title="VIP">👑</span>' : '';
+    var statusBadge = '';
+    if (status === 'vip') statusBadge = '<span class="nd-status-badge vip">VIP</span>';
+    else if (status === 'inactive') statusBadge = '<span class="nd-status-badge inactive">' + _escape((c.status || 'Inactive')) + '</span>';
+    var callBtn = telDial
+      ? '<button onclick="event.stopPropagation();location.href=\'tel:' + telDial + '\'">📞 ' + _ndT('call') + '</button>'
+      : '<button class="nd-disabled" disabled title="' + _escape(_ndT('no_phone')) + '">📞 ' + _ndT('call') + '</button>';
+    html += '<div class="' + cardCls + '" data-docid="' + c._docId + '" onclick="_ndCardClick(\'' + c._docId + '\')">'
+      +   '<div class="nd-card-row1">'
+      +     '<span class="nd-card-erp">' + crownHtml + _escape(c.erp || '?') + '</span>'
+      +     '<span class="nd-card-name">' + _escape(custName) + statusBadge + '</span>'
+      +     '<span class="nd-card-dist">' + dist + '</span>'
+      +   '</div>'
+      + (showClinic ? '<div class="nd-card-clinic">🏥 ' + _escape(clinicName) + '</div>' : '')
+      +   '<div class="nd-card-addr">' + _escape(addr) + '</div>'
+      +   '<div class="nd-card-actions">'
+      +     callBtn
+      +     '<button class="primary" onclick="event.stopPropagation();window.open(\'' + dirUrl + '\',\'_blank\')">🧭 ' + _ndT('directions') + '</button>'
+      +   '</div>'
+      + '</div>';
+  });
+  listEl.innerHTML = html;
+}
+
+function _highlightCard(docId) {
+  document.querySelectorAll('.nd-card').forEach(function(el) {
+    el.classList.toggle('active', el.getAttribute('data-docid') === docId);
+    if (el.getAttribute('data-docid') === docId) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  });
+}
+function _clearCardHighlight() {
+  document.querySelectorAll('.nd-card.active').forEach(function(el) {
+    el.classList.remove('active');
+  });
+}
+
+window._ndCardClick = function(docId) {
+  var c = _customers.find(function(x) { return x._docId === docId; });
+  if (!c || !c.geo) return;
+  _map.panTo({ lat: c.geo.lat, lng: c.geo.lng });
+  if (_map.getZoom() < 15) _map.setZoom(15);
+  if (c._marker) _openInfoWindow(c, c._marker);
+  _highlightCard(docId);
+};
+
+// ── 필터 + 정렬 + 렌더 ──
+function _renderAll() {
+  if (!_map) return;
+  // 반경 원 갱신
+  if (_radiusCircle) _radiusCircle.setRadius(_filterRadius * 1000);
+  // 거리 계산
+  _customers.forEach(function(c) {
+    if (c.geo) c._dist = _haversine(_myPos.lat, _myPos.lng, c.geo.lat, c.geo.lng);
+    else c._dist = null;
+  });
+  // 필터
+  var q = _filterSearch.trim().toLowerCase();
+  var visible = _customers.filter(function(c) {
+    if (!c.geo) return false;
+    if (c._dist > _filterRadius) return false;
+    // 상태(범례) 필터
+    var st = _ndGetStatus(c);
+    if (!_filterStatus[st]) return false;
+    if (_filterTeam) {
+      var tm = c.sales_team || c.team || '';
+      if (tm !== _filterTeam) return false;
+    }
+    if (q) {
+      var hay = [_ndGetName(c), c.erp || '', _ndGetClinic(c), c.address || '', c.nt_code || ''].join(' ').toLowerCase();
+      if (hay.indexOf(q) < 0) return false;
+    }
+    return true;
+  });
+  // 정렬
+  if (_sortMode === 'distance') {
+    visible.sort(function(a, b) { return (a._dist || 0) - (b._dist || 0); });
+  } else {
+    visible.sort(function(a, b) { return _ndGetName(a).localeCompare(_ndGetName(b)); });
+  }
+  // 통계 (컴팩트: 반경 / 거래처 수)
+  var statsEl = document.getElementById('ndStats');
+  statsEl.innerHTML = _ndT('within') + ' ' + _filterRadius + 'km · <b>' + visible.length + '</b> / ' + _customers.length + ' ' + _ndT('customers');
+  // 상단 바 통계 (데스크탑 전용)
+  var statsTopEl = document.getElementById('ndStatsTop');
+  if (statsTopEl) {
+    statsTopEl.innerHTML = '<b>' + visible.length + '</b> / ' + _customers.length + ' ' + _ndT('customers');
+  }
+  // 렌더
+  _renderMarkers(visible);
+  _renderList(visible);
+}
+
+// ── 범례 상태(거래/VIP/미거래) 필터: "클릭한 것만 보기" 방식 ──
+// 동작 규칙:
+//  1) 기본: 3개 모두 ON
+//  2) 클릭 → 클릭한 항목만 ON (나머지 OFF)
+//  3) 이미 단독 ON 인 항목을 다시 클릭 → 전체 ON 으로 복귀
+function _ndToggleFilter(key) {
+  if (!_filterStatus.hasOwnProperty(key)) return;
+  var onCount = 0, onlyKey = null;
+  for (var k in _filterStatus) {
+    if (_filterStatus[k]) { onCount++; onlyKey = k; }
+  }
+  if (onCount === 1 && onlyKey === key) {
+    // 이미 이 항목만 켜져 있음 → 전체 복구
+    _filterStatus.active = true;
+    _filterStatus.vip = true;
+    _filterStatus.inactive = true;
+  } else {
+    // 나머지 끄고 이 항목만 켜기
+    _filterStatus.active = false;
+    _filterStatus.vip = false;
+    _filterStatus.inactive = false;
+    _filterStatus[key] = true;
+  }
+  _ndUpdateLegendUI();
+  _renderAll();
+}
+function _ndUpdateLegendUI() {
+  // 솔로 여부 판정 (단 1개만 켜져 있는가)
+  var onCount = 0, onlyKey = null;
+  for (var k in _filterStatus) {
+    if (_filterStatus[k]) { onCount++; onlyKey = k; }
+  }
+  var isSolo = onCount === 1;
+  document.querySelectorAll('.nd-legend-row[data-nd-filter]').forEach(function(row) {
+    var key = row.getAttribute('data-nd-filter');
+    row.classList.toggle('nd-legend-off', !_filterStatus[key]);
+    row.classList.toggle('nd-legend-solo', isSolo && key === onlyKey);
+  });
+}
+// ── 내 위치로 지도 이동 ──
+function _ndFocusMyPos() {
+  if (!_myPos || !_map) return;
+  _map.panTo(_myPos);
+  var targetZoom = _filterRadius <= 5 ? 14 : (_filterRadius <= 15 ? 12 : 11);
+  if (_map.getZoom() < targetZoom) _map.setZoom(targetZoom);
+}
+window._ndToggleFilter = _ndToggleFilter;
+window._ndFocusMyPos = _ndFocusMyPos;
+
+// ── 이벤트 바인딩 ──
+function _bindEvents() {
+  document.getElementById('ndSearch').addEventListener('input', function(e) {
+    _filterSearch = e.target.value;
+    _renderAll();
+  });
+  document.getElementById('ndTeam').addEventListener('change', function(e) {
+    _filterTeam = e.target.value;
+    _renderAll();
+  });
+  document.getElementById('ndSort').addEventListener('change', function(e) {
+    _sortMode = e.target.value;
+    _renderAll();
+  });
+  function _ndSyncRadius(val) {
+    _filterRadius = parseInt(val, 10);
+    var lbl = _filterRadius + ' km';
+    var a = document.getElementById('ndRadius');
+    var b = document.getElementById('ndRadiusTop');
+    var la = document.getElementById('ndRadiusLabel');
+    var lb = document.getElementById('ndRadiusLabelTop');
+    if (a && a.value != val) a.value = val;
+    if (b && b.value != val) b.value = val;
+    if (la) la.textContent = lbl;
+    if (lb) lb.textContent = lbl;
+    _renderAll();
+  }
+  document.getElementById('ndRadius').addEventListener('input', function(e) {
+    _ndSyncRadius(e.target.value);
+  });
+  var ndRadiusTopEl = document.getElementById('ndRadiusTop');
+  if (ndRadiusTopEl) {
+    ndRadiusTopEl.addEventListener('input', function(e) {
+      _ndSyncRadius(e.target.value);
+    });
+  }
+  // 범례 클릭 → 필터 토글 (touchstart 포함으로 모바일 탭 지연 방지)
+  document.querySelectorAll('#ndLegend .nd-legend-row[data-nd-filter]').forEach(function(row) {
+    row.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      _ndToggleFilter(row.getAttribute('data-nd-filter'));
+    });
+  });
+  var myPosRow = document.querySelector('#ndLegend .nd-legend-row[data-nd-action="mypos"]');
+  if (myPosRow) {
+    myPosRow.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      _ndFocusMyPos();
+    });
+  }
+  // 외부 구글 지도 — 주변 다른 치과 검색
+  var findOther = document.getElementById('ndFindOther');
+  findOther.addEventListener('click', function(e) {
+    e.preventDefault();
+    var url = 'https://www.google.com/maps/search/dental+clinic/@'
+      + _myPos.lat + ',' + _myPos.lng + ',14z';
+    window.open(url, '_blank');
+  });
+  // 수동 좌표 변환 버튼
+  var geoBtn = document.getElementById('ndGeocodeBtn');
+  if (geoBtn) {
+    geoBtn.addEventListener('click', function() {
+      var n = _countNeedsGeocode();
+      if (n === 0) return;
+      var msg = '좌표가 없는 거래처 ' + n + '건 중 최대 ' + _GEOCODE_BATCH_LIMIT + '건을 변환합니다.\n'
+              + '• 이 작업은 Google Geocoding API 를 호출하며 쿼타/비용이 소모됩니다.\n'
+              + '• 실패 시(OVER_QUERY_LIMIT / REQUEST_DENIED) 즉시 중단됩니다.\n\n계속할까요?';
+      if (!confirm(msg)) return;
+      geoBtn.disabled = true;
+      geoBtn.textContent = '변환 중...';
+      _geocodeAborted = false;
+      _enqueueGeocoding();
+    });
+  }
+}
+
+// ── 메인 초기화 ──
+document.addEventListener('DOMContentLoaded', function() {
+  var _ndTopBar = renderPageTopBar({
+    title: _ndT('title'),
+    theme: 'gradient',
+    background: 'linear-gradient(135deg,#0d9488 0%,#14b8a6 100%)',
+    backTo: 'index.html'
+  });
+  // ── 데스크탑 상단 바: 반경 슬라이더 + 통계 (모바일에선 CSS 로 숨김) ──
+  if (_ndTopBar && _ndTopBar.rightSlot) {
+    _ndTopBar.rightSlot.innerHTML =
+      '<div class="nd-top-radius" id="ndTopRadiusWrap">'
+      +   '<span data-nd-i18n="radius">' + _ndT('radius') + '</span>'
+      +   '<input type="range" id="ndRadiusTop" min="1" max="50" step="1" value="10">'
+      +   '<span id="ndRadiusLabelTop">10 km</span>'
+      +   '<span class="nd-top-stats" id="ndStatsTop"></span>'
+      + '</div>';
+  }
+  _ndApplyStaticI18n();
+
+  Promise.all([
+    _getMyLocation(),
+    _loadCustomers(),
+    _loadGMaps()
+  ]).then(function(results) {
+    _myPos = results[0];
+    _applyDefaultRadius(_myPos);
+    _populateTeamSelect();
+    _initMap();
+    _bindEvents();
+    // geo 가 있는 고객 즉시 렌더
+    _renderAll();
+    _updateGeocodeBtn();
+
+    // ── 자동 백그라운드 지오코딩 ──
+    // 본인 담당 거래처로 이미 필터링되었으므로 안전하게 전체 자동 변환
+    var user = getCurrentUser();
+    var isAdmin = _ndIsAdmin(user);
+    var needCount = _countNeedsGeocode();
+    if (needCount > 0) {
+      if (!isAdmin) {
+        // 영업 사원: 본인 담당 한정이므로 최대 _GEOCODE_AUTO_LIMIT 까지 자동 변환
+        console.log('[NearbyDentists] auto-geocoding mine:', needCount);
+        _geocodeAborted = false;
+        _enqueueGeocoding(_GEOCODE_AUTO_LIMIT);
+      } else {
+        // 관리자: 수동 버튼으로만 (의도치 않은 3000+ 건 호출 방지)
+        console.log('[NearbyDentists] admin — skip auto-geocode, use manual button');
+      }
+    }
+  }).catch(function(err) {
+    console.error('[NearbyDentists] init error:', err);
+    _showMapError('초기화 실패: ' + (err && err.message ? err.message : err));
+  });
+});
+</script>
+</body>
+</html>

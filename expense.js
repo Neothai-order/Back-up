@@ -1,0 +1,2210 @@
+// Neo Sales App - Expense / Receipt (비용 정산)
+// ── 영수증 제출 ──────────────────────────────────────────────────────────────
+
+var _receiptFiles = []; // { file: File, dataUrl: string }
+var _receiptCache = {}; // docId → receipt data for preview
+
+function openReceiptSubmit() {
+  var me = getCurrentUser();
+  if (!me) { neoAlert('로그인이 필요합니다.'); return; }
+  _receiptFiles = [];
+  _renderReceiptPreviews();
+  document.getElementById('receiptMemo').value = '';
+  var _rul = document.getElementById('receiptUserLabel');
+  if (_rul) _rul.textContent = me.nickname || me.name || me.empid;
+  // 내 영수증 패널 숨기고 업로드 폼 표시
+  _closeMyReceipts();
+  var overlay = document.getElementById('receiptOverlay');
+  overlay.style.display = 'block';
+  _bringToFront(overlay);
+  applyLang();
+}
+
+// 내 영수증 조회 화면 열기
+function _openMyReceipts() {
+  var panel = document.getElementById('receiptMyListPanel');
+  panel.style.display = 'block';
+  // 업로드 폼 숨김
+  panel.previousElementSibling && (function() {
+    // receiptMyListPanel 위의 형제 요소들(업로드 영역) 숨기기
+    var parent = panel.parentElement;
+    for (var i = 0; i < parent.children.length; i++) {
+      var child = parent.children[i];
+      if (child.id === 'receiptMyListPanel') { child.style.display = 'block'; }
+      else { child.dataset._wasDisplay = child.style.display; child.style.display = 'none'; }
+    }
+  })();
+  _loadMyReceipts();
+}
+
+// 내 영수증 화면 닫기 → 업로드 폼으로 돌아감
+function _closeMyReceipts() {
+  var panel = document.getElementById('receiptMyListPanel');
+  if (!panel) return;
+  var parent = panel.parentElement;
+  for (var i = 0; i < parent.children.length; i++) {
+    var child = parent.children[i];
+    if (child.id === 'receiptMyListPanel') { child.style.display = 'none'; }
+    else if (child.dataset._wasDisplay !== undefined) { child.style.display = child.dataset._wasDisplay; delete child.dataset._wasDisplay; }
+    else { child.style.display = ''; }
+  }
+}
+
+function closeReceiptSubmit() {
+  var overlay = document.getElementById('receiptOverlay');
+  overlay.style.display = 'none';
+}
+
+// ── 사진 촬영 클릭: 모바일이면 네이티브 카메라, 데스크탑이면 웹캠 프리뷰 모달 ──
+function _onReceiptCameraClick(ev) {
+  // 모바일 판별: UA + 터치 + 좁은 뷰포트
+  var ua = navigator.userAgent || '';
+  var isMobileUA = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+  var isTouchNarrow = (navigator.maxTouchPoints > 1) && window.innerWidth < 900;
+  var isMobile = isMobileUA || isTouchNarrow;
+  if (isMobile) {
+    // 기본 동작: label → input[type=file capture=environment] → 네이티브 카메라
+    return;
+  }
+  // 데스크탑: 기본 동작(파일 피커) 차단 + 웹캠 모달 열기
+  if (ev && ev.preventDefault) ev.preventDefault();
+  if (ev && ev.stopPropagation) ev.stopPropagation();
+  _openDesktopReceiptCamera();
+}
+
+// 데스크탑 웹캠 프리뷰 모달
+var _rcptCamStream = null;
+var _rcptCamDeviceId = null;
+var _rcptCamDevices = [];
+
+function _openDesktopReceiptCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    neoAlert('이 브라우저는 카메라를 지원하지 않습니다. 갤러리에서 선택해 주세요.');
+    return;
+  }
+  // 이미 열린 모달 재사용 방지
+  var existing = document.getElementById('rcptCamOverlay');
+  if (existing) existing.remove();
+
+  var ov = document.createElement('div');
+  ov.id = 'rcptCamOverlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:12000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML =
+    '<div style="position:relative;max-width:960px;width:100%;background:#111;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5);">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#1f2937;color:#fff;">' +
+        '<div style="font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px;"><span>📷</span><span>사진 촬영</span></div>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+          '<select id="rcptCamDeviceSel" style="background:#374151;color:#fff;border:1px solid #4b5563;border-radius:6px;padding:4px 8px;font-size:12px;max-width:260px;display:none;"></select>' +
+          '<button type="button" onclick="_closeDesktopReceiptCamera()" style="background:transparent;color:#fff;border:none;font-size:22px;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="position:relative;background:#000;aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;">' +
+        '<video id="rcptCamVideo" playsinline autoplay muted style="width:100%;height:100%;object-fit:contain;display:block;"></video>' +
+        '<canvas id="rcptCamCanvas" style="display:none;"></canvas>' +
+        '<img id="rcptCamPreview" style="display:none;width:100%;height:100%;object-fit:contain;background:#000;" />' +
+        '<div id="rcptCamErr" style="display:none;position:absolute;inset:0;align-items:center;justify-content:center;color:#fca5a5;padding:20px;text-align:center;font-size:13px;"></div>' +
+      '</div>' +
+      '<div id="rcptCamBar" style="display:flex;gap:10px;justify-content:center;padding:14px;background:#1f2937;">' +
+        '<button type="button" id="rcptCamShot" onclick="_rcptCamShoot()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;min-width:120px;">📸 촬영</button>' +
+        '<button type="button" onclick="_closeDesktopReceiptCamera()" style="background:#4b5563;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;cursor:pointer;">닫기</button>' +
+      '</div>' +
+      '<div id="rcptCamConfirmBar" style="display:none;gap:10px;justify-content:center;padding:14px;background:#1f2937;">' +
+        '<button type="button" onclick="_rcptCamRetake()" style="background:#4b5563;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:14px;cursor:pointer;">🔄 다시 촬영</button>' +
+        '<button type="button" onclick="_rcptCamUse()" style="background:#16a34a;color:#fff;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;min-width:120px;">✅ 사용</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(ov);
+
+  // ESC 로 닫기
+  ov._escHandler = function(e) { if (e.key === 'Escape') _closeDesktopReceiptCamera(); };
+  document.addEventListener('keydown', ov._escHandler);
+
+  _rcptCamStart();
+  _rcptCamEnumerateDevices();
+}
+
+function _rcptCamStart(deviceId) {
+  var video = document.getElementById('rcptCamVideo');
+  var errEl = document.getElementById('rcptCamErr');
+  if (!video) return;
+  // 기존 스트림 정리
+  if (_rcptCamStream) { _rcptCamStream.getTracks().forEach(function(t){ t.stop(); }); _rcptCamStream = null; }
+  var constraints = {
+    audio: false,
+    video: deviceId
+      ? { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } }
+      : { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
+  };
+  navigator.mediaDevices.getUserMedia(constraints)
+    .catch(function() {
+      // environment 미지원 시 전면 카메라로 폴백
+      return navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+    })
+    .then(function(stream) {
+      _rcptCamStream = stream;
+      video.srcObject = stream;
+      video.play().catch(function(){});
+      if (errEl) errEl.style.display = 'none';
+      // deviceId 기록
+      var track = stream.getVideoTracks()[0];
+      if (track && track.getSettings) {
+        var s = track.getSettings();
+        if (s.deviceId) _rcptCamDeviceId = s.deviceId;
+      }
+    })
+    .catch(function(err) {
+      if (errEl) {
+        errEl.style.display = 'flex';
+        errEl.innerHTML = '⚠️ 카메라 접근 실패<br><span style="font-size:11px;opacity:.7;">' + (err && err.message || err) + '</span><br><br>' +
+          '<span style="font-size:12px;color:#fff;">브라우저 주소창 🔒 → 카메라 → 허용으로 변경 후 다시 시도해 주세요.</span>';
+      }
+    });
+}
+
+function _rcptCamEnumerateDevices() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  navigator.mediaDevices.enumerateDevices().then(function(devices) {
+    _rcptCamDevices = devices.filter(function(d){ return d.kind === 'videoinput'; });
+    if (_rcptCamDevices.length < 2) return;
+    var sel = document.getElementById('rcptCamDeviceSel');
+    if (!sel) return;
+    sel.innerHTML = '';
+    _rcptCamDevices.forEach(function(d, i) {
+      var opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || ('카메라 ' + (i + 1));
+      if (d.deviceId === _rcptCamDeviceId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    sel.style.display = 'inline-block';
+    sel.onchange = function() { _rcptCamStart(sel.value); };
+  }).catch(function(){});
+}
+
+function _rcptCamShoot() {
+  var video = document.getElementById('rcptCamVideo');
+  var canvas = document.getElementById('rcptCamCanvas');
+  var preview = document.getElementById('rcptCamPreview');
+  if (!video || !canvas || !preview) return;
+  var w = video.videoWidth || 1280;
+  var h = video.videoHeight || 720;
+  canvas.width = w; canvas.height = h;
+  var ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, w, h);
+  // JPEG 92% — receipt 사진이므로 용량보단 화질 우선
+  var dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  preview.src = dataUrl;
+  preview.style.display = 'block';
+  video.style.display = 'none';
+  // 바 전환
+  document.getElementById('rcptCamBar').style.display = 'none';
+  document.getElementById('rcptCamConfirmBar').style.display = 'flex';
+}
+
+function _rcptCamRetake() {
+  var video = document.getElementById('rcptCamVideo');
+  var preview = document.getElementById('rcptCamPreview');
+  if (video) video.style.display = 'block';
+  if (preview) { preview.style.display = 'none'; preview.src = ''; }
+  document.getElementById('rcptCamBar').style.display = 'flex';
+  document.getElementById('rcptCamConfirmBar').style.display = 'none';
+}
+
+function _rcptCamUse() {
+  var canvas = document.getElementById('rcptCamCanvas');
+  if (!canvas) return;
+  canvas.toBlob(function(blob) {
+    if (!blob) { neoAlert('이미지 변환 실패. 다시 시도해 주세요.'); return; }
+    var ts = new Date();
+    var fname = 'receipt_' + ts.getFullYear() + String(ts.getMonth()+1).padStart(2,'0') + String(ts.getDate()).padStart(2,'0') +
+                '_' + String(ts.getHours()).padStart(2,'0') + String(ts.getMinutes()).padStart(2,'0') + String(ts.getSeconds()).padStart(2,'0') + '.jpg';
+    var file = new File([blob], fname, { type: 'image/jpeg', lastModified: Date.now() });
+    if (file.size > 10 * 1024 * 1024) {
+      if (typeof showToast === 'function') showToast('⚠️ ' + fname + ' - 10MB 초과');
+      _closeDesktopReceiptCamera();
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      _receiptFiles.push({ file: file, dataUrl: e.target.result });
+      _renderReceiptPreviews();
+    };
+    reader.readAsDataURL(file);
+    _closeDesktopReceiptCamera();
+  }, 'image/jpeg', 0.92);
+}
+
+function _closeDesktopReceiptCamera() {
+  if (_rcptCamStream) {
+    _rcptCamStream.getTracks().forEach(function(t){ try { t.stop(); } catch(_){} });
+    _rcptCamStream = null;
+  }
+  var ov = document.getElementById('rcptCamOverlay');
+  if (ov) {
+    if (ov._escHandler) document.removeEventListener('keydown', ov._escHandler);
+    ov.remove();
+  }
+}
+
+// ── 파일 선택 / 카메라 촬영 처리 ──
+function _handleReceiptFiles(input) {
+  var files = Array.from(input.files);
+  if (!files.length) return;
+  var validFiles = files.filter(function(f) {
+    if (f.size > 10 * 1024 * 1024) { showToast('⚠️ ' + f.name + ' - 10MB 초과'); return false; }
+    return true;
+  });
+  if (!validFiles.length) { input.value = ''; return; }
+  var pending = validFiles.length;
+  validFiles.forEach(function(f) {
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      _receiptFiles.push({ file: f, dataUrl: e.target.result });
+      pending--;
+      if (pending === 0) _renderReceiptPreviews();
+    };
+    reader.readAsDataURL(f);
+  });
+  input.value = '';
+}
+
+function _renderReceiptPreviews() {
+  var area = document.getElementById('receiptPreviewArea');
+  var container = document.getElementById('receiptPreviews');
+  var countEl = document.getElementById('receiptFileCount');
+  var uploadBtn = document.getElementById('btnReceiptUpload');
+  if (!_receiptFiles.length) {
+    area.style.display = 'none';
+    uploadBtn.disabled = true; uploadBtn.style.opacity = '.5';
+    return;
+  }
+  area.style.display = 'block';
+  countEl.textContent = _receiptFiles.length;
+  uploadBtn.disabled = false; uploadBtn.style.opacity = '1';
+  container.innerHTML = '';
+  _receiptFiles.forEach(function(rf, i) {
+    var div = document.createElement('div');
+    div.style.cssText = 'position:relative;border-radius:8px;overflow:hidden;border:1px solid #e5e7eb;cursor:pointer;';
+    div.title = '더블클릭으로 크게 보기';
+    div.innerHTML = '<img src="' + rf.dataUrl + '" style="width:100%;height:100px;object-fit:cover;display:block;" />' +
+      '<button onclick="event.stopPropagation();_removeReceiptFile(' + i + ')" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:14px;cursor:pointer;line-height:22px;text-align:center;">&times;</button>' +
+      '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.5);color:#fff;font-size:10px;padding:2px 4px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + rf.file.name + '</div>';
+    div.addEventListener('dblclick', function() { _previewReceiptImage(rf.dataUrl, rf.file.name); });
+    container.appendChild(div);
+  });
+}
+
+function _removeReceiptFile(idx) {
+  _receiptFiles.splice(idx, 1);
+  _renderReceiptPreviews();
+}
+
+function _previewReceiptImage(dataUrl, fileName) {
+  var existing = document.getElementById('receiptImgPreviewOverlay');
+  if (existing) existing.remove();
+
+  var ov = document.createElement('div');
+  ov.id = 'receiptImgPreviewOverlay';
+  ov.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);z-index:100000;display:flex;align-items:center;justify-content:center;flex-direction:column;cursor:zoom-out;';
+  ov.onclick = function(e) { if (e.target === ov || e.target.tagName !== 'IMG') ov.remove(); };
+
+  var img = document.createElement('img');
+  img.src = dataUrl;
+  img.style.cssText = 'max-width:90vw;max-height:80vh;border-radius:12px;box-shadow:0 8px 40px rgba(0,0,0,.5);object-fit:contain;animation:receiptZoomIn .2s ease;';
+  img.onclick = function(e) { e.stopPropagation(); };
+
+  var label = document.createElement('div');
+  label.style.cssText = 'color:#fff;font-size:13px;margin-top:12px;text-align:center;opacity:.8;';
+  label.textContent = fileName;
+
+  var closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '&times;';
+  closeBtn.style.cssText = 'position:absolute;top:20px;right:24px;background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:24px;cursor:pointer;backdrop-filter:blur(4px);';
+  closeBtn.onclick = function() { ov.remove(); };
+
+  ov.appendChild(closeBtn);
+  ov.appendChild(img);
+  ov.appendChild(label);
+  document.body.appendChild(ov);
+
+  // 애니메이션
+  if (!document.getElementById('receiptZoomStyle')) {
+    var st = document.createElement('style');
+    st.id = 'receiptZoomStyle';
+    st.textContent = '@keyframes receiptZoomIn{from{transform:scale(.5);opacity:0}to{transform:scale(1);opacity:1}}';
+    document.head.appendChild(st);
+  }
+
+  // ESC로 닫기
+  function onKey(e) { if (e.key === 'Escape') { ov.remove(); document.removeEventListener('keydown', onKey); } }
+  document.addEventListener('keydown', onKey);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── 업로드: Storage 경로 = user-files/ID/receipts/YYYY-MM/파일명
+// ── 파일명: ID_YYYYMMDD_01.jpg
+// ══════════════════════════════════════════════════════════════════
+async function _uploadReceipts() {
+  var me = getCurrentUser();
+  if (!me) { neoAlert('로그인이 필요합니다.'); return; }
+  if (!_receiptFiles.length) return;
+
+  var btn = document.getElementById('btnReceiptUpload');
+  btn.disabled = true;
+  btn.textContent = '업로드 중...';
+
+  var empid = me.empid;
+  var empName = me.nickname || me.name || empid;
+  var dept = me.dept || '';
+  var now = new Date();
+  var yyyy = now.getFullYear();
+  var mm = String(now.getMonth() + 1).padStart(2, '0');
+  var dd = String(now.getDate()).padStart(2, '0');
+  var dateStr = '' + yyyy + mm + dd;
+  var yearMonth = yyyy + '-' + mm; // 폴더명: 2026-04
+  var memo = (document.getElementById('receiptMemo').value || '').trim();
+
+  var uploaded = 0, errors = 0;
+
+  // 중복 방지: 오늘 날짜로 이미 올린 파일 수 조회하여 seq 이어가기
+  var existingCount = 0;
+  try {
+    var existSnap = await _fbDb.collection('receipts')
+      .where('empid', '==', empid)
+      .where('yearMonth', '==', yearMonth)
+      .get();
+    existSnap.forEach(function(doc) {
+      var fn = doc.data().fileName || '';
+      if (fn.indexOf(empid + '_' + dateStr + '_') === 0) existingCount++;
+    });
+  } catch(e) { console.error('[Receipt] count error:', e); }
+
+  for (var i = 0; i < _receiptFiles.length; i++) {
+    var rf = _receiptFiles[i];
+    var ext = rf.file.name.split('.').pop() || 'jpg';
+    var seq = String(existingCount + i + 1).padStart(2, '0');
+    var fileName = empid + '_' + dateStr + '_' + seq + '.' + ext;
+    // 연월 폴더로 저장
+    var path = 'user-files/' + empid + '/receipts/' + yearMonth + '/' + fileName;
+    try {
+      var ref = _fbStorage.ref(path);
+      var snapshot = await ref.put(rf.file, { customMetadata: { uploadedBy: empid, uploaderName: empName, memo: memo, uploadDate: now.toISOString() } });
+      var downloadUrl = await snapshot.ref.getDownloadURL();
+
+      await _fbDb.collection('receipts').add({
+        empid: empid, empName: empName, dept: dept,
+        fileName: fileName, storagePath: path, downloadUrl: downloadUrl,
+        fileSize: rf.file.size, memo: memo,
+        yearMonth: yearMonth,
+        uploadDate: now.toISOString(),
+        uploadTimestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        downloaded: false, downloadedBy: '', downloadedDate: ''
+      });
+      uploaded++;
+      btn.textContent = '업로드 중... (' + uploaded + '/' + _receiptFiles.length + ')';
+    } catch (e) {
+      console.error('[Receipt] upload error:', e);
+      errors++;
+    }
+  }
+
+  if (uploaded > 0) {
+    showToast('✅ ' + uploaded + '건 업로드 완료');
+    _receiptFiles = [];
+    _renderReceiptPreviews();
+    document.getElementById('receiptMemo').value = '';
+    _loadMyReceipts();
+  }
+  if (errors > 0) showToast('⚠️ ' + errors + '건 업로드 실패');
+  btn.disabled = false;
+  btn.textContent = t('receipt_upload') || '업로드';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── 내 영수증 목록 (연월 폴더별) ──
+// ══════════════════════════════════════════════════════════════════
+async function _loadMyReceipts() {
+  var me = getCurrentUser();
+  if (!me) return;
+  var listEl = document.getElementById('receiptFileList');
+  if (!listEl.children.length || listEl.textContent.trim() === '') {
+    listEl.innerHTML = '<div style="color:#9ca3af;padding:12px;">로딩 중...</div>';
+  }
+
+  try {
+    var snap = await _fbDb.collection('receipts')
+      .where('empid', '==', me.empid)
+      .orderBy('uploadTimestamp', 'desc')
+      .limit(100)
+      .get();
+
+    if (snap.empty) {
+      listEl.innerHTML = '<div style="color:#9ca3af;padding:12px;text-align:center;">' + (t('receipt_empty') || '아직 제출한 영수증이 없습니다.') + '</div>';
+      return;
+    }
+
+    // 연월별 그룹핑 + 캐시
+    var folders = {};
+    snap.forEach(function(doc) {
+      var r = doc.data(); r._id = doc.id;
+      _receiptCache[r._id] = r;
+      var ym = r.yearMonth || (r.uploadDate ? r.uploadDate.substring(0, 7) : 'unknown');
+      if (!folders[ym]) folders[ym] = [];
+      folders[ym].push(r);
+    });
+    var sortedYm = Object.keys(folders).sort().reverse();
+
+    var html = '';
+    sortedYm.forEach(function(ym) {
+      var items = folders[ym];
+      var dlCount = items.filter(function(r) { return r.downloaded; }).length;
+      var notDl = items.length - dlCount;
+
+      html += '<div style="margin-bottom:12px;">';
+      // 폴더 헤더
+      html += '<div onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\';this.querySelector(\'.fa\').style.transform=this.nextElementSibling.style.display===\'none\'?\'\':\' rotate(90deg)\'" style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f3f4f6;border-radius:8px;cursor:pointer;user-select:none;">';
+      html += '<span style="font-size:18px;">📁</span>';
+      html += '<span style="font-size:14px;font-weight:700;color:#374151;">' + ym + '</span>';
+      html += '<span style="font-size:12px;color:#6b7280;">' + items.length + t('rad_items') + '</span>';
+      if (notDl > 0) {
+        html += '<span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 6px;border-radius:10px;font-weight:600;">⏳' + notDl + '</span>';
+      } else {
+        html += '<span style="font-size:10px;background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:10px;font-weight:600;">✅</span>';
+      }
+      html += '<span class="fa" style="margin-left:auto;font-size:12px;color:#9ca3af;transition:transform .2s;transform:rotate(90deg);">▶</span>';
+      html += '</div>';
+
+      // 파일 목록 (다운로드 완료된 파일 제외)
+      var pendingItems = items.filter(function(r) { return !r.downloaded; });
+      html += '<div style="display:flex;flex-direction:column;gap:4px;padding:6px 0 0 8px;">';
+      if (!pendingItems.length) {
+        html += '<div style="color:#16a34a;padding:8px;font-size:12px;text-align:center;">✅ ' + t('rad_complete') + '</div>';
+      }
+      pendingItems.forEach(function(r) {
+        var date = r.uploadDate ? new Date(r.uploadDate).toLocaleString('ko-KR') : '';
+        var size = r.fileSize ? (r.fileSize / 1024).toFixed(0) + 'KB' : '';
+
+        html += '<div style="display:flex;align-items:center;gap:10px;padding:6px 8px;background:#fff;border-radius:8px;border:1px solid #e5e7eb;">';
+        html += '<img src="' + (r.downloadUrl || '') + '" style="width:40px;height:40px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:zoom-in;transition:transform .12s;" onclick="event.stopPropagation();_previewReceipt(\'' + r._id + '\')" onmouseover="this.style.transform=\'scale(1.15)\'" onmouseout="this.style.transform=\'scale(1)\'" title="🔍 클릭하여 확대" onerror="this.style.display=\'none\'" />';
+        html += '<div style="flex:1;min-width:0;">';
+        html += '<div style="font-size:12px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (r.fileName || '') + '</div>';
+        html += '<div style="font-size:11px;color:#9ca3af;">' + date + ' · ' + size + ' <span style="font-size:10px;background:#fef3c7;color:#d97706;padding:1px 6px;border-radius:10px;">⏳</span></div>';
+        if (r.memo) html += '<div style="font-size:11px;color:#6b7280;margin-top:1px;">📝 ' + r.memo + '</div>';
+        html += '</div>';
+        html += '<button onclick="_deleteReceiptDoc(\'' + r._id + '\',\'' + (r.storagePath || '').replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#ef4444;font-size:14px;cursor:pointer;padding:4px;">🗑️</button>';
+        html += '</div>';
+      });
+      html += '</div></div>';
+    });
+    listEl.innerHTML = html;
+  } catch (e) {
+    console.error('[Receipt] load error:', e);
+    if (e.code === 'failed-precondition' || e.message.indexOf('index') > -1) {
+      listEl.innerHTML = '<div style="color:#f59e0b;padding:12px;text-align:center;font-size:13px;">⚠️ Firestore 인덱스 생성 필요<br><a href="' + (e.message.match(/https:\/\/[^\s]+/) || [''])[0] + '" target="_blank" style="color:#2563eb;">인덱스 생성 링크 클릭</a></div>';
+    } else {
+      listEl.innerHTML = '<div style="color:#ef4444;padding:12px;text-align:center;">파일 목록 로드 실패</div>';
+    }
+  }
+}
+
+async function _deleteReceiptDoc(docId, storagePath) {
+  if (!confirm(t('receipt_delete_confirm') || '이 영수증을 삭제하시겠습니까?')) return;
+  try {
+    await _fbDb.collection('receipts').doc(docId).delete();
+    if (storagePath) { try { await _fbStorage.ref(storagePath).delete(); } catch(e) {} }
+    showToast('✅ 삭제 완료');
+    _loadMyReceipts();
+  } catch (e) {
+    console.error('[Receipt] delete error:', e);
+    neoAlert('삭제 실패: ' + e.message);
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════
+// ── 관리자: 영수증 대시보드 (폴더형 + 다운로드 기준) ──
+// ══════════════════════════════════════════════════════════════════
+
+// 영수증 조회 접근 가능 여부 (열람 또는 승인)
+function _canViewReceipts() {
+  var me = getCurrentUser();
+  if (!me) return false;
+  if (_isAdmin(me)) return true;
+  var perms = (me.permissions || []);
+  return perms.includes('receipt_admin');
+}
+
+// 전체 직원 조회 가능 여부 — 승인 권한(receipt_admin_approve)이 있어야 전체 열람
+// 열람만(receipt_admin)이면 본인 영수증만 볼 수 있음
+function _isExpenseAdmin() {
+  var me = getCurrentUser();
+  if (!me) return false;
+  if (_isAdmin(me)) return true;
+  var perms = (me.permissions || []);
+  return perms.includes('receipt_admin_approve');
+}
+
+// 모바일: 뒤쪽 홈화면 모든 요소 숨기기/복원 (렌더링 자체를 차단 → 번뜩임 방지)
+var _hiddenBgEls = []; // { el, origDisplay }
+function _hideMobileBackground() {
+  if (window.innerWidth > 768) return;
+  _hiddenBgEls = [];
+  var children = document.body.children;
+  for (var i = 0; i < children.length; i++) {
+    var el = children[i];
+    if (el.tagName === 'SCRIPT' || el.tagName === 'LINK' || el.tagName === 'STYLE') continue;
+    if (el.id === 'receiptAdminOverlay' || el.id === 'receiptAdminMini') continue;
+    if (el.id === 'receiptPreviewModal') continue;
+    if (el.classList && el.classList.contains('header')) continue;
+    var cs = getComputedStyle(el);
+    if (cs.display === 'none') continue;
+    // 원래 inline display 값 저장
+    _hiddenBgEls.push({ el: el, origDisplay: el.style.display });
+    el.style.display = 'none';
+  }
+}
+function _showMobileBackground() {
+  if (window.innerWidth > 768) return;
+  _hiddenBgEls.forEach(function(item) {
+    item.el.style.display = item.origDisplay; // 원래 값으로 정확히 복원
+  });
+  _hiddenBgEls = [];
+}
+
+function _applyGpuAccel(on) {
+  var ov = document.getElementById('receiptAdminOverlay');
+  if (!ov) return;
+  if (on) {
+    ov.style.transform = 'translateZ(0)';
+    ov.style.webkitTransform = 'translateZ(0)';
+    ov.style.willChange = 'transform,opacity';
+    ov.style.isolation = 'isolate';
+    ov.style.contain = 'layout paint';
+    ov.style.overscrollBehavior = 'none';
+  } else {
+    ov.style.transform = '';
+    ov.style.webkitTransform = '';
+    ov.style.willChange = '';
+    ov.style.isolation = '';
+    ov.style.contain = '';
+    ov.style.overscrollBehavior = '';
+  }
+}
+
+function openReceiptAdmin() {
+  if (!_canViewReceipts()) { neoAlert('권한이 없습니다.'); return; }
+  var overlay = document.getElementById('receiptAdminOverlay');
+  _hideMobileBackground();
+  _applyGpuAccel(true);
+  overlay.style.display = 'flex';
+  _bringToFront(overlay);
+  // 타이틀 설정
+  var titleEl = document.getElementById('receiptAdminTitleText');
+  if (titleEl) titleEl.textContent = _isExpenseAdmin() ? t('receipt_admin_title') : t('receipt_view_title');
+  applyLang();
+  _initReceiptAdminDrag();
+  // 데스크탑: 기본 전체화면
+  var modal = document.getElementById('receiptAdminModal');
+  if (window.innerWidth > 1024 && modal && !modal.classList.contains('fullscreen')) {
+    var fsBtn = modal.querySelector('.modal-btn-fs');
+    toggleModalFullscreen(modal, fsBtn);
+  }
+  _loadReceiptDashboard();
+}
+
+function closeReceiptAdmin() {
+  document.getElementById('receiptAdminMini').classList.remove('show');
+  var modal = document.getElementById('receiptAdminModal');
+  if (modal.classList.contains('fullscreen')) {
+    modal.classList.remove('fullscreen');
+    modal.style.cssText = modal._savedStyle || '';
+  }
+  var _ov = document.getElementById('receiptAdminOverlay');
+  _ov.style.display = 'none';
+  _applyGpuAccel(false);
+  _showMobileBackground();
+  _resetModalPos(modal);
+}
+
+function minimizeReceiptAdmin() {
+  var _ov = document.getElementById('receiptAdminOverlay');
+  _ov.style.display = 'none';
+  _applyGpuAccel(false);
+  _showMobileBackground();
+  document.getElementById('receiptAdminMini').classList.add('show');
+  _repositionMinis();
+}
+
+function restoreReceiptAdmin() {
+  document.getElementById('receiptAdminMini').classList.remove('show');
+  var ov = document.getElementById('receiptAdminOverlay');
+  _hideMobileBackground();
+  ov.style.display = 'flex';
+  _bringToFront(ov);
+  _repositionMinis();
+}
+
+// ── 드래그 이동 ──
+var _radDragInited = false;
+function _initReceiptAdminDrag() {
+  if (_radDragInited) return;
+  _radDragInited = true;
+  var hdr = document.getElementById('receiptAdminHdr');
+  var modal = document.getElementById('receiptAdminModal');
+  if (!hdr || !modal) return;
+  var dragging = false, startX, startY, startLeft, startTop;
+  function dStart(e) {
+    if (e.target.tagName === 'BUTTON' || _receiptAdminMaximized) return;
+    dragging = true;
+    var t = e.touches ? e.touches[0] : e;
+    var rect = modal.getBoundingClientRect();
+    startX = t.clientX; startY = t.clientY;
+    startLeft = rect.left; startTop = rect.top;
+    modal.style.position = 'fixed'; modal.style.margin = '0';
+    e.preventDefault();
+  }
+  function dMove(e) {
+    if (!dragging) return;
+    var t = e.touches ? e.touches[0] : e;
+    var dx = t.clientX - startX, dy = t.clientY - startY;
+    modal.style.left = Math.max(0, Math.min(startLeft + dx, window.innerWidth - 80)) + 'px';
+    modal.style.top = Math.max(0, Math.min(startTop + dy, window.innerHeight - 60)) + 'px';
+    modal.style.right = 'auto'; modal.style.bottom = 'auto';
+    e.preventDefault();
+  }
+  function dEnd() { dragging = false; }
+  hdr.addEventListener('mousedown', dStart);
+  hdr.addEventListener('touchstart', dStart, { passive: false });
+  document.addEventListener('mousemove', dMove);
+  document.addEventListener('touchmove', dMove, { passive: false });
+  document.addEventListener('mouseup', dEnd);
+  document.addEventListener('touchend', dEnd);
+}
+
+// ── 전역 상태 ──
+var _radEmpMap = {};  // empid → { empName, dept, folders:{ym→[files]}, total, notDl, lastDate }
+var _radSelected = { empid: '', ym: '' }; // 현재 선택
+var _radFilterYm = ''; // 월간 필터 (YYYY-MM)
+var _radSubmitFilter = 'all'; // 'all' | 'submitted' | 'not_submitted'
+var _radAllAccounts = []; // 전체 계정 목록
+
+async function _loadReceiptDashboard() {
+  var body = document.getElementById('receiptAdminBody');
+  body.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:40px;">로딩 중...</div>';
+
+  try {
+    // 전체 계정 로드
+    if (!_radAllAccounts.length) {
+      try {
+        var acctRes = await apiGetAccounts();
+        _radAllAccounts = (acctRes && acctRes.accounts) || [];
+      } catch(e) { _radAllAccounts = _acctCache || []; }
+    }
+
+    // 열람 전용(승인 권한 없음)이면 본인 영수증만
+    var _viewOnly = !_isExpenseAdmin();
+    var _myEmpId = '';
+    if (_viewOnly) {
+      var _me = getCurrentUser();
+      _myEmpId = _me ? _me.empid : '';
+    }
+
+    // Firestore 쿼리 구성
+    var query = _fbDb.collection('receipts');
+    // 열람 전용: 서버 사이드에서 본인 것만 필터
+    if (_viewOnly && _myEmpId) {
+      query = query.where('empid', '==', _myEmpId);
+    }
+    if (_radFilterYm) {
+      query = query.where('yearMonth', '==', _radFilterYm);
+    } else if (!_viewOnly) {
+      query = query.orderBy('uploadTimestamp', 'desc');
+    }
+    var snap = await query.get();
+    if (snap.empty) {
+      body.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:60px;">업로드된 영수증이 없습니다.</div>';
+      return;
+    }
+
+    // 클라이언트 정렬 (yearMonth 필터 시 orderBy 미사용)
+    var _snapDocs = [];
+    snap.forEach(function(doc) { _snapDocs.push(doc); });
+    if (_radFilterYm) {
+      _snapDocs.sort(function(a, b) {
+        var ta = a.data().uploadTimestamp || a.data().uploadDate || '';
+        var tb = b.data().uploadTimestamp || b.data().uploadDate || '';
+        if (ta && ta.toMillis) ta = ta.toMillis(); else if (typeof ta === 'string') ta = new Date(ta).getTime();
+        if (tb && tb.toMillis) tb = tb.toMillis(); else if (typeof tb === 'string') tb = new Date(tb).getTime();
+        return (tb || 0) - (ta || 0);
+      });
+    }
+
+    // 3단 그룹핑 (중복 storagePath 제거 — 최신 것만 유지)
+    _receiptCache = {};
+    _radEmpMap = {};
+    var _seenPaths = {}; // storagePath → docId (중복 감지)
+    var _dupIds = [];     // 삭제 대상 중복 docId
+    _snapDocs.forEach(function(doc) {
+      var r = doc.data(); r._id = doc.id;
+      // 열람 전용: 본인 영수증만 표시
+      if (_viewOnly && (r.empid || '') !== _myEmpId) return;
+      // 중복 체크: 동일 storagePath가 이미 있으면 스킵
+      if (r.storagePath && _seenPaths[r.storagePath]) {
+        _dupIds.push(doc.id);
+        return; // 중복 — 이미 최신 것이 등록됨 (orderBy desc)
+      }
+      if (r.storagePath) _seenPaths[r.storagePath] = doc.id;
+
+      _receiptCache[r._id] = r;
+      var eid = r.empid || 'unknown';
+      if (!_radEmpMap[eid]) {
+        var _acctMatch = _radAllAccounts.find(function(a) { return (a.empid || a.id) === eid; });
+        var _fullName = _acctMatch ? (_acctMatch.name || _acctMatch.nickname || r.empName || eid) : (r.empName || eid);
+        _radEmpMap[eid] = { empid: eid, empName: _fullName, dept: r.dept || '', folders: {}, total: 0, notDl: 0, lastDate: '' };
+      }
+      var ym = r.yearMonth || (r.uploadDate ? r.uploadDate.substring(0, 7) : 'unknown');
+      if (!_radEmpMap[eid].folders[ym]) _radEmpMap[eid].folders[ym] = [];
+      _radEmpMap[eid].folders[ym].push(r);
+      _radEmpMap[eid].total++;
+      if (!r.downloaded) _radEmpMap[eid].notDl++;
+      if (!_radEmpMap[eid].lastDate && r.uploadDate) _radEmpMap[eid].lastDate = r.uploadDate;
+    });
+    // 백그라운드: 중복 Firestore 문서 자동 정리
+    if (_dupIds.length > 0) {
+      console.log('[Receipt] 중복 문서 ' + _dupIds.length + '건 정리');
+      _dupIds.forEach(function(id) {
+        _fbDb.collection('receipts').doc(id).delete().catch(function(e) { console.error('[Receipt] dup delete error:', e); });
+      });
+    }
+
+    _radSelected = { empid: '', ym: '' };
+    // 기본 필터: 현재 월
+    if (!_radFilterYm) {
+      var now = new Date();
+      _radFilterYm = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    }
+    _renderFileStation(body);
+  } catch (e) {
+    console.error('[ReceiptAdmin] load error:', e);
+    if (e.code === 'failed-precondition' || (e.message && e.message.indexOf('index') > -1)) {
+      var idxUrl = (e.message.match(/https:\/\/[^\s]+/) || [''])[0];
+      body.innerHTML = '<div style="text-align:center;padding:40px;"><div style="color:#f59e0b;margin-bottom:12px;">⚠️ Firestore 인덱스 생성 필요</div>' +
+        (idxUrl ? '<a href="' + idxUrl + '" target="_blank" style="color:#2563eb;">인덱스 생성 링크</a>' : '') + '</div>';
+    } else {
+      body.innerHTML = '<div style="color:#ef4444;text-align:center;padding:40px;">로드 실패: ' + e.message + '</div>';
+    }
+  }
+}
+
+function _radChangeMonth(val) {
+  _radFilterYm = val;
+  _radSelected = { empid: '', ym: '' };
+  _loadReceiptDashboard();
+}
+
+function _radChangeSubmitFilter(val) {
+  _radSubmitFilter = val;
+  _radSelected = { empid: '', ym: '' };
+  _renderFileStation();
+}
+
+function _renderFileStation(body) {
+  if (!body) body = document.getElementById('receiptAdminBody');
+  // 모바일: 카드형 UI
+  if (window.innerWidth <= 1024) { _renderMobileReceipts(body); return; }
+  var _isAdmin = _isExpenseAdmin();
+
+  // 월간 필터 기준으로 직원 목록 재계산
+  var allEmpList = Object.values(_radEmpMap);
+  var ym = _radFilterYm;
+
+  // 사용 가능한 모든 월 수집
+  var allMonths = {};
+  allEmpList.forEach(function(emp) {
+    Object.keys(emp.folders).forEach(function(m) { allMonths[m] = true; });
+  });
+  var monthList = Object.keys(allMonths).sort().reverse();
+
+  // 제출한 직원 empid 세트
+  var submittedEmpIds = {};
+  allEmpList.forEach(function(emp) {
+    if (!ym || emp.folders[ym]) submittedEmpIds[emp.empid] = true;
+  });
+
+  // 미제출 직원 계산 (영업 소속만 — 전체 Sales 계정 - 제출 직원)
+  var notSubmittedEmps = [];
+  (_radAllAccounts || []).forEach(function(acct) {
+    var eid = acct.empid || acct.id;
+    if (eid && !submittedEmpIds[eid] && acct.dept === 'Sales') {
+      notSubmittedEmps.push({ empid: eid, empName: acct.name || acct.nickname || eid, dept: acct.dept || '' });
+    }
+  });
+  notSubmittedEmps.sort(function(a, b) { return (a.empName || '').localeCompare(b.empName || ''); });
+
+  var submittedCount = Object.keys(submittedEmpIds).length;
+  var notSubmittedCount = notSubmittedEmps.length;
+
+  // 필터된 직원: 제출 필터 적용
+  var filteredEmps = [];
+  if (_radSubmitFilter === 'not_submitted') {
+    // 미제출 직원 — 영수증 없음
+    filteredEmps = notSubmittedEmps.map(function(e) {
+      return { empid: e.empid, empName: e.empName, dept: e.dept, folders: {}, total: 0, notDl: 0, lastDate: '', _notSubmitted: true };
+    });
+  } else {
+    allEmpList.forEach(function(emp) {
+      if (!ym || emp.folders[ym]) {
+        var files = ym ? (emp.folders[ym] || []) : [];
+        var total = ym ? files.length : emp.total;
+        var notDl = ym ? files.filter(function(f) { return !f.downloaded; }).length : emp.notDl;
+        filteredEmps.push({ empid: emp.empid, empName: emp.empName, dept: emp.dept, folders: emp.folders, total: total, notDl: notDl, lastDate: emp.lastDate });
+      }
+    });
+    filteredEmps.sort(function(a, b) {
+      if (b.notDl !== a.notDl) return b.notDl - a.notDl;
+      return (b.lastDate || '').localeCompare(a.lastDate || '');
+    });
+  }
+
+  var totalAll = filteredEmps.reduce(function(s, e) { return s + e.total; }, 0);
+  var totalNotDl = filteredEmps.reduce(function(s, e) { return s + e.notDl; }, 0);
+
+  // 월간 필터 + 제출/미제출 필터
+  var html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-shrink:0;user-select:none;-webkit-user-select:none;flex-wrap:wrap;">';
+  html += '<label style="font-size:14px;font-weight:600;color:#374151;">📅 ' + t('rad_month_filter') + '</label>';
+  html += '<input type="month" value="' + (ym || '') + '" onchange="_radChangeMonth(this.value)" style="padding:5px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;color:#374151;background:#fff;cursor:pointer;" />';
+  if (_isAdmin) {
+    html += '<span style="width:1px;height:24px;background:#d1d5db;margin:0 4px;"></span>';
+    // 제출/미제출 필터 버튼 (승인 권한자만)
+    var _sfAll = _radSubmitFilter === 'all';
+    var _sfSub = _radSubmitFilter === 'submitted';
+    var _sfNot = _radSubmitFilter === 'not_submitted';
+    html += '<button onclick="_radChangeSubmitFilter(\'all\')" style="padding:5px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid ' + (_sfAll ? '#2563eb' : '#d1d5db') + ';background:' + (_sfAll ? '#2563eb' : '#f3f4f6') + ';color:' + (_sfAll ? '#fff' : '#6b7280') + ';">' + t('rad_filter_all') + '</button>';
+    html += '<button onclick="_radChangeSubmitFilter(\'submitted\')" style="padding:5px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid ' + (_sfSub ? '#16a34a' : '#d1d5db') + ';background:' + (_sfSub ? '#16a34a' : '#f3f4f6') + ';color:' + (_sfSub ? '#fff' : '#6b7280') + ';">' + t('rad_filter_submitted') + ' (' + submittedCount + ')</button>';
+    html += '<button onclick="_radChangeSubmitFilter(\'not_submitted\')" style="padding:5px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid ' + (_sfNot ? '#ef4444' : '#d1d5db') + ';background:' + (_sfNot ? '#ef4444' : '#f3f4f6') + ';color:' + (_sfNot ? '#fff' : '#6b7280') + ';">' + t('rad_filter_not_submitted') + ' (' + notSubmittedCount + ')</button>';
+    // 미제출 필터 활성 시 요청하기 버튼
+    if (_sfNot) {
+      html += '<span style="width:1px;height:24px;background:#d1d5db;margin:0 4px;"></span>';
+      html += '<select id="radReqChannel" style="padding:5px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;color:#374151;background:#fff;cursor:pointer;">';
+      html += '<option value="messenger">💬 ' + t('rad_ch_messenger') + '</option>';
+      html += '<option value="line">🟢 ' + t('rad_ch_line') + '</option>';
+      html += '</select>';
+      html += '<button onclick="_radSendRequest()" style="padding:5px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid #f97316;background:#f97316;color:#fff;">📩 ' + t('rad_send_request') + '</button>';
+    }
+  }
+  html += '</div>';
+
+  if (_isAdmin) {
+    html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;flex-shrink:0;user-select:none;-webkit-user-select:none;">';
+    html += _summaryCard(submittedCount, t('rad_emp_submitted'), '#1e40af', '#eff6ff', '#dbeafe');
+    html += _summaryCard(totalAll, t('rad_total'), '#16a34a', '#f0fdf4', '#dcfce7');
+    html += _summaryCard(totalAll - totalNotDl, t('rad_downloaded'), '#2563eb', '#eff6ff', '#dbeafe');
+    html += _summaryCard(totalNotDl, t('rad_not_downloaded'), totalNotDl > 0 ? '#d97706' : '#16a34a', totalNotDl > 0 ? '#fef3c7' : '#f0fdf4', totalNotDl > 0 ? '#fde68a' : '#dcfce7');
+    html += '</div>';
+  }
+
+  // File Station 레이아웃
+  html += '<div id="radFsWrap" style="display:flex;border:1px solid #d1d5db;border-radius:10px;overflow:hidden;background:#fff;flex:1;min-height:0;">';
+
+  // ── 왼쪽: 트리 패널 ──
+  html += '<div id="radTreePanel" style="width:400px;min-width:340px;border-right:1px solid #d1d5db;overflow-y:auto;background:#fafafa;flex-shrink:0;user-select:none;-webkit-user-select:none;">';
+  var _isNotSubMode = _radSubmitFilter === 'not_submitted';
+  // 트리 헤더 (미제출 모드면 전체 선택 체크박스)
+  html += '<div style="padding:10px 14px;font-size:16px;font-weight:700;color:#6b7280;border-bottom:1px solid #e5e7eb;background:#f3f4f6;display:flex;align-items:center;gap:8px;">';
+  if (_isNotSubMode) {
+    html += '<input type="checkbox" id="radChkAllEmp" onchange="_radToggleAllEmp(this.checked)" style="width:16px;height:16px;cursor:pointer;flex-shrink:0;" />';
+  }
+  html += '<span>📂 ' + t('rad_receipts') + (ym ? ' (' + ym + ')' : '') + '</span></div>';
+  filteredEmps.forEach(function(emp) {
+    var sel = _radSelected.empid === emp.empid;
+    var hasNotDl = emp.notDl > 0;
+    var isNotSub = emp._notSubmitted;
+    if (isNotSub) {
+      // 미제출 직원 (체크박스 포함, 클릭 시 오른쪽에 폴더 트리 표시)
+      html += '<div class="rad-tree-emp" data-empid="' + emp.empid + '" onclick="_radSelectEmp(\'' + emp.empid + '\',event)" style="padding:10px 14px;font-size:15px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f3f4f6;cursor:pointer;' + (sel ? 'background:#fecaca;font-weight:700;' : 'background:#fef2f2;') + 'color:#991b1b;">';
+      html += '<input type="checkbox" class="rad-chk-emp" value="' + emp.empid + '" data-name="' + (emp.empName || '').replace(/"/g, '&quot;') + '" onclick="event.stopPropagation()" style="width:16px;height:16px;cursor:pointer;flex-shrink:0;" />';
+      html += '<span style="font-size:18px;">👤</span>';
+      html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span style="color:#7f1d1d;font-size:13px;font-weight:700;">(' + emp.empid + ')</span> ' + emp.empName + '</span>';
+      html += '<span style="background:#fca5a5;color:#991b1b;font-size:12px;padding:2px 8px;border-radius:8px;font-weight:600;flex-shrink:0;">' + t('rad_no_receipt') + '</span>';
+    } else {
+      html += '<div class="rad-tree-emp" data-empid="' + emp.empid + '" onclick="_radSelectEmp(\'' + emp.empid + '\',event)" style="padding:10px 14px;cursor:pointer;font-size:15px;display:flex;align-items:center;gap:8px;border-bottom:1px solid #f3f4f6;' + (sel ? 'background:#dbeafe;font-weight:700;' : '') + (hasNotDl && !sel ? 'background:#fffbeb;' : '') + '">';
+      html += '<span style="font-size:18px;">' + (sel && _radSelected.ym === '' ? '📂' : '📁') + '</span>';
+      html += '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span style="color:#374151;font-size:13px;font-weight:700;">(' + emp.empid + ')</span> ' + emp.empName + '</span>';
+      if (hasNotDl) html += '<span style="background:#ef4444;color:#fff;font-size:13px;padding:2px 7px;border-radius:8px;font-weight:700;flex-shrink:0;">' + emp.notDl + '</span>';
+    }
+    html += '</div>';
+
+    // 하위 폴더 (선택된 직원만, 필터 적용)
+    if (sel && !isNotSub) {
+      var sortedYmKeys = Object.keys(emp.folders).sort().reverse();
+      if (ym) sortedYmKeys = sortedYmKeys.filter(function(m) { return m === ym; });
+      sortedYmKeys.forEach(function(ymKey) {
+        var ymSel = _radSelected.ym === ymKey;
+        var ymFiles = emp.folders[ymKey];
+        var ymNotDl = ymFiles.filter(function(f) { return !f.downloaded; }).length;
+        html += '<div class="rad-tree-ym" onclick="event.stopPropagation();_radSelectYm(\'' + emp.empid + '\',\'' + ymKey + '\')" oncontextmenu="event.stopPropagation();_radFolderContextMenu(event,\'' + emp.empid + '\',\'' + ymKey + '\')" style="padding:8px 14px 8px 36px;cursor:pointer;font-size:15px;display:flex;align-items:center;gap:6px;' + (ymSel ? 'background:#bfdbfe;font-weight:700;' : '') + '">';
+        html += '<span style="font-size:16px;">' + (ymSel ? '📂' : '📁') + '</span>';
+        html += '<span style="flex:1;">' + ymKey + '</span>';
+        html += '<span style="color:#9ca3af;font-size:13px;">' + ymFiles.length + '</span>';
+        if (ymNotDl > 0) html += '<span style="background:#f59e0b;color:#fff;font-size:12px;padding:2px 6px;border-radius:6px;font-weight:700;">' + ymNotDl + '</span>';
+        html += '</div>';
+      });
+    }
+  });
+  html += '</div>';
+
+  // ── 오른쪽: 콘텐츠 패널 ──
+  html += '<div style="flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;">';
+
+  // 브레드크럼 — 미제출 직원도 이름 표시
+  var bc = '📂 ' + t('rad_receipts');
+  if (_radSelected.empid) {
+    var selEmp = _radEmpMap[_radSelected.empid];
+    // 미제출 직원 이름 찾기
+    if (!selEmp) {
+      var _nsEmp = filteredEmps.filter(function(e) { return e.empid === _radSelected.empid; })[0];
+      bc += ' > ' + (_nsEmp ? _nsEmp.empName : _radSelected.empid);
+    } else {
+      bc += ' > ' + selEmp.empName;
+    }
+    if (_radSelected.ym) bc += ' > ' + _radSelected.ym;
+  }
+  html += '<div style="padding:10px 16px;font-size:15px;color:#6b7280;border-bottom:1px solid #e5e7eb;background:#f9fafb;display:flex;align-items:center;gap:10px;user-select:none;-webkit-user-select:none;">';
+  html += '<span style="flex:1;font-weight:600;">' + bc + '</span>';
+  if (_radSelected.empid && _radSelected.ym) {
+    html += '<button onclick="_radPrint()" style="font-size:14px;padding:6px 14px;background:#6b7280;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;display:inline-flex;align-items:center;gap:5px;" title="' + t('rad_print') + '">🖨️ ' + t('rad_print') + '</button>';
+  }
+  html += '</div>';
+
+  // 콘텐츠 영역 (드래그 선택 가능, NAS처럼 배경 꽉 채움)
+  html += '<div id="radFileArea" style="flex:1;min-height:0;overflow-y:auto;padding:0;position:relative;background:#fff;user-select:none;-webkit-user-select:none;" oncontextmenu="_radContextMenu(event)">';
+
+  if (!_radSelected.empid) {
+    // 직원 미선택 → 안내
+    html += '<div style="color:#9ca3af;text-align:center;padding:60px 20px;font-size:18px;">' + t('rad_select_emp') + '</div>';
+  } else if (!_radSelected.ym) {
+    // 직원 선택 → 연월 폴더 목록 (File Station 폴더 그리드)
+    var emp = _radEmpMap[_radSelected.empid];
+    if (!emp) {
+      // 미제출 직원 — 제출 영수증 없음
+      var _nsEmp2 = filteredEmps.filter(function(e) { return e.empid === _radSelected.empid; })[0];
+      var _nsName = _nsEmp2 ? _nsEmp2.empName : _radSelected.empid;
+      var _nsDept = _nsEmp2 ? (_nsEmp2.dept || '') : '';
+      html += '<div style="padding:12px;">';
+      html += '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fef2f2;border-radius:8px;margin-bottom:14px;">';
+      html += '<div style="width:42px;height:42px;border-radius:50%;background:#fecaca;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#991b1b;">' + (_nsName || '?').charAt(0) + '</div>';
+      html += '<div style="flex:1;"><div style="font-size:17px;font-weight:700;color:#991b1b;">' + _nsName + ' <span style="font-weight:400;color:#9ca3af;font-size:14px;">' + _radSelected.empid + (_nsDept ? ' · ' + _nsDept : '') + '</span></div>';
+      html += '<div style="font-size:14px;color:#ef4444;">' + t('rad_no_receipt') + '</div></div></div>';
+      html += '<div style="text-align:center;padding:60px 20px;">';
+      html += '<div style="font-size:48px;margin-bottom:12px;">📭</div>';
+      html += '<div style="font-size:16px;color:#9ca3af;">' + t('receipt_empty') + '</div>';
+      html += '</div></div>';
+    } else {
+      var sortedYm = Object.keys(emp.folders).sort().reverse();
+      html += '<div style="padding:12px;">';
+      // 직원 정보 바
+      var lastDt = emp.lastDate ? new Date(emp.lastDate) : null;
+      var lastStr = lastDt ? lastDt.toLocaleDateString('ko-KR') + ' ' + lastDt.toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '-';
+      html += '<div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#f3f4f6;border-radius:8px;margin-bottom:14px;">';
+      html += '<div style="width:42px;height:42px;border-radius:50%;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:#1e40af;">' + (emp.empName || '?').charAt(0) + '</div>';
+      html += '<div style="flex:1;"><div style="font-size:17px;font-weight:700;">' + emp.empName + ' <span style="font-weight:400;color:#9ca3af;font-size:14px;">' + emp.empid + ' · ' + (emp.dept || '') + '</span></div>';
+      html += '<div style="font-size:14px;color:#9ca3af;">' + t('rad_total_n') + ' ' + emp.total + t('rad_items') + ' · ' + t('rad_last') + ': ' + lastStr + '</div></div></div>';
+      // 폴더 그리드
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;">';
+      sortedYm.forEach(function(ym) {
+        var files = emp.folders[ym];
+        var ymDl = files.filter(function(f) { return f.downloaded; }).length;
+        var ymNotDl = files.length - ymDl;
+        html += '<div class="rad-folder-card" onclick="_radSelectYm(\'' + emp.empid + '\',\'' + ym + '\')" oncontextmenu="_radFolderContextMenu(event,\'' + emp.empid + '\',\'' + ym + '\')" style="padding:14px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;cursor:pointer;text-align:center;transition:all .15s;' + (ymNotDl > 0 ? 'border-color:#fbbf24;' : '') + '" onmouseover="this.style.background=\'#f0f9ff\'" onmouseout="this.style.background=\'#fff\'">';
+        html += '<div style="font-size:40px;margin-bottom:6px;">📁</div>';
+        html += '<div style="font-size:17px;font-weight:700;color:#374151;">' + ym + '</div>';
+        html += '<div style="font-size:14px;color:#6b7280;margin-top:3px;">' + files.length + t('rad_items') + '</div>';
+        if (ymNotDl > 0) {
+          html += '<div style="margin-top:5px;font-size:14px;color:#d97706;font-weight:600;">⏳ ' + t('rad_not_dl_short') + ' ' + ymNotDl + '</div>';
+        } else {
+          html += '<div style="margin-top:5px;font-size:14px;color:#16a34a;font-weight:600;">✅ ' + t('rad_complete') + '</div>';
+        }
+        html += '</div>';
+      });
+      html += '</div></div>';
+    }
+  } else {
+    // 연월 선택 → 파일 목록 (File Station 테이블 + 체크박스)
+    var emp = _radEmpMap[_radSelected.empid];
+    var files = emp.folders[_radSelected.ym] || [];
+
+    // 선택 바 제거됨 — 우클릭 메뉴 사용
+
+    html += '<table style="width:100%;border-collapse:collapse;font-size:15px;">';
+    html += '<thead><tr style="background:#f3f4f6;position:sticky;top:0;z-index:1;user-select:none;-webkit-user-select:none;">';
+    html += '<th style="padding:10px 8px;text-align:center;font-weight:600;color:#6b7280;border-bottom:1px solid #d1d5db;width:40px;"><input type="checkbox" id="radChkAll" onchange="_radToggleAll(this.checked)" style="width:16px;height:16px;cursor:pointer;" /></th>';
+    html += '<th style="padding:10px 10px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #d1d5db;width:48px;"></th>';
+    html += '<th style="padding:10px 14px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #d1d5db;">' + t('rad_filename') + '</th>';
+    html += '<th style="padding:10px 14px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #d1d5db;width:100px;">' + t('rad_size') + '</th>';
+    html += '<th style="padding:10px 14px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #d1d5db;width:160px;">' + t('rad_upload_date') + '</th>';
+    html += '<th style="padding:10px 14px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #d1d5db;width:180px;">' + t('rad_viewed') + '</th>';
+    html += '<th style="padding:10px 14px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #d1d5db;width:180px;">' + t('rad_download_col') + '</th>';
+    html += '</tr></thead><tbody>';
+    files.forEach(function(r, idx) {
+      var sz = r.fileSize ? (r.fileSize < 1024 * 1024 ? (r.fileSize / 1024).toFixed(0) + ' KB' : (r.fileSize / 1024 / 1024).toFixed(1) + ' MB') : '-';
+      var _lc = {ko:'ko-KR',en:'en-US',th:'th-TH'}[currentLang||'ko'] || 'ko-KR';
+      var _dtOpt = {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'};
+      var uploadDt = r.uploadDate ? new Date(r.uploadDate).toLocaleString(_lc, _dtOpt) : '-';
+      var viewStr = r.viewedDate ? new Date(r.viewedDate).toLocaleString(_lc, _dtOpt) + (r.viewedBy ? ' (' + r.viewedBy + ')' : '') : '<span style="color:#d1d5db;">-</span>';
+      var dlStr = r.downloaded && r.downloadedDate ? new Date(r.downloadedDate).toLocaleString(_lc, _dtOpt) + (r.downloadedBy ? ' (' + r.downloadedBy + ')' : '') : '<span style="color:#d1d5db;">-</span>';
+      var notDl = !r.downloaded;
+      var isImg = /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(r.fileName || '');
+      var icon = isImg ? '🖼️' : '📄';
+
+      html += '<tr class="rad-file-row" data-docid="' + r._id + '" data-idx="' + idx + '" data-notdl="' + (notDl ? '1' : '0') + '" tabindex="0" style="border-bottom:1px solid #f3f4f6;cursor:pointer;outline:none;' + (notDl ? 'background:#fffbeb;' : '') + '" onmouseover="if(!this.classList.contains(\'rad-selected\'))this.style.background=\'#f0f9ff\'" onmouseout="if(!this.classList.contains(\'rad-selected\'))this.style.background=\'' + (notDl ? '#fffbeb' : '#fff') + '\'" onclick="_radRowClickDelay(event,\'' + r._id + '\',' + idx + ')" onkeydown="_radRowKey(event,\'' + r._id + '\',' + idx + ')">';
+      html += '<td style="padding:8px 8px;text-align:center;" onclick="event.stopPropagation()"><input type="checkbox" class="rad-chk" data-docid="' + r._id + '" onchange="_radUpdateSelBar()" style="width:16px;height:16px;cursor:pointer;" /></td>';
+      html += '<td style="padding:8px 10px;">';
+      if (isImg && r.downloadUrl) {
+        // 썸네일 클릭 → 확대 미리보기 (행 선택은 stopPropagation으로 차단)
+        html += '<img src="' + r.downloadUrl + '" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:zoom-in;transition:transform .12s;" onclick="event.stopPropagation();_previewReceipt(\'' + r._id + '\')" onmouseover="this.style.transform=\'scale(1.15)\'" onmouseout="this.style.transform=\'scale(1)\'" title="🔍 클릭하여 확대" onerror="this.outerHTML=\'🖼️\'" />';
+      } else {
+        html += '<span style="font-size:24px;">' + icon + '</span>';
+      }
+      html += '</td>';
+      html += '<td style="padding:8px 14px;font-weight:600;color:#374151;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.fileName || '') + (r.memo ? ' <span style="color:#9ca3af;font-weight:400;font-size:13px;">📝</span>' : '') + '</td>';
+      html += '<td style="padding:8px 14px;color:#6b7280;">' + sz + '</td>';
+      html += '<td style="padding:8px 14px;color:#6b7280;font-size:14px;">' + uploadDt + '</td>';
+      html += '<td style="padding:8px 14px;font-size:14px;">' + viewStr + '</td>';
+      html += '<td style="padding:8px 14px;font-size:14px;">' + (r.downloaded ? '<span style="color:#16a34a;">' + dlStr + '</span>' : '<span style="color:#d97706;font-weight:600;">⏳ ' + t('rad_not_dl_status') + '</span>') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+  }
+
+  // 드래그 선택 사각형 (콘텐츠 영역 전체)
+  html += '<div id="radDragRect" style="display:none;position:absolute;border:1px solid #90caf9;background:rgba(144,202,249,.18);pointer-events:none;z-index:10;border-radius:3px;"></div>';
+  html += '</div></div></div>';
+  body.innerHTML = html;
+
+  // File Station 높이를 남은 공간에 맞춤 (DOM 렌더 후 실행)
+  requestAnimationFrame(function() { setTimeout(_resizeRadFs, 0); });
+  if (window._radFsResizer) window.removeEventListener('resize', window._radFsResizer);
+  window._radFsResizer = function(){ _resizeRadFs(); };
+  window.addEventListener('resize', window._radFsResizer);
+
+  // 드래그 선택 초기화 (콘텐츠 영역 전체)
+  _initRadDragSelect();
+}
+
+function _resizeRadFs() {
+  var modal = document.getElementById('receiptAdminModal');
+  var wrap = document.getElementById('radFsWrap');
+  if (!modal || !wrap) return;
+  var modalRect = modal.getBoundingClientRect();
+  var wrapRect = wrap.getBoundingClientRect();
+  // 모달 하단 - 래퍼 상단 - 하단 패딩(20px)
+  var remain = modalRect.bottom - wrapRect.top - 20;
+  if (remain > 150) {
+    wrap.style.height = remain + 'px';
+    wrap.style.maxHeight = remain + 'px';
+  }
+}
+
+// 트리 선택: 직원
+// 미제출 전체 체크/해제
+function _radToggleAllEmp(checked) {
+  var cbs = document.querySelectorAll('.rad-chk-emp');
+  cbs.forEach(function(cb) { cb.checked = checked; });
+}
+
+// 미제출 직원에게 영수증 제출 요청 보내기
+function _radSendRequest() {
+  var cbs = document.querySelectorAll('.rad-chk-emp:checked');
+  if (!cbs.length) { showToast('⚠️ ' + t('rad_req_no_select')); return; }
+  var channel = document.getElementById('radReqChannel').value;
+  var me = getCurrentUser();
+  if (!me) { showToast('⚠️ 로그인 필요'); return; }
+  var targets = [];
+  cbs.forEach(function(cb) { targets.push({ empid: cb.value, name: cb.getAttribute('data-name') }); });
+  var nameList = targets.map(function(t) { return t.name; }).join(', ');
+  var ym = _radFilterYm || new Date().getFullYear() + '-' + String(new Date().getMonth() + 1).padStart(2, '0');
+
+  // 수신자별 언어 설정 조회 후 해당 언어로 메시지 발송
+  var _reqMsgs = {
+    ko: '📋 [영수증 제출 요청] ' + ym + ' 영수증을 제출해 주세요.',
+    en: '📋 [Receipt Request] Please submit your receipts for ' + ym + '.',
+    th: '📋 [คำขอส่งใบเสร็จ] กรุณาส่งใบเสร็จของเดือน ' + ym
+  };
+
+  if (channel === 'messenger') {
+    // 앱 내 메신저로 발송 (chat.js 규격 준수, 수신자 언어별 메시지)
+    var sent = 0;
+    var total = targets.length;
+    targets.forEach(function(tgt) {
+      // 수신자 언어 조회
+      _fbDb.collection('accounts').doc(tgt.empid).get().then(function(doc) {
+        var tgtLang = (doc.exists && doc.data().appLang) ? doc.data().appLang : 'ko';
+        var msgText = _reqMsgs[tgtLang] || _reqMsgs.ko;
+        var roomId = [me.empid, tgt.empid].sort().join('_');
+        return _fbDb.collection('chats').doc(roomId).collection('messages').add({
+          from: me.empid,
+          fromName: me.name || me.empid,
+          to: tgt.empid,
+          text: msgText,
+          ts: firebase.firestore.FieldValue.serverTimestamp()
+        }).then(function() {
+          var metaUpd = {
+            participants: [me.empid, tgt.empid].sort(),
+            lastMsg: msgText,
+            lastTs: firebase.firestore.FieldValue.serverTimestamp(),
+            lastFrom: me.empid,
+            lastFromName: me.name || me.empid
+          };
+          metaUpd['name_' + me.empid] = me.name || me.empid;
+          metaUpd['name_' + tgt.empid] = tgt.name || tgt.empid;
+          metaUpd['lastRead_' + me.empid] = firebase.firestore.FieldValue.serverTimestamp();
+          return _fbDb.collection('chats').doc(roomId).set(metaUpd, { merge: true });
+        });
+      }).then(function() {
+        sent++;
+        if (sent === total) showToast('✅ ' + sent + t('rad_req_messenger_done'));
+      }).catch(function(e) { console.error('[Receipt] send request error:', e); });
+    });
+  } else if (channel === 'line') {
+    // LINE 봇으로 Push 메시지 발송
+    var empids = targets.map(function(t) { return t.empid; });
+    var callFn = firebase.functions().httpsCallable('sendReceiptRequest');
+    showToast('📩 ' + t('rad_req_line_sending'));
+    callFn({ empids: empids, month: ym, senderName: me.name || me.empid }).then(function(result) {
+      var r = result.data;
+      if (r.success) {
+        showToast('✅ ' + r.sent + '/' + empids.length + t('rad_req_line_done'));
+      } else {
+        showToast('⚠️ ' + t('rad_req_line_fail'));
+      }
+    }).catch(function(e) {
+      console.error('[Receipt LINE] call error:', e);
+      showToast('⚠️ ' + t('rad_req_line_fail') + ': ' + e.message);
+    });
+  }
+}
+
+function _radSelectEmp(empid, ev) {
+  // 행 클릭 시 체크박스도 토글
+  var row = document.querySelector('.rad-tree-emp[data-empid="' + empid + '"]');
+  if (row) {
+    var chk = row.querySelector('.rad-chk-emp');
+    if (chk && (!ev || ev.target !== chk)) { chk.checked = !chk.checked; }
+  }
+  if (_radSelected.empid === empid && _radSelected.ym === '') {
+    _radSelected = { empid: '', ym: '' };
+  } else {
+    _radSelected = { empid: empid, ym: '' };
+  }
+  _renderFileStation();
+}
+
+// ── 드래그 체크 지원 ──
+var _radDragging = false;
+var _radDragState = true;
+document.addEventListener('mousedown', function(e) {
+  var empRow = e.target.closest && e.target.closest('.rad-tree-emp');
+  if (empRow && e.target.classList.contains('rad-chk-emp')) {
+    _radDragging = true;
+    _radDragState = e.target.checked; // will be toggled by browser
+  }
+});
+document.addEventListener('mouseover', function(e) {
+  if (!_radDragging) return;
+  var empRow = e.target.closest && e.target.closest('.rad-tree-emp');
+  if (empRow) {
+    var chk = empRow.querySelector('.rad-chk-emp');
+    if (chk) chk.checked = _radDragState;
+  }
+});
+document.addEventListener('mouseup', function() { _radDragging = false; });
+
+// 트리 선택: 연월 폴더
+function _radSelectYm(empid, ym) {
+  _radSelected = { empid: empid, ym: ym };
+  _renderFileStation();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── 파일 선택 시스템 (체크박스 + 클릭 + 드래그 + 우클릭) ──
+// ══════════════════════════════════════════════════════════════════
+var _radLastClickIdx = -1;
+
+var _radClickTimer = null;
+var _radClickDocId = null;
+
+function _radRowClickDelay(e, docId, idx) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+  e.preventDefault();
+
+  // 더블 클릭 감지: 같은 행을 400ms 이내 재클릭
+  if (_radClickTimer && _radClickDocId === docId) {
+    clearTimeout(_radClickTimer);
+    _radClickTimer = null;
+    _radClickDocId = null;
+    _previewReceipt(docId);
+    return;
+  }
+
+  // 싱글 클릭: 400ms 후 체크박스 토글
+  clearTimeout(_radClickTimer);
+  _radClickDocId = docId;
+  var row = e.currentTarget;
+  var shiftKey = e.shiftKey, ctrlKey = e.ctrlKey, metaKey = e.metaKey;
+  _radClickTimer = setTimeout(function() {
+    _radClickTimer = null;
+    _radClickDocId = null;
+    _radToggleRow(row, idx, shiftKey, ctrlKey, metaKey);
+  }, 400);
+}
+
+function _radToggleRow(row, idx, shiftKey, ctrlKey, metaKey) {
+  var chk = row.querySelector('.rad-chk');
+  if (!chk) return;
+
+  if (shiftKey && _radLastClickIdx >= 0) {
+    var rows = document.querySelectorAll('.rad-file-row');
+    var from = Math.min(_radLastClickIdx, idx), to = Math.max(_radLastClickIdx, idx);
+    rows.forEach(function(r, i) {
+      var cb = r.querySelector('.rad-chk');
+      if (i >= from && i <= to) { cb.checked = true; r.classList.add('rad-selected'); r.style.background = '#e3f2fd'; }
+    });
+  } else if (ctrlKey || metaKey) {
+    chk.checked = !chk.checked;
+    row.classList.toggle('rad-selected', chk.checked);
+    row.style.background = chk.checked ? '#e3f2fd' : (row.dataset.notdl === '1' ? '#fffbeb' : '');
+  } else {
+    chk.checked = !chk.checked;
+    row.classList.toggle('rad-selected', chk.checked);
+    row.style.background = chk.checked ? '#e3f2fd' : (row.dataset.notdl === '1' ? '#fffbeb' : '');
+  }
+  _radLastClickIdx = idx;
+  _radUpdateSelBar();
+}
+
+// 키보드: 스페이스/엔터로 체크박스 토글
+function _radRowKey(e, docId, idx) {
+  if (e.key === ' ' || e.key === 'Enter') {
+    e.preventDefault();
+    _radToggleRow(e.currentTarget, idx, e.shiftKey, e.ctrlKey, e.metaKey);
+  }
+}
+
+function _radToggleAll(checked) {
+  document.querySelectorAll('.rad-chk').forEach(function(cb) {
+    cb.checked = checked;
+    var row = cb.closest('.rad-file-row');
+    if (row) { row.classList.toggle('rad-selected', checked); row.style.background = checked ? '#e3f2fd' : (row.dataset.notdl === '1' ? '#fffbeb' : ''); }
+  });
+  _radUpdateSelBar();
+}
+
+function _radClearSelection() {
+  document.querySelectorAll('.rad-chk').forEach(function(cb) {
+    cb.checked = false;
+    var row = cb.closest('.rad-file-row');
+    if (row) { row.classList.remove('rad-selected'); row.style.background = ''; }
+  });
+  var allChk = document.getElementById('radChkAll');
+  if (allChk) allChk.checked = false;
+  _radUpdateSelBar();
+}
+
+function _radGetSelectedIds() {
+  var ids = [];
+  document.querySelectorAll('.rad-chk:checked').forEach(function(cb) { ids.push(cb.getAttribute('data-docid')); });
+  return ids;
+}
+
+function _radUpdateSelBar() {
+  // 선택 바 제거됨 — 우클릭 메뉴로 다운로드
+}
+
+// ── 선택 파일 개별 다운로드 (브라우저 기본 다운로드) ──
+async function _radDownloadSelected() {
+  var ids = _radGetSelectedIds();
+  if (!ids.length) { showToast('파일을 선택하세요.'); return; }
+
+  var me = getCurrentUser();
+  var now = new Date().toISOString();
+  var successCount = 0;
+
+  for (var i = 0; i < ids.length; i++) {
+    var r = _receiptCache[ids[i]];
+    if (!r) continue;
+    try {
+      var dlUrl = r.downloadUrl;
+      if (r.storagePath && _fbStorage) {
+        try { dlUrl = await _fbStorage.ref(r.storagePath).getDownloadURL(); } catch(e2) {}
+      }
+      if (!dlUrl) continue;
+
+      // blob으로 변환 후 다운로드 (파일명 유지)
+      try {
+        var blob = await _imgUrlToBlob(dlUrl);
+        var blobUrl = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = blobUrl; a.download = r.fileName || 'file';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 3000);
+      } catch(e3) {
+        // blob 실패 시 직접 URL 다운로드
+        var a = document.createElement('a');
+        a.href = dlUrl; a.download = r.fileName || 'file'; a.target = '_blank';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      }
+      successCount++;
+      // 다운로드 기록
+      if (!r.downloaded) {
+        try {
+          await _fbDb.collection('receipts').doc(ids[i]).update({ downloaded: true, downloadedBy: me ? me.empid : '', downloadedDate: now });
+          r.downloaded = true; r.downloadedBy = me ? me.empid : ''; r.downloadedDate = now;
+        } catch(e2) {}
+      }
+    } catch(e) { console.error('[DL] error:', r.fileName, e); }
+    if (i < ids.length - 1) await new Promise(function(res) { setTimeout(res, 500); });
+  }
+  showToast('✅ ' + successCount + '건 다운로드 완료');
+  _recalcEmpCounts();
+  _renderFileStation();
+}
+
+// ── 이미지 URL → Blob (CORS 우회: img+canvas) ──
+function _imgUrlToBlob(url) {
+  return new Promise(function(resolve, reject) {
+    // 먼저 XHR 시도
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.responseType = 'blob';
+    xhr.onload = function() {
+      if (xhr.status === 200) resolve(xhr.response);
+      else _imgFallback();
+    };
+    xhr.onerror = function() { _imgFallback(); };
+    xhr.send();
+
+    function _imgFallback() {
+      // XHR 실패 시 img+canvas 방식
+      var img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = function() {
+        var c = document.createElement('canvas');
+        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.getContext('2d').drawImage(img, 0, 0);
+        c.toBlob(function(b) {
+          if (b) resolve(b); else reject(new Error('canvas toBlob failed'));
+        }, 'image/jpeg', 0.95);
+      };
+      img.onerror = function() { reject(new Error('img load failed')); };
+      img.src = url;
+    }
+  });
+}
+
+// ── 선택 파일 ZIP 압축 다운로드 ──
+async function _radZipSelected() {
+  var ids = _radGetSelectedIds();
+  if (!ids.length) { showToast('파일을 선택하세요.'); return; }
+  // JSZip 동적 로드
+  try { await loadJSZip(); } catch(e) { showToast('⚠️ JSZip 로딩 실패. 네트워크를 확인해 주세요.'); return; }
+
+  showToast('📦 ZIP 생성 중... (' + ids.length + '개)');
+  var zip = new JSZip();
+  var me = getCurrentUser();
+  var now = new Date().toISOString();
+  var fetchErrors = 0;
+  var addedCount = 0;
+
+  for (var i = 0; i < ids.length; i++) {
+    var r = _receiptCache[ids[i]];
+    if (!r) { fetchErrors++; continue; }
+    try {
+      var dlUrl = r.downloadUrl;
+      if (r.storagePath && _fbStorage) {
+        try { dlUrl = await _fbStorage.ref(r.storagePath).getDownloadURL(); } catch(e2) {}
+      }
+      if (!dlUrl) { fetchErrors++; continue; }
+
+      // XHR로 blob 가져오기
+      var blob = await new Promise(function(resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', dlUrl, true);
+        xhr.responseType = 'blob';
+        xhr.onload = function() {
+          if (xhr.status === 200) { resolve(xhr.response); }
+          else {
+            // XHR 실패 → img+canvas 폴백
+            var img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = function() {
+              var c = document.createElement('canvas');
+              c.width = img.naturalWidth; c.height = img.naturalHeight;
+              c.getContext('2d').drawImage(img, 0, 0);
+              c.toBlob(function(b) { b ? resolve(b) : reject(new Error('toBlob fail')); }, 'image/jpeg', 0.95);
+            };
+            img.onerror = function() { reject(new Error('img load fail')); };
+            img.src = dlUrl;
+          }
+        };
+        xhr.onerror = function() {
+          var img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = function() {
+            var c = document.createElement('canvas');
+            c.width = img.naturalWidth; c.height = img.naturalHeight;
+            c.getContext('2d').drawImage(img, 0, 0);
+            c.toBlob(function(b) { b ? resolve(b) : reject(new Error('toBlob fail')); }, 'image/jpeg', 0.95);
+          };
+          img.onerror = function() { reject(new Error('img load fail')); };
+          img.src = dlUrl;
+        };
+        xhr.send();
+      });
+
+      // 파일명 중복 방지
+      var fname = r.fileName || ('file_' + i + '.jpg');
+      if (zip.files[fname]) fname = i + '_' + fname;
+      zip.file(fname, blob);
+      addedCount++;
+      showToast('📦 ZIP 생성 중... (' + addedCount + '/' + ids.length + ')');
+
+      // 다운로드 기록
+      if (!r.downloaded) {
+        try {
+          await _fbDb.collection('receipts').doc(ids[i]).update({ downloaded: true, downloadedBy: me ? me.empid : '', downloadedDate: now });
+          r.downloaded = true; r.downloadedBy = me ? me.empid : ''; r.downloadedDate = now;
+        } catch(e3) {}
+      }
+    } catch(e) { fetchErrors++; console.error('[ZIP] fetch error:', (r && r.fileName) || ids[i], e); }
+  }
+
+  if (addedCount === 0) {
+    showToast('⚠️ 파일을 가져올 수 없습니다. (' + fetchErrors + '개 실패)');
+    return;
+  }
+
+  try {
+    var content = await zip.generateAsync({ type: 'blob' });
+    var zipName = (_radSelected.empid || 'receipts') + '_' + (_radSelected.ym || '') + '.zip';
+
+    // 브라우저 기본 다운로드
+    var a = document.createElement('a');
+    var blobUrl = URL.createObjectURL(content);
+    a.href = blobUrl;
+    a.download = zipName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 5000);
+    showToast('✅ ZIP 다운로드 완료 (' + addedCount + '개' + (fetchErrors ? ', ' + fetchErrors + '개 실패' : '') + ')');
+    _recalcEmpCounts();
+    _renderFileStation();
+  } catch(e) {
+    console.error('[ZIP] generate error:', e);
+    showToast('⚠️ ZIP 생성 실패: ' + e.message);
+  }
+}
+
+// ── 드래그 선택 (윈도우 탐색기 스타일 — 콘텐츠 영역 전체) ──
+function _initRadDragSelect() {
+  var area = document.getElementById('radFileArea');
+  if (!area) return;
+  var rect = document.getElementById('radDragRect');
+  if (!rect) return;
+  var dragging = false, startX, startY;
+
+  var _dragReady = false, _dragStarted = false;
+  area.addEventListener('mousedown', function(e) {
+    // 입력 요소, 버튼, 왼쪽 트리 패널에서는 드래그 시작 안 함
+    if (e.target.closest('input,button,a') || e.button !== 0) return;
+    if (e.target.closest('#radTreePanel')) return;
+    if (e.target.closest('thead')) return;
+    _dragReady = true;
+    _dragStarted = false;
+    var aRect = area.getBoundingClientRect();
+    startX = e.clientX - aRect.left + area.scrollLeft;
+    startY = e.clientY - aRect.top + area.scrollTop;
+    // 행 위가 아닌 빈 영역에서만 preventDefault (행 클릭 핸들러 유지)
+    if (!e.target.closest('.rad-file-row')) e.preventDefault();
+  });
+
+  area.addEventListener('mousemove', function(e) {
+    if (!_dragReady) return;
+    // 실제 드래그 시작 (5px 이상 이동)
+    if (!_dragStarted) {
+      var aRect2 = area.getBoundingClientRect();
+      var dx = Math.abs(e.clientX - aRect2.left + area.scrollLeft - startX);
+      var dy = Math.abs(e.clientY - aRect2.top + area.scrollTop - startY);
+      if (dx < 5 && dy < 5) return;
+      _dragStarted = true;
+      dragging = true;
+      // 드래그 시작 시 행 클릭 타이머 취소
+      if (_radClickTimer) { clearTimeout(_radClickTimer); _radClickTimer = null; _radClickDocId = null; }
+      rect.style.left = startX + 'px'; rect.style.top = startY + 'px';
+      rect.style.width = '0'; rect.style.height = '0';
+      rect.style.display = 'block';
+      if (!e.ctrlKey && !e.shiftKey && !e.metaKey) _radClearSelection();
+    }
+    if (!dragging) return;
+    var aRect = area.getBoundingClientRect();
+    var curX = e.clientX - aRect.left + area.scrollLeft;
+    var curY = e.clientY - aRect.top + area.scrollTop;
+    var x1 = Math.min(startX, curX), y1 = Math.min(startY, curY);
+    var x2 = Math.max(startX, curX), y2 = Math.max(startY, curY);
+    rect.style.left = x1 + 'px'; rect.style.top = y1 + 'px';
+    rect.style.width = (x2 - x1) + 'px'; rect.style.height = (y2 - y1) + 'px';
+
+    // 파일 행 교차 체크
+    var rows = document.querySelectorAll('.rad-file-row');
+    if (rows.length) {
+      rows.forEach(function(row) {
+        var rr = row.getBoundingClientRect();
+        var rowTop = rr.top - aRect.top + area.scrollTop;
+        var rowBot = rowTop + rr.height;
+        var intersect = !(rowBot < y1 || rowTop > y2);
+        var cb = row.querySelector('.rad-chk');
+        if (cb) { cb.checked = intersect; }
+        row.classList.toggle('rad-selected', intersect);
+        row.style.background = intersect ? '#e3f2fd' : (row.dataset.notdl === '1' ? '#fffbeb' : '');
+      });
+      _radUpdateSelBar();
+    }
+  });
+
+  function endDrag() {
+    _dragReady = false;
+    _dragStarted = false;
+    if (!dragging) return;
+    dragging = false;
+    rect.style.display = 'none';
+  }
+  area.addEventListener('mouseup', endDrag);
+  area.addEventListener('mouseleave', endDrag);
+}
+
+// ── 우클릭 컨텍스트 메뉴 ──
+function _radContextMenu(e) {
+  e.preventDefault();
+  // 기존 메뉴 제거
+  var old = document.getElementById('radCtxMenu');
+  if (old) old.remove();
+
+  var ids = _radGetSelectedIds();
+  // 우클릭한 행이 선택 안 되어있으면 그 행만 선택
+  var row = e.target.closest('.rad-file-row');
+  if (row && ids.indexOf(row.getAttribute('data-docid')) === -1) {
+    _radClearSelection();
+    var cb = row.querySelector('.rad-chk');
+    if (cb) { cb.checked = true; row.classList.add('rad-selected'); row.style.background = '#e3f2fd'; }
+    _radUpdateSelBar();
+    ids = _radGetSelectedIds();
+  }
+
+  if (!ids.length) return;
+
+  var menu = document.createElement('div');
+  menu.id = 'radCtxMenu';
+  menu.style.cssText = 'position:fixed;z-index:100000;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.2);padding:6px 0;min-width:200px;font-size:14px;';
+  menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px';
+
+  var _me = getCurrentUser();
+  var _isAdm = _isAdmin(_me);
+  var items = [
+    { icon: '👁️', label: t('rad_preview'), action: function() { if (ids.length === 1) _previewReceipt(ids[0]); } },
+    { icon: '⬇️', label: t('rad_download_sel') + ' (' + ids.length + ')', action: _radDownloadSelected },
+    { icon: '📦', label: t('rad_zip_dl') + ' (' + ids.length + ')', action: _radZipSelected },
+  ];
+  if (_isAdm) {
+    items.push({ icon: '🗑️', label: t('rad_ctx_delete_sel') + ' (' + ids.length + ')', action: function() { _radDeleteSelected(ids); }, color: '#dc2626' });
+  }
+
+  items.forEach(function(item) {
+    var div = document.createElement('div');
+    div.style.cssText = 'padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .1s;' + (item.color ? 'color:' + item.color + ';font-weight:700;' : '');
+    div.innerHTML = '<span>' + item.icon + '</span><span>' + item.label + '</span>';
+    div.onmouseover = function() { this.style.background = item.color ? '#fef2f2' : '#f0f9ff'; };
+    div.onmouseout = function() { this.style.background = ''; };
+    div.onclick = function() { menu.remove(); item.action(); };
+    menu.appendChild(div);
+  });
+
+  document.body.appendChild(menu);
+
+  // 화면 밖 방지
+  var mr = menu.getBoundingClientRect();
+  if (mr.right > window.innerWidth) menu.style.left = (window.innerWidth - mr.width - 8) + 'px';
+  if (mr.bottom > window.innerHeight) menu.style.top = (window.innerHeight - mr.height - 8) + 'px';
+
+  // 클릭 시 닫기
+  setTimeout(function() {
+    document.addEventListener('click', function closeCtx() {
+      var m = document.getElementById('radCtxMenu');
+      if (m) m.remove();
+      document.removeEventListener('click', closeCtx);
+    });
+  }, 50);
+}
+
+// ── 폴더 우클릭 메뉴 ──
+function _radFolderContextMenu(e, empid, ym) {
+  e.preventDefault();
+  e.stopPropagation();
+  var old = document.getElementById('radCtxMenu');
+  if (old) old.remove();
+
+  var emp = _radEmpMap[empid];
+  if (!emp) return;
+  var files = emp.folders[ym] || [];
+  if (!files.length) return;
+
+  var menu = document.createElement('div');
+  menu.id = 'radCtxMenu';
+  menu.style.cssText = 'position:fixed;z-index:100000;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.2);padding:6px 0;min-width:220px;font-size:14px;';
+  menu.style.left = e.clientX + 'px'; menu.style.top = e.clientY + 'px';
+
+  var _me = getCurrentUser();
+  var _isAdm = _isAdmin(_me);
+  var items = [
+    { icon: '⬇️', label: t('rad_ctx_download') + ' (' + files.length + t('rad_items') + ')', action: function() { _radZipFolder(empid, ym); } },
+  ];
+  if (_isAdm) {
+    items.push({ icon: '🗑️', label: t('rad_ctx_delete_folder'), action: function() { _radDeleteFolder(empid, ym, files); }, color: '#dc2626' });
+  }
+  items.push({ icon: '✕', label: t('rad_ctx_close'), action: function() { /* close menu */ } });
+
+  items.forEach(function(item) {
+    var div = document.createElement('div');
+    div.style.cssText = 'padding:10px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .1s;' + (item.color ? 'color:' + item.color + ';font-weight:700;' : '');
+    div.innerHTML = '<span>' + item.icon + '</span><span>' + item.label + '</span>';
+    div.onmouseover = function() { this.style.background = item.color ? '#fef2f2' : '#f0f9ff'; };
+    div.onmouseout = function() { this.style.background = ''; };
+    div.onclick = function() { menu.remove(); item.action(); };
+    menu.appendChild(div);
+  });
+
+  document.body.appendChild(menu);
+  var mr = menu.getBoundingClientRect();
+  if (mr.right > window.innerWidth) menu.style.left = (window.innerWidth - mr.width - 8) + 'px';
+  if (mr.bottom > window.innerHeight) menu.style.top = (window.innerHeight - mr.height - 8) + 'px';
+
+  setTimeout(function() {
+    document.addEventListener('click', function closeCtx() {
+      var m = document.getElementById('radCtxMenu');
+      if (m) m.remove();
+      document.removeEventListener('click', closeCtx);
+    });
+  }, 50);
+}
+
+// ── 폴더 삭제 (관리자 전용, "지금 삭제" 입력 확인) ──
+async function _radDeleteFolder(empid, ym, files) {
+  var confirmText = prompt(t('rad_delete_folder_confirm'));
+  if (!confirmText || confirmText.trim() !== t('rad_delete_now')) {
+    if (confirmText !== null) neoAlert(t('rad_delete_mismatch'));
+    return;
+  }
+  showToast('⏳ ' + t('rad_deleting'));
+  var failed = 0;
+  for (var i = 0; i < files.length; i++) {
+    try {
+      var docId = files[i]._id || files[i].id || files[i].docId;
+      if (docId) await _fbDb.collection('receipts').doc(docId).delete();
+      if (files[i].storagePath) { try { await _fbStorage.ref(files[i].storagePath).delete(); } catch(e) {} }
+    } catch(e) { failed++; console.error('[RadDelete]', e); }
+  }
+  showToast('✅ ' + t('rad_delete_done') + (failed ? ' (' + failed + ' ' + t('rad_delete_fail') + ')' : ''));
+  _loadReceiptDashboard();
+}
+
+// ── 선택 파일 삭제 (관리자 전용) ──
+async function _radDeleteSelected(ids) {
+  var confirmText = prompt(t('rad_delete_sel_confirm'));
+  if (!confirmText || confirmText.trim() !== t('rad_delete_now')) {
+    if (confirmText !== null) neoAlert(t('rad_delete_mismatch'));
+    return;
+  }
+  showToast('⏳ ' + t('rad_deleting'));
+  var failed = 0;
+  for (var i = 0; i < ids.length; i++) {
+    try {
+      var doc = await _fbDb.collection('receipts').doc(ids[i]).get();
+      var data = doc.exists ? doc.data() : {};
+      await _fbDb.collection('receipts').doc(ids[i]).delete();
+      if (data.storagePath) { try { await _fbStorage.ref(data.storagePath).delete(); } catch(e) {} }
+    } catch(e) { failed++; console.error('[RadDelete]', e); }
+  }
+  showToast('✅ ' + t('rad_delete_done') + (failed ? ' (' + failed + ' ' + t('rad_delete_fail') + ')' : ''));
+  _loadReceiptDashboard();
+}
+
+// ── 폴더 전체 ZIP 다운로드 ──
+async function _radZipFolder(empid, ym) {
+  var emp = _radEmpMap[empid];
+  if (!emp) return;
+  var files = emp.folders[ym] || [];
+  if (!files.length) { showToast('파일이 없습니다.'); return; }
+
+  try { await loadJSZip(); } catch(e) { showToast('⚠️ JSZip 로딩 실패.'); return; }
+
+  showToast('📦 ZIP 생성 중... (' + files.length + '개)');
+  var zip = new JSZip();
+  var me = getCurrentUser();
+  var now = new Date().toISOString();
+  var fetchErrors = 0;
+  var addedCount = 0;
+
+  for (var i = 0; i < files.length; i++) {
+    var r = files[i];
+    try {
+      var dlUrl = r.downloadUrl;
+      if (r.storagePath && _fbStorage) {
+        try { dlUrl = await _fbStorage.ref(r.storagePath).getDownloadURL(); } catch(e2) {}
+      }
+      if (!dlUrl) { fetchErrors++; continue; }
+
+      var blob = await new Promise(function(resolve, reject) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', dlUrl, true);
+        xhr.responseType = 'blob';
+        xhr.onload = function() {
+          if (xhr.status === 200) { resolve(xhr.response); }
+          else {
+            var img = new Image(); img.crossOrigin = 'anonymous';
+            img.onload = function() {
+              var c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+              c.getContext('2d').drawImage(img, 0, 0);
+              c.toBlob(function(b) { b ? resolve(b) : reject(new Error('toBlob fail')); }, 'image/jpeg', 0.95);
+            };
+            img.onerror = function() { reject(new Error('img load fail')); };
+            img.src = dlUrl;
+          }
+        };
+        xhr.onerror = function() {
+          var img = new Image(); img.crossOrigin = 'anonymous';
+          img.onload = function() {
+            var c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+            c.getContext('2d').drawImage(img, 0, 0);
+            c.toBlob(function(b) { b ? resolve(b) : reject(new Error('toBlob fail')); }, 'image/jpeg', 0.95);
+          };
+          img.onerror = function() { reject(new Error('img load fail')); };
+          img.src = dlUrl;
+        };
+        xhr.send();
+      });
+
+      var fname = r.fileName || ('file_' + i + '.jpg');
+      if (zip.files[fname]) fname = i + '_' + fname;
+      zip.file(fname, blob);
+      addedCount++;
+      showToast('📦 ZIP 생성 중... (' + addedCount + '/' + files.length + ')');
+
+      if (!r.downloaded && r._id) {
+        try {
+          await _fbDb.collection('receipts').doc(r._id).update({ downloaded: true, downloadedBy: me ? me.empid : '', downloadedDate: now });
+          r.downloaded = true; r.downloadedBy = me ? me.empid : ''; r.downloadedDate = now;
+        } catch(e3) {}
+      }
+    } catch(e) { fetchErrors++; }
+  }
+
+  if (addedCount === 0) {
+    showToast('⚠️ 파일을 가져올 수 없습니다. (' + fetchErrors + '개 실패)');
+    return;
+  }
+
+  try {
+    var content = await zip.generateAsync({ type: 'blob' });
+    var zipName = empid + '_' + ym + '.zip';
+    var a = document.createElement('a');
+    var blobUrl = URL.createObjectURL(content);
+    a.href = blobUrl; a.download = zipName;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 5000);
+    showToast('✅ ZIP 다운로드 완료 (' + addedCount + '개' + (fetchErrors ? ', ' + fetchErrors + '개 실패' : '') + ')');
+    _recalcEmpCounts();
+    _renderFileStation();
+  } catch(e) {
+    showToast('⚠️ ZIP 생성 실패: ' + e.message);
+  }
+}
+
+function _summaryCard(value, label, color, bg1, bg2) {
+  return '<div style="padding:10px 6px;background:linear-gradient(135deg,' + bg1 + ',' + bg2 + ');border-radius:10px;text-align:center;">' +
+    '<div style="font-size:22px;font-weight:800;color:' + color + ';">' + value + '</div>' +
+    '<div style="font-size:11px;color:' + color + ';font-weight:600;white-space:nowrap;">' + label + '</div></div>';
+}
+
+// 토글 헬퍼
+function _toggleEl(blockId, arrowId) {
+  var el = document.getElementById(blockId);
+  var arr = document.getElementById(arrowId);
+  if (!el) return;
+  var show = el.style.display === 'none';
+  el.style.display = show ? 'block' : 'none';
+  if (arr) arr.style.transform = show ? 'rotate(180deg)' : '';
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── 모바일: 카드형 영수증 대시보드 ──
+// ══════════════════════════════════════════════════════════════════
+function _renderMobileReceipts(body) {
+  var empList = Object.values(_radEmpMap);
+  empList.sort(function(a, b) {
+    if (b.notDl !== a.notDl) return b.notDl - a.notDl;
+    return (b.lastDate || '').localeCompare(a.lastDate || '');
+  });
+  var totalAll = empList.reduce(function(s, e) { return s + e.total; }, 0);
+  var totalNotDl = empList.reduce(function(s, e) { return s + e.notDl; }, 0);
+
+  // 요약 카드
+  var html = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px;">';
+  html += _summaryCard(empList.length, t('rad_emp_count'), '#1e40af', '#eff6ff', '#dbeafe');
+  html += _summaryCard(totalAll, t('rad_total'), '#16a34a', '#f0fdf4', '#dcfce7');
+  html += _summaryCard(totalAll - totalNotDl, t('rad_downloaded'), '#2563eb', '#eff6ff', '#dbeafe');
+  html += _summaryCard(totalNotDl, t('rad_not_downloaded'), totalNotDl > 0 ? '#d97706' : '#16a34a', totalNotDl > 0 ? '#fef3c7' : '#f0fdf4', totalNotDl > 0 ? '#fde68a' : '#dcfce7');
+  html += '</div>';
+
+  // 직원별 카드
+  empList.forEach(function(emp) {
+    var lastDt = emp.lastDate ? new Date(emp.lastDate) : null;
+    var lastStr = lastDt ? lastDt.toLocaleDateString('ko-KR') + ' ' + lastDt.toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit'}) : '-';
+    var isAllDl = emp.notDl === 0;
+    var uid = 'm_' + emp.empid.replace(/[^a-zA-Z0-9]/g, '_');
+
+    html += '<div style="background:#fff;border:1.5px solid ' + (isAllDl ? '#e5e7eb' : '#fbbf24') + ';border-radius:12px;overflow:hidden;margin-bottom:10px;">';
+
+    // 직원 헤더
+    html += '<div onclick="_toggleEl(\'' + uid + '_blk\',\'' + uid + '_arr\')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;user-select:none;">';
+    html += '<div style="width:40px;height:40px;border-radius:50%;background:' + (isAllDl ? '#e5e7eb' : '#fef3c7') + ';display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:' + (isAllDl ? '#6b7280' : '#d97706') + ';flex-shrink:0;">' + (emp.empName || '?').charAt(0) + '</div>';
+    html += '<div style="flex:1;min-width:0;">';
+    html += '<div style="font-size:15px;font-weight:700;">' + emp.empName + ' <span style="font-size:12px;color:#9ca3af;font-weight:400;">(' + emp.empid + ')</span></div>';
+    html += '<div style="font-size:12px;color:#9ca3af;margin-top:2px;">' + t('rad_last') + ': ' + lastStr + '</div>';
+    html += '</div>';
+    html += '<div style="text-align:right;flex-shrink:0;">';
+    html += '<div style="font-size:15px;font-weight:700;">' + emp.total + t('rad_items') + '</div>';
+    if (emp.notDl > 0) {
+      html += '<span style="font-size:12px;background:#ef4444;color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;">⬇️' + emp.notDl + '</span>';
+    } else {
+      html += '<span style="font-size:12px;background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:10px;font-weight:600;">✅</span>';
+    }
+    html += '</div>';
+    html += '<span id="' + uid + '_arr" style="font-size:12px;color:#9ca3af;transition:transform .2s;">▼</span>';
+    html += '</div>';
+
+    // 연월 폴더
+    var sortedYm = Object.keys(emp.folders).sort().reverse();
+    html += '<div id="' + uid + '_blk" style="display:none;border-top:1px solid #e5e7eb;">';
+
+    sortedYm.forEach(function(ym) {
+      var files = emp.folders[ym];
+      var ymDl = files.filter(function(f) { return f.downloaded; }).length;
+      var ymNotDl = files.length - ymDl;
+      var ymUid = uid + '_' + ym.replace('-', '');
+
+      // 폴더 헤더
+      html += '<div onclick="_toggleEl(\'' + ymUid + '_blk\',\'' + ymUid + '_arr\')" style="display:flex;align-items:center;gap:8px;padding:10px 14px 10px 20px;cursor:pointer;user-select:none;background:#fafafa;border-bottom:1px solid #f3f4f6;">';
+      html += '<span style="font-size:18px;">📁</span>';
+      html += '<span style="font-size:14px;font-weight:700;color:#374151;">' + ym + '</span>';
+      html += '<span style="font-size:12px;color:#6b7280;">' + files.length + t('rad_items') + '</span>';
+      if (ymNotDl > 0) html += '<span style="font-size:11px;background:#fef3c7;color:#d97706;padding:1px 6px;border-radius:10px;font-weight:600;">⏳' + ymNotDl + '</span>';
+      else html += '<span style="font-size:11px;background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:10px;font-weight:600;">✅</span>';
+      html += '<span id="' + ymUid + '_arr" style="margin-left:auto;font-size:12px;color:#9ca3af;transition:transform .2s;">▼</span>';
+      html += '</div>';
+
+      // 파일 목록
+      html += '<div id="' + ymUid + '_blk" style="display:none;padding:6px 8px 6px 16px;">';
+      files.forEach(function(r) {
+        var date = r.uploadDate ? new Date(r.uploadDate).toLocaleString('ko-KR', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+        var size = r.fileSize ? (r.fileSize < 1024*1024 ? (r.fileSize/1024).toFixed(0) + 'KB' : (r.fileSize/1024/1024).toFixed(1) + 'MB') : '';
+        var dlBadge = r.downloaded
+          ? '<span style="font-size:11px;background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:10px;">✅</span>'
+          : '<span style="font-size:11px;background:#fef3c7;color:#d97706;padding:1px 6px;border-radius:10px;">⏳</span>';
+
+        html += '<div onclick="_previewReceipt(\'' + r._id + '\')" style="display:flex;align-items:center;gap:10px;padding:8px;background:#fff;border-radius:10px;border:1px solid ' + (!r.downloaded ? '#fbbf24' : '#e5e7eb') + ';margin-bottom:6px;cursor:pointer;">';
+        html += '<img src="' + (r.downloadUrl || '') + '" style="width:48px;height:48px;object-fit:cover;border-radius:8px;flex-shrink:0;" onerror="this.style.display=\'none\'" />';
+        html += '<div style="flex:1;min-width:0;">';
+        html += '<div style="font-size:13px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (r.fileName || '') + '</div>';
+        html += '<div style="font-size:12px;color:#9ca3af;margin-top:2px;">' + date + ' · ' + size + ' ' + dlBadge + '</div>';
+        if (r.memo) html += '<div style="font-size:11px;color:#6b7280;margin-top:1px;">📝 ' + r.memo + '</div>';
+        html += '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+
+    html += '</div></div>';
+  });
+
+  body.innerHTML = html;
+}
+
+// ── 개별 다운로드 ──
+async function _downloadOneReceipt(docId, url, fileName) {
+  var a = document.createElement('a');
+  a.href = url; a.download = fileName || 'receipt'; a.target = '_blank';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  var me = getCurrentUser();
+  var now = new Date().toISOString();
+  var dlBy = me ? me.empid : '';
+  try {
+    await _fbDb.collection('receipts').doc(docId).update({
+      downloaded: true,
+      downloadedBy: dlBy,
+      downloadedDate: now
+    });
+    // 캐시 업데이트
+    if (_receiptCache[docId]) {
+      _receiptCache[docId].downloaded = true;
+      _receiptCache[docId].downloadedBy = dlBy;
+      _receiptCache[docId].downloadedDate = now;
+    }
+    // empMap 카운트 갱신 후 UI 새로고침
+    if (_radEmpMap && Object.keys(_radEmpMap).length > 0) {
+      _recalcEmpCounts();
+      _renderFileStation();
+    } else {
+      _loadReceiptDashboard();
+    }
+  } catch(e) { console.error('[Receipt] dl mark error:', e); }
+}
+
+function _recalcEmpCounts() {
+  Object.keys(_radEmpMap).forEach(function(eid) {
+    var emp = _radEmpMap[eid];
+    emp.total = 0; emp.notDl = 0;
+    Object.keys(emp.folders).forEach(function(ym) {
+      emp.folders[ym].forEach(function(r) {
+        emp.total++;
+        if (!r.downloaded) emp.notDl++;
+      });
+    });
+  });
+}
+
+// ── 프린트 기능 ──
+function _radPrint() {
+  var emp = _radEmpMap[_radSelected.empid];
+  if (!emp) return;
+  var files = emp.folders[_radSelected.ym] || [];
+  var empName = emp.empName || _radSelected.empid;
+  var empid = emp.empid || _radSelected.empid;
+  var dept = emp.dept || '';
+  var ym = _radSelected.ym;
+
+  var printWin = window.open('', '_blank', 'width=800,height=600');
+  if (!printWin) { alert('팝업이 차단되었습니다. 팝업을 허용해 주세요.'); return; }
+
+  var rows = '';
+  files.forEach(function(f, i) {
+    var dt = f.uploadedAt ? new Date(f.uploadedAt.seconds ? f.uploadedAt.seconds * 1000 : f.uploadedAt) : null;
+    var dateStr = dt ? dt.toLocaleDateString('ko-KR') + ' ' + dt.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'}) : '-';
+    var sizeStr = f.fileSize ? (f.fileSize < 1024 ? f.fileSize + ' B' : f.fileSize < 1048576 ? (f.fileSize / 1024).toFixed(1) + ' KB' : (f.fileSize / 1048576).toFixed(1) + ' MB') : '-';
+    var dlStatus = f.downloaded ? '✅' : '⏳';
+    rows += '<tr><td style="padding:6px 10px;border:1px solid #d1d5db;text-align:center;">' + (i + 1) + '</td>';
+    rows += '<td style="padding:6px 10px;border:1px solid #d1d5db;">' + (f.fileName || '-') + '</td>';
+    rows += '<td style="padding:6px 10px;border:1px solid #d1d5db;text-align:center;">' + sizeStr + '</td>';
+    rows += '<td style="padding:6px 10px;border:1px solid #d1d5db;text-align:center;">' + dateStr + '</td>';
+    rows += '<td style="padding:6px 10px;border:1px solid #d1d5db;text-align:center;">' + dlStatus + '</td></tr>';
+  });
+
+  var htmlContent = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + t('rad_print') + '</title>';
+  htmlContent += '<style>body{font-family:Arial,sans-serif;padding:30px;color:#333;}table{width:100%;border-collapse:collapse;margin-top:16px;}th{background:#f3f4f6;padding:8px 10px;border:1px solid #d1d5db;font-weight:700;text-align:center;}h2{margin:0 0 6px;}p{margin:4px 0;color:#555;font-size:14px;}</style>';
+  htmlContent += '</head><body>';
+  htmlContent += '<h2>📂 ' + t('rad_receipts') + ' - ' + empName + '</h2>';
+  htmlContent += '<p>' + empid + ' · ' + dept + ' · ' + ym + '</p>';
+  htmlContent += '<p>' + t('rad_total_n') + ' ' + files.length + t('rad_items') + '</p>';
+  htmlContent += '<table><thead><tr><th>No</th><th>' + t('rad_filename') + '</th><th>' + t('rad_size') + '</th><th>' + t('rad_upload_date') + '</th><th>' + t('rad_download_col') + '</th></tr></thead><tbody>';
+  htmlContent += rows;
+  htmlContent += '</tbody></table>';
+  htmlContent += '<script>window.onload=function(){window.print();}<\/script>';
+  htmlContent += '</body></html>';
+
+  printWin.document.write(htmlContent);
+  printWin.document.close();
+}
+
+// ── 폴더 전체 다운로드 (연월별) ──
+async function _downloadFolder(empid, yearMonth) {
+  var me = getCurrentUser();
+  var now = new Date().toISOString();
+  try {
+    var snap = await _fbDb.collection('receipts')
+      .where('empid', '==', empid)
+      .where('yearMonth', '==', yearMonth)
+      .get();
+    var docs = []; snap.forEach(function(d) { docs.push(d); });
+    for (var i = 0; i < docs.length; i++) {
+      var r = docs[i].data();
+      if (r.downloadUrl) {
+        var a = document.createElement('a');
+        a.href = r.downloadUrl; a.download = r.fileName || 'file'; a.target = '_blank';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      }
+      if (!r.downloaded) {
+        await _fbDb.collection('receipts').doc(docs[i].id).update({
+          downloaded: true, downloadedBy: me ? me.empid : '', downloadedDate: now
+        });
+      }
+      if (i < docs.length - 1) await new Promise(function(r) { setTimeout(r, 300); });
+    }
+    showToast('✅ ' + docs.length + '건 다운로드 완료');
+    _loadReceiptDashboard();
+  } catch(e) {
+    console.error('[Receipt] folder dl error:', e);
+    showToast('⚠️ 다운로드 실패');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// ── 영수증 이미지 미리보기 모달 ──
+// ══════════════════════════════════════════════════════════════════
+function _previewReceipt(docId) {
+  var r = _receiptCache[docId];
+  if (!r) { window.open('', '_blank'); return; }
+
+  // 열람 시간 기록 → Firestore에 저장
+  var viewedAt = new Date();
+  var viewedStr = viewedAt.toLocaleDateString('ko-KR') + ' ' + viewedAt.toLocaleTimeString('ko-KR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  var me = getCurrentUser();
+  var viewedBy = me ? (me.nickname || me.name || me.empid) : '';
+  // Firestore에 열람 기록
+  _fbDb.collection('receipts').doc(docId).update({
+    viewedDate: viewedAt.toISOString(),
+    viewedBy: viewedBy
+  }).then(function() {
+    r.viewedDate = viewedAt.toISOString();
+    r.viewedBy = viewedBy;
+  }).catch(function(e) { console.error('[Receipt] view mark error:', e); });
+
+  // 로케일 매핑
+  var _locale = {ko:'ko-KR',en:'en-US',th:'th-TH'}[currentLang||'ko'] || 'ko-KR';
+  // 업로드 날짜
+  var uploadStr = r.uploadDate ? new Date(r.uploadDate).toLocaleString(_locale) : '-';
+
+  // 다운로드 정보
+  var dlInfo = '';
+  if (r.downloaded && r.downloadedDate) {
+    var dlDt = new Date(r.downloadedDate);
+    dlInfo = '<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:13px;">✅</span><span style="font-size:13px;color:#16a34a;font-weight:600;">' + t('rpv_dl_done') + '</span><span style="font-size:12px;color:#6b7280;">' + dlDt.toLocaleString(_locale) + (r.downloadedBy ? ' · ' + r.downloadedBy : '') + '</span></div>';
+  } else {
+    dlInfo = '<div style="display:flex;align-items:center;gap:6px;"><span style="font-size:13px;">⏳</span><span style="font-size:13px;color:#d97706;font-weight:600;">' + t('rpv_not_dl') + '</span></div>';
+  }
+
+  // 파일 크기
+  var sizeStr = r.fileSize ? (r.fileSize < 1024 * 1024 ? (r.fileSize / 1024).toFixed(0) + ' KB' : (r.fileSize / 1024 / 1024).toFixed(1) + ' MB') : '-';
+
+  // 기존 모달 제거
+  var old = document.getElementById('receiptPreviewModal');
+  if (old) old.remove();
+
+  var imgUrl = r.downloadUrl || '';
+
+  // 이미지 먼저 프리로드 → 로드 완료 후 모달 표시 (번뜩임 방지)
+  var preImg = new Image();
+  preImg.src = imgUrl;
+
+  function _showPreviewModal() {
+    // 혹시 기존 모달이 다시 생겼으면 제거
+    var dup = document.getElementById('receiptPreviewModal');
+    if (dup) dup.remove();
+
+    var div = document.createElement('div');
+    div.id = 'receiptPreviewModal';
+    div.onclick = function(e) {
+      if (e.target === div) _closePreviewModal();
+    };
+    var isMobile = window.innerWidth <= 768;
+    div.style.cssText = 'position:fixed;inset:0;background:' + (isMobile ? '#000' : 'rgba(0,0,0,.7)') + ';z-index:99999;display:flex;align-items:center;justify-content:center;padding:' + (isMobile ? '0' : '16px') + ';will-change:transform;-webkit-transform:translateZ(0);transform:translateZ(0);';
+
+    div.innerHTML =
+      '<div style="background:#fff;' + (isMobile ? 'border-radius:0;max-width:100%;max-height:100%;height:100%;' : 'border-radius:16px;max-width:600px;max-height:90vh;') + 'width:100%;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.4);opacity:0;transform:translateY(12px);transition:opacity 0.3s ease,transform 0.3s ease;">' +
+        // 헤더
+        '<div style="display:flex;align-items:center;gap:10px;padding:14px 16px;background:#f9fafb;border-bottom:1px solid #e5e7eb;">' +
+          '<span style="font-size:20px;">🖼️</span>' +
+          '<div style="flex:1;min-width:0;">' +
+            '<div style="font-size:14px;font-weight:700;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + (r.fileName || '파일') + '</div>' +
+            '<div style="font-size:12px;color:#9ca3af;">' + (r.empName || r.empid || '') + ' · ' + sizeStr + '</div>' +
+          '</div>' +
+          '<button onclick="_printPreviewReceipt()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;padding:4px 8px;" title="' + t('rad_print') + '">🖨️</button>' +
+          '<button onclick="_closePreviewModal()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;padding:4px 8px;">✕</button>' +
+        '</div>' +
+        // 이미지
+        '<div style="flex:1;overflow:auto;padding:12px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;min-height:200px;">' +
+          '<img src="' + imgUrl + '" style="max-width:100%;max-height:60vh;object-fit:contain;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);" />' +
+        '</div>' +
+        // 정보
+        '<div style="padding:14px 16px;background:#fff;border-top:1px solid #e5e7eb;display:flex;flex-direction:column;gap:8px;">' +
+          '<div style="display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:#6b7280;">' +
+            '<div>📤 ' + t('rpv_upload') + ': <span style="color:#374151;font-weight:600;">' + uploadStr + '</span></div>' +
+            '<div>👁️ ' + t('rpv_view') + ': <span style="color:#2563eb;font-weight:600;">' + viewedStr + '</span></div>' +
+          '</div>' +
+          dlInfo +
+          (r.memo ? '<div style="font-size:12px;color:#6b7280;">📝 ' + r.memo + '</div>' : '') +
+          // 버튼
+          '<div style="display:flex;gap:8px;margin-top:4px;">' +
+            '<button onclick="_dlFromPreview(\'' + docId + '\')" style="flex:1;padding:10px;background:#2563eb;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">⬇️ ' + t('rpv_download') + '</button>' +
+            '<button onclick="window.open(\'' + imgUrl.replace(/'/g, "\\'") + '\',\'_blank\')" style="padding:10px 16px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;">🔍 ' + t('rpv_original') + '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    // 모바일: receiptAdminOverlay 안에 추가 (레이어 재계산 방지 → 번뜩임 차단)
+    // 데스크탑: body에 추가
+    var parentEl = document.getElementById('receiptAdminOverlay');
+    if (!parentEl || parentEl.style.display === 'none') parentEl = document.body;
+    parentEl.appendChild(div);
+    // 카드만 페이드인 (배경은 즉시 표시)
+    requestAnimationFrame(function() {
+      setTimeout(function() {
+        var inner = div.firstElementChild;
+        if (inner) { inner.style.opacity = '1'; inner.style.transform = 'translateY(0)'; }
+      }, 50);
+    });
+  }
+
+  // 이미지 로드 완료 후 모달 표시 (최대 2초 대기)
+  if (preImg.complete) {
+    _showPreviewModal();
+  } else {
+    var _shown = false;
+    preImg.onload = function() { if (!_shown) { _shown = true; _showPreviewModal(); } };
+    preImg.onerror = function() { if (!_shown) { _shown = true; _showPreviewModal(); } };
+    setTimeout(function() { if (!_shown) { _shown = true; _showPreviewModal(); } }, 2000);
+  }
+}
+
+// 미리보기 이미지 인쇄
+function _printPreviewReceipt() {
+  var modal = document.getElementById('receiptPreviewModal');
+  if (!modal) return;
+  var img = modal.querySelector('img');
+  if (!img) return;
+  var printWin = window.open('', '_blank', 'width=800,height=600');
+  if (!printWin) { alert('팝업이 차단되었습니다.'); return; }
+  var title = modal.querySelector('div[style*="font-weight:700"]');
+  var titleText = title ? title.textContent : 'Receipt';
+  printWin.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + titleText + '</title>');
+  printWin.document.write('<style>body{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff;}img{max-width:100%;max-height:95vh;object-fit:contain;}</style>');
+  printWin.document.write('</head><body><img src="' + img.src + '" /></body></html>');
+  printWin.document.close();
+  printWin.onload = function() { printWin.print(); };
+}
+
+// 미리보기 모달 닫기 (페이드아웃)
+function _closePreviewModal() {
+  var m = document.getElementById('receiptPreviewModal');
+  if (!m) return;
+  var inner = m.firstElementChild;
+  if (inner) { inner.style.opacity = '0'; inner.style.transform = 'translateY(12px)'; }
+  setTimeout(function() { m.remove(); }, 300);
+}
+
+// 미리보기에서 다운로드
+function _dlFromPreview(docId) {
+  var r = _receiptCache[docId];
+  if (!r) return;
+  _downloadOneReceipt(docId, r.downloadUrl || '', r.fileName || 'receipt');
+  // 모달 닫기
+  var modal = document.getElementById('receiptPreviewModal');
+  if (modal) modal.remove();
+}

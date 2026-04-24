@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AR + 위탁 통합 리포트 — Neo Sales App</title>
+<link rel="stylesheet" href="style.min.css?v=198">
+<!-- Preconnect 힌트 (CDN/Firestore 연결 조기 수립) -->
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="item-data.js"></script>
+<script src="firebase-init.js?v=1"></script>
+<script src="report-cache-shim.js?v=1"></script>
+<script>
+// Firebase init (shared via firebase-init.js)
+var _crDb = firebase.firestore();
+function getCurrentUser() {
+  var u = JSON.parse(sessionStorage.getItem('current_user') || 'null');
+  if (u) return u;
+  if (localStorage.getItem('auto_login') === 'true') {
+    return JSON.parse(localStorage.getItem('current_user_persist') || 'null');
+  }
+  return null;
+}
+</script>
+<style>
+*{box-sizing:border-box;}
+body{margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f1f5f9;width:100%;height:100vh;height:100dvh;overflow:hidden;}
+.cr-main{position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;overflow:hidden;background:#f1f5f9;}
+.cr-main.minimized{display:none;}
+.cr-mini-bar{display:none;position:fixed;bottom:24px;right:24px;background:#0d9488;color:#fff;border-radius:14px;padding:10px 18px;box-shadow:0 4px 20px rgba(0,0,0,.25);cursor:pointer;z-index:9500;align-items:center;gap:8px;font-size:13px;font-weight:600;transition:transform .15s ease,box-shadow .15s ease;white-space:nowrap;}
+.cr-mini-bar:hover{transform:translateY(-2px);box-shadow:0 6px 24px rgba(0,0,0,.35);}
+.cr-mini-bar.show{display:flex;}
+
+/* 헤더 바 — page-header.js 사용. cr 전용 padding/z-index만 오버라이드 */
+.cr-top-bar{padding:10px 16px;z-index:100;}
+.cr-ctrl-group{display:flex;align-items:center;gap:6px;margin-left:8px;}
+.cr-ctrl-btn{background:rgba(255,255,255,.15);border:none;cursor:pointer;color:#fff;padding:6px 10px;border-radius:6px;line-height:1;transition:background .15s;font-size:16px;}
+.cr-ctrl-btn:hover{background:rgba(255,255,255,.3);}
+
+.cr-fixed-section{flex-shrink:0;background:#f1f5f9;border-bottom:1px solid #e5e7eb;}
+.cr-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;padding:12px 16px;}
+.cr-card{background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.06);}
+.cr-card-label{font-size:11px;color:#6b7280;font-weight:600;text-transform:uppercase;margin-bottom:3px;}
+.cr-card-value{font-size:20px;font-weight:800;color:#1e293b;}
+.cr-card-sub{font-size:11px;color:#9ca3af;margin-top:2px;}
+
+.cr-filter-row{display:flex;align-items:center;justify-content:space-between;padding:6px 16px;gap:8px;flex-wrap:wrap;}
+.cr-filter-left{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.cr-filter-left select,.cr-filter-left input{padding:5px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:12px;}
+
+.cr-col-hdr{display:grid;grid-template-columns:60px 70px minmax(100px,1fr) 45px 100px 100px 100px 70px 70px 100px;gap:4px;padding:6px 16px;background:#e2e8f0;font-size:11px;font-weight:700;color:#475569;}
+
+.cr-body{flex:1;overflow:auto;padding:0 16px 12px 16px;}
+
+.cr-row{border:1px solid #e2e8f0;border-radius:10px;margin-bottom:5px;overflow:hidden;cursor:pointer;transition:box-shadow .15s;}
+.cr-row:hover{box-shadow:0 2px 8px rgba(0,0,0,.08);}
+.cr-row-hdr{display:grid;grid-template-columns:60px 70px minmax(100px,1fr) 45px 100px 100px 100px 70px 70px 100px;gap:4px;padding:10px 12px;background:#fff;align-items:center;font-size:13px;color:#1e293b;min-height:42px;}
+.cr-row-detail{display:none;background:#f8fafc;border-top:1px solid #e5e7eb;padding:8px 16px;}
+.cr-row.open .cr-row-detail{display:block;}
+
+.cr-detail-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.cr-detail-tbl th{padding:6px 8px;text-align:left;font-weight:700;color:#6b7280;border-bottom:1px solid #e5e7eb;font-size:11px;}
+.cr-detail-tbl td{padding:6px 8px;border-bottom:1px solid #f3f4f6;}
+.cr-detail-tbl .num{text-align:right;font-variant-numeric:tabular-nums;}
+
+.cr-footer{background:#fff;border-top:1px solid #e5e7eb;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.cr-footer-left{font-size:12px;color:#6b7280;}
+.cr-footer-btn{padding:7px 16px;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;}
+
+.cr-no-data{text-align:center;padding:60px 20px;color:#9ca3af;font-size:15px;}
+
+.cr-badge{font-size:11px;color:#fff;background:#0d9488;padding:1px 6px;border-radius:4px;font-weight:700;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+@media(max-width:700px){
+  .cr-summary{grid-template-columns:1fr 1fr;}
+  .cr-card-value{font-size:17px;}
+  .cr-col-hdr,.cr-row-hdr{grid-template-columns:40px 50px minmax(60px,1fr) 30px 70px 70px 70px 50px 50px 70px;font-size:9px;gap:2px;padding:5px 6px;}
+}
+</style>
+</head>
+<body>
+
+<!-- Minimize bar -->
+<div class="cr-mini-bar" id="crMiniBar" onclick="_crRestore()">
+  <span style="font-size:18px;">📊</span>
+  <span>AR+위탁 통합 리포트</span>
+</div>
+
+<!-- Main container -->
+<div id="crMain" class="cr-main">
+
+<!-- Header (공용 page-header.js로 렌더) -->
+<div id="pageTopBar"></div>
+<script src="page-header.js?v=1"></script>
+<script>
+(function() {
+  var _hdr = renderPageTopBar({
+    title: '📊 AR + 위탁 출고 통합 리포트',
+    showBack: false,
+    theme: 'gradient',
+    background: 'linear-gradient(135deg,#0d9488 0%,#14b8a6 100%)',
+    extraClass: 'cr-top-bar'
+  });
+  _hdr.rightSlot.innerHTML =
+    '<span id="crUpdateInfo" style="font-size:11px;color:rgba(255,255,255,.7);"></span>' +
+    '<div class="cr-ctrl-group">' +
+      '<button class="cr-ctrl-btn" onclick="_crMinimize()" title="최소화">&#x2015;</button>' +
+      '<button class="cr-ctrl-btn" id="crFsBtn" onclick="_crToggleFS()" title="전체화면">&#x26F6;</button>' +
+      '<button class="cr-ctrl-btn" onclick="location.href=\'index.html\'" title="닫기">&#x2715;</button>' +
+    '</div>';
+})();
+</script>
+
+<!-- Fixed section -->
+<div id="crFixedSection" class="cr-fixed-section" style="display:none;">
+  <div class="cr-summary" id="crSummaryCards"></div>
+  <div class="cr-filter-row">
+    <div class="cr-filter-left">
+      <input type="text" id="crSearch" placeholder="고객코드/고객명 검색..." oninput="_crRender()" style="width:180px;">
+      <select id="crSalesFilter" onchange="_crRender()" style="min-width:100px;">
+        <option value="">전체 담당</option>
+      </select>
+      <select id="crSortField" onchange="_crRender()">
+        <option value="balance_desc">미수금 ↓</option>
+        <option value="balance_asc">미수금 ↑</option>
+        <option value="consign_desc">위탁수량 ↓</option>
+        <option value="consign_asc">위탁수량 ↑</option>
+        <option value="unsettled_desc">미정산 ↓</option>
+        <option value="name_asc">고객명 ↑</option>
+      </select>
+      <div style="display:flex;gap:4px;align-items:center;">
+        <span style="font-size:12px;color:#6b7280;">총</span>
+        <span id="crTotalCount" style="font-size:13px;font-weight:700;color:#0d9488;">0</span>
+        <span style="font-size:12px;color:#6b7280;">거래처</span>
+      </div>
+    </div>
+  </div>
+  <div class="cr-col-hdr">
+    <span>담당</span><span>고객코드</span><span>고객명</span><span style="text-align:center;">AR건</span><span style="text-align:right;">미경과</span><span style="text-align:right;">경과</span><span style="text-align:right;">AR합계</span><span style="text-align:right;">위탁합계</span><span style="text-align:right;">미정산</span><span style="text-align:right;">미정산금액</span>
+  </div>
+</div>
+
+<!-- Body (scrollable) -->
+<div class="cr-body" id="crBody">
+  <div id="crTableBody"></div>
+  <div id="crNoData" class="cr-no-data" style="display:none;">
+    <div style="font-size:48px;margin-bottom:12px;">📊</div>
+    <div>데이터를 로딩 중입니다...</div>
+  </div>
+</div>
+
+<!-- Footer -->
+<div class="cr-footer">
+  <div class="cr-footer-left"><span id="crFooterInfo"></span></div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <button class="cr-footer-btn" onclick="_crLoadData()" style="background:#0d9488;color:#fff;">🔄 Refresh</button>
+    <button class="cr-footer-btn" onclick="_crExportExcel()" style="background:#2563eb;color:#fff;">📥 Excel</button>
+    <button class="cr-footer-btn" onclick="location.href='index.html'" style="background:#6b7280;color:#fff;">Close</button>
+  </div>
+</div>
+
+</div><!-- /crMain -->
+
+<script>
+// ── Window controls ──
+function _crMinimize() {
+  document.getElementById('crMain').classList.add('minimized');
+  document.getElementById('crMiniBar').classList.add('show');
+}
+function _crRestore() {
+  document.getElementById('crMiniBar').classList.remove('show');
+  document.getElementById('crMain').classList.remove('minimized');
+}
+var _crIsFS = true;
+function _crToggleFS() {
+  var main = document.getElementById('crMain');
+  var btn = document.getElementById('crFsBtn');
+  _crIsFS = !_crIsFS;
+  if (_crIsFS) {
+    main.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;display:flex;flex-direction:column;overflow:hidden;background:#f1f5f9;border-radius:0;';
+    btn.innerHTML = '&#x26F6;'; btn.title = '전체화면';
+  } else {
+    main.style.cssText = 'position:fixed;top:5vh;left:5vw;width:90vw;height:90vh;display:flex;flex-direction:column;overflow:hidden;background:#f1f5f9;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.3);';
+    btn.innerHTML = '&#x2750;'; btn.title = '복원';
+  }
+}
+
+// ── State ──
+var _crMerged = []; // merged customer records
+var _crFiltered = [];
+var _crPriceMap = {}; // product code -> retail price
+var _crIsAdmin = false;
+var _crUser = null;
+var HARDCODED_ADMINS = ['T2408087'];
+function _isAdmin(u) { return u && (HARDCODED_ADMINS.includes(u.empid) || u.role === 'admin'); }
+
+// ── Init ──
+window.addEventListener('DOMContentLoaded', function() {
+  var attempts = 0;
+  var check = setInterval(function() {
+    attempts++;
+    var user = getCurrentUser();
+    if (!user && attempts < 20) return;
+    clearInterval(check);
+    if (!user) {
+      document.getElementById('crNoData').style.display = '';
+      document.getElementById('crNoData').innerHTML = '<div style="font-size:48px;margin-bottom:12px;">🔒</div><div>로그인이 필요합니다.</div><div style="margin-top:12px;"><a href="index.html" style="color:#0d9488;font-weight:600;">앱으로 돌아가기</a></div>';
+      return;
+    }
+    _crUser = user;
+    _crIsAdmin = _isAdmin(user);
+    _crLoadData();
+  }, 300);
+});
+
+// ── Load Data ──
+async function _crLoadData() {
+  document.getElementById('crNoData').style.display = '';
+  document.getElementById('crNoData').innerHTML = '<div style="font-size:48px;margin-bottom:12px;">⏳</div><div>데이터 로딩 중...</div>';
+  document.getElementById('crFixedSection').style.display = 'none';
+
+  try {
+    // Cache-first + incremental loads (see report-cache-shim.js)
+    var arResult, csResult, prResult;
+    if (window.reportCache) {
+      var loads = await Promise.all([
+        window.reportCache.loadAR(_crDb, _crIsAdmin, _crUser),
+        window.reportCache.loadConsign(_crDb),
+        window.reportCache.loadPrices(_crDb)
+      ]);
+      arResult = loads[0]; csResult = loads[1]; prResult = loads[2];
+    } else {
+      // Fallback: full reads (shim missing)
+      var arSnapF = await _crDb.collection('ar_master').get();
+      var arArr = []; arSnapF.forEach(function(doc){ var d = doc.data(); if (d.invoices) d.invoices.forEach(function(inv){ arArr.push(inv); }); });
+      var csSnapF = await _crDb.collection('consignment_master').get();
+      var csArr = []; csSnapF.forEach(function(doc){ csArr.push(doc.data()); });
+      var prSnapF = await _crDb.collection('productPrices').get();
+      var pMap = {}; prSnapF.forEach(function(doc){ pMap[doc.id] = Number(doc.data().retail)||0; });
+      arResult = { rawInvoices: arArr, docsRead: arSnapF.size, source:'full-fallback' };
+      csResult = { records: csArr, docsRead: csSnapF.size, source:'full-fallback' };
+      prResult = { priceByNo: pMap, docsRead: prSnapF.size, source:'full-fallback' };
+    }
+    var arInvoices = arResult.rawInvoices || [];
+    var csRecords  = csResult.records || [];
+    var priceByNo  = prResult.priceByNo || {};
+
+    // Build model→price map using ITEM_DATA (model→item_no mapping)
+    _crPriceMap = {};
+    if (typeof ITEM_DATA !== 'undefined') {
+      ITEM_DATA.forEach(function(it) {
+        if (it.model && priceByNo[it.no]) {
+          _crPriceMap[it.model] = priceByNo[it.no];
+        }
+      });
+    }
+    // Also check if any productPrices doc ID is itself a model code
+    Object.keys(priceByNo).forEach(function(k) {
+      if (!_crPriceMap[k]) _crPriceMap[k] = priceByNo[k];
+    });
+
+    console.log('[CR] AR invoices:', arInvoices.length, '(', arResult.source, 'read=' + arResult.docsRead, ')',
+                'Consign:', csRecords.length, '(', csResult.source, 'read=' + csResult.docsRead, ')',
+                'Prices:', Object.keys(priceByNo).length, '(', prResult.source, 'read=' + prResult.docsRead, ')');
+
+    // Merge
+    _crMerged = _crMergeData(arInvoices, csRecords, _crPriceMap);
+    _crBuildSalesFilter();
+    _crRenderSummary();
+    _crRender();
+
+    document.getElementById('crFixedSection').style.display = '';
+    document.getElementById('crNoData').style.display = 'none';
+  } catch(err) {
+    console.error('[CR] Load error:', err);
+    document.getElementById('crNoData').innerHTML = '<div style="font-size:48px;margin-bottom:12px;">⚠️</div><div style="color:#ef4444;">로드 오류: ' + err.message + '</div>';
+  }
+}
+
+// ── Merge AR + Consignment by ERP code ──
+function _crMergeData(arInvoices, csRecords, priceMap) {
+  var custMap = {}; // key: erpCode
+
+  // Process AR invoices
+  arInvoices.forEach(function(inv) {
+    var erp = (inv.custErp || '').toString().trim();
+    if (!erp) return;
+    if (!custMap[erp]) {
+      custMap[erp] = {
+        erp: erp,
+        custId: inv.custId || '',
+        custName: inv.custName || '',
+        sales: (inv.saleNew || '').toUpperCase(),
+        arCount: 0,
+        arBalance: 0,
+        arCurrent: 0,
+        arOverdue: 0,
+        csTotal: 0,
+        csUnsettled: 0,
+        csUnsettledAmt: 0,
+        arByYear: {},
+        csByYear: {}
+      };
+    }
+    var c = custMap[erp];
+    var bal = Number(inv.balance) || 0;
+    var od = parseInt(inv.overdueDays) || 0;
+    c.arCount++;
+    c.arBalance += bal;
+    if (od <= 0) c.arCurrent += bal;
+    else c.arOverdue += bal;
+    if (!c.custName && inv.custName) c.custName = inv.custName;
+    if (!c.sales && inv.saleNew) c.sales = inv.saleNew.toUpperCase();
+
+    // Year breakdown from invoice date
+    var yr = (inv.date || '').substring(0, 4) || 'N/A';
+    if (!c.arByYear[yr]) c.arByYear[yr] = { count: 0, balance: 0, current: 0, overdue: 0 };
+    c.arByYear[yr].count++;
+    c.arByYear[yr].balance += bal;
+    if (od <= 0) c.arByYear[yr].current += bal;
+    else c.arByYear[yr].overdue += bal;
+  });
+
+  // Process consignment records
+  csRecords.forEach(function(rec) {
+    var code = (rec.c || '').toString().trim();
+    var erp = code.replace(/^W/i, '');
+    if (!erp) return;
+
+    var qty = Number(rec.q) || 0;
+    var isBorrow = (rec.st || '').toUpperCase() === 'BORROW';
+
+    if (!custMap[erp]) {
+      custMap[erp] = {
+        erp: erp,
+        custId: '',
+        custName: rec.n || '',
+        sales: (rec.s || '').toUpperCase(),
+        arCount: 0,
+        arBalance: 0,
+        arCurrent: 0,
+        arOverdue: 0,
+        csTotal: 0,
+        csUnsettled: 0,
+        csUnsettledAmt: 0,
+        arByYear: {},
+        csByYear: {}
+      };
+    }
+    var c = custMap[erp];
+    c.csTotal += qty;
+    if (isBorrow) {
+      c.csUnsettled += qty;
+      var pCode = (rec.p || '').toString().trim();
+      var unitPrice = (priceMap && priceMap[pCode]) ? priceMap[pCode] : 0;
+      c.csUnsettledAmt += qty * unitPrice;
+    }
+    if (!c.custName && rec.n) c.custName = rec.n;
+    if (!c.sales && rec.s) c.sales = rec.s.toUpperCase();
+
+    // Year breakdown from date
+    var yr = (rec.d || '').substring(0, 4) || 'N/A';
+    if (!c.csByYear[yr]) c.csByYear[yr] = { total: 0, unsettled: 0, unsettledAmt: 0 };
+    c.csByYear[yr].total += qty;
+    if (isBorrow) {
+      c.csByYear[yr].unsettled += qty;
+      var pCode2 = (rec.p || '').toString().trim();
+      var uPrice2 = (priceMap && priceMap[pCode2]) ? priceMap[pCode2] : 0;
+      c.csByYear[yr].unsettledAmt += qty * uPrice2;
+    }
+  });
+
+  return Object.values(custMap);
+}
+
+// ── Sales filter ──
+function _crIsScopedUser(u) {
+  if (!u) return false;
+  var dept = String(u.dept || '').trim().toLowerCase();
+  var HARDCODED_ADMINS = ['T2408087'];
+  var isAdmin = HARDCODED_ADMINS.indexOf(u.empid) > -1 || u.role === 'admin';
+  if (isAdmin) return false;
+  if (dept === 'office') return false;
+  return true;
+}
+function _crBuildSalesFilter() {
+  var sel = document.getElementById('crSalesFilter');
+  var salesSet = {};
+  _crMerged.forEach(function(r) { if (r.sales) salesSet[r.sales] = true; });
+  var list = Object.keys(salesSet).sort();
+  var me = getCurrentUser();
+  if (me && _crIsScopedUser(me)) {
+    var nick = (me.nickname || '').trim();
+    var fixed = '';
+    if (nick) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].trim().toLowerCase() === nick.toLowerCase()) { fixed = list[i]; break; }
+      }
+      if (!fixed) fixed = nick;
+    }
+    if (fixed) {
+      sel.innerHTML = '<option value="' + fixed + '" selected>' + fixed + '</option>';
+      sel.value = fixed;
+    } else {
+      sel.innerHTML = '<option value="__NONE__" selected>-</option>';
+      sel.value = '__NONE__';
+    }
+    sel.disabled = true;
+    sel.style.opacity = '0.7';
+    sel.style.cursor = 'not-allowed';
+    return;
+  }
+  sel.innerHTML = '<option value="">전체 담당</option>';
+  list.forEach(function(s) { sel.innerHTML += '<option value="' + s + '">' + s + '</option>'; });
+}
+
+// ── Summary ──
+function _crRenderSummary(data) {
+  var d = data || _crMerged;
+  var totalCust = d.length;
+  var totalBal = 0, totalCurrent = 0, totalOverdue = 0, totalCs = 0, totalUnsettled = 0, totalUnsettledAmt = 0;
+  d.forEach(function(r) {
+    totalBal += r.arBalance;
+    totalCurrent += r.arCurrent;
+    totalOverdue += r.arOverdue;
+    totalCs += r.csTotal;
+    totalUnsettled += r.csUnsettled;
+    totalUnsettledAmt += r.csUnsettledAmt || 0;
+  });
+
+  document.getElementById('crSummaryCards').innerHTML =
+    '<div class="cr-card"><div class="cr-card-label">거래처</div><div class="cr-card-value">' + totalCust + '</div><div class="cr-card-sub">고객 수</div></div>' +
+    '<div class="cr-card"><div class="cr-card-label">AR 미경과</div><div class="cr-card-value" style="color:#16a34a;">฿' + _crFmt(totalCurrent) + '</div><div class="cr-card-sub">Not yet due</div></div>' +
+    '<div class="cr-card"><div class="cr-card-label">AR 경과</div><div class="cr-card-value" style="color:#dc2626;">฿' + _crFmt(totalOverdue) + '</div><div class="cr-card-sub">Overdue</div></div>' +
+    '<div class="cr-card"><div class="cr-card-label">AR 합계</div><div class="cr-card-value" style="color:#1e293b;">฿' + _crFmt(totalBal) + '</div><div class="cr-card-sub">Total AR</div></div>' +
+    '<div class="cr-card"><div class="cr-card-label">위탁 합계</div><div class="cr-card-value" style="color:#0d9488;">' + _crFmt(totalCs) + '</div><div class="cr-card-sub">Total Consignment</div></div>' +
+    '<div class="cr-card"><div class="cr-card-label">위탁 미정산</div><div class="cr-card-value" style="color:#ea580c;">' + _crFmt(totalUnsettled) + '</div><div class="cr-card-sub">Unsettled qty</div></div>' +
+    '<div class="cr-card"><div class="cr-card-label">미정산 금액</div><div class="cr-card-value" style="color:#ea580c;">฿' + _crFmt(totalUnsettledAmt) + '</div><div class="cr-card-sub">Unsettled amount</div></div>';
+}
+
+// ── Render table ──
+function _crRender() {
+  var search = (document.getElementById('crSearch').value || '').toLowerCase();
+  var salesVal = document.getElementById('crSalesFilter').value;
+  var sortField = document.getElementById('crSortField').value;
+  // 관리자/Office 외: 본인 닉네임으로 강제 필터
+  var me = getCurrentUser();
+  var _scopedNick = '';
+  if (me && _crIsScopedUser(me)) {
+    _scopedNick = (me.nickname || '').trim().toLowerCase();
+  }
+
+  var filtered = _crMerged.filter(function(r) {
+    if (_scopedNick) {
+      if ((r.sales || '').trim().toLowerCase() !== _scopedNick) return false;
+    } else if (salesVal && r.sales !== salesVal) return false;
+    if (search) {
+      var hay = (r.erp + ' ' + r.custId + ' ' + r.custName + ' ' + r.sales).toLowerCase();
+      if (hay.indexOf(search) < 0) return false;
+    }
+    return true;
+  });
+
+  // Sort
+  filtered.sort(function(a, b) {
+    if (sortField === 'balance_desc') return b.arBalance - a.arBalance;
+    if (sortField === 'balance_asc') return a.arBalance - b.arBalance;
+    if (sortField === 'consign_desc') return b.csTotal - a.csTotal;
+    if (sortField === 'consign_asc') return a.csTotal - b.csTotal;
+    if (sortField === 'unsettled_desc') return b.csUnsettled - a.csUnsettled;
+    if (sortField === 'name_asc') return (a.custName || '').localeCompare(b.custName || '');
+    return 0;
+  });
+
+  _crFiltered = filtered;
+  _crRenderSummary(filtered);
+
+  var html = '';
+  if (filtered.length === 0) {
+    html = '<div style="padding:40px;text-align:center;color:#9ca3af;">검색 결과 없음</div>';
+  } else {
+    filtered.forEach(function(r, idx) {
+      html += '<div class="cr-row" id="crRow' + idx + '" onclick="_crToggleRow(' + idx + ')">';
+      // Main row
+      html += '<div class="cr-row-hdr">';
+      html += '<span class="cr-badge">' + _crEsc(r.sales || '-') + '</span>';
+      html += '<span style="color:#6b7280;font-size:12px;font-weight:600;">' + _crEsc(r.erp) + '</span>';
+      html += '<span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + _crEsc(r.custName) + '">' + _crEsc(r.custName || '-') + '</span>';
+      html += '<span style="text-align:center;color:#6b7280;font-weight:600;">' + r.arCount + '</span>';
+      html += '<span style="text-align:right;font-weight:700;color:#16a34a;">฿' + _crFmt(r.arCurrent) + '</span>';
+      html += '<span style="text-align:right;font-weight:700;color:#dc2626;">฿' + _crFmt(r.arOverdue) + '</span>';
+      html += '<span style="text-align:right;font-weight:800;color:#1e293b;">฿' + _crFmt(r.arBalance) + '</span>';
+      html += '<span style="text-align:right;font-weight:700;color:#0d9488;">' + _crFmt(r.csTotal) + '</span>';
+      html += '<span style="text-align:right;font-weight:700;color:' + (r.csUnsettled > 0 ? '#ea580c' : '#16a34a') + ';">' + _crFmt(r.csUnsettled) + '</span>';
+      html += '<span style="text-align:right;font-weight:700;color:' + (r.csUnsettledAmt > 0 ? '#ea580c' : '#16a34a') + ';">฿' + _crFmt(r.csUnsettledAmt) + '</span>';
+      html += '</div>';
+
+      // Detail (yearly breakdown)
+      html += '<div class="cr-row-detail">';
+      var years = _crGetYears(r);
+      if (years.length === 0) {
+        html += '<div style="padding:8px;color:#9ca3af;font-size:12px;">연도별 데이터 없음</div>';
+      } else {
+        html += '<table class="cr-detail-tbl"><thead><tr><th>연도</th><th style="text-align:right;">AR건</th><th style="text-align:right;">미경과</th><th style="text-align:right;">경과</th><th style="text-align:right;">AR합계</th><th style="text-align:right;">위탁합계</th><th style="text-align:right;">미정산</th><th style="text-align:right;">미정산금액</th></tr></thead><tbody>';
+        years.forEach(function(yr) {
+          var ar = r.arByYear[yr] || { count: 0, balance: 0, current: 0, overdue: 0 };
+          var cs = r.csByYear[yr] || { total: 0, unsettled: 0 };
+          html += '<tr>';
+          html += '<td style="font-weight:700;">' + yr + '</td>';
+          html += '<td class="num">' + ar.count + '</td>';
+          html += '<td class="num" style="color:#16a34a;font-weight:600;">฿' + _crFmt(ar.current) + '</td>';
+          html += '<td class="num" style="color:#dc2626;font-weight:600;">฿' + _crFmt(ar.overdue) + '</td>';
+          html += '<td class="num" style="font-weight:700;">฿' + _crFmt(ar.balance) + '</td>';
+          html += '<td class="num" style="color:#0d9488;font-weight:600;">' + _crFmt(cs.total) + '</td>';
+          html += '<td class="num" style="color:' + (cs.unsettled > 0 ? '#ea580c' : '#16a34a') + ';font-weight:600;">' + _crFmt(cs.unsettled) + '</td>';
+          html += '<td class="num" style="color:' + ((cs.unsettledAmt || 0) > 0 ? '#ea580c' : '#16a34a') + ';font-weight:600;">฿' + _crFmt(cs.unsettledAmt || 0) + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+      }
+      html += '</div></div>';
+    });
+  }
+
+  document.getElementById('crTableBody').innerHTML = html;
+  document.getElementById('crTotalCount').textContent = filtered.length;
+  var fBal = filtered.reduce(function(s,r){return s+r.arBalance;},0);
+  var fCs = filtered.reduce(function(s,r){return s+r.csTotal;},0);
+  var fUn = filtered.reduce(function(s,r){return s+r.csUnsettled;},0);
+  var fUnAmt = filtered.reduce(function(s,r){return s+(r.csUnsettledAmt||0);},0);
+  document.getElementById('crFooterInfo').textContent = '총 ' + filtered.length + '개 거래처 / AR ฿' + _crFmt(fBal) + ' / 위탁 ' + _crFmt(fCs) + ' (미정산 ' + _crFmt(fUn) + ' / ฿' + _crFmt(fUnAmt) + ')';
+}
+
+function _crGetYears(r) {
+  var yearSet = {};
+  Object.keys(r.arByYear).forEach(function(y) { yearSet[y] = true; });
+  Object.keys(r.csByYear).forEach(function(y) { yearSet[y] = true; });
+  return Object.keys(yearSet).sort().reverse();
+}
+
+function _crToggleRow(idx) {
+  var el = document.getElementById('crRow' + idx);
+  if (el) el.classList.toggle('open');
+}
+
+// ── Excel export ──
+function _crExportExcel() {
+  if (!_crFiltered || _crFiltered.length === 0) { alert('내보낼 데이터가 없습니다.'); return; }
+  var rows = [['담당', '고객코드', '고객명', 'AR건수', '미경과(฿)', '경과(฿)', 'AR합계(฿)', '위탁합계', '미정산', '미정산금액(฿)']];
+  _crFiltered.forEach(function(r) {
+    rows.push([r.sales, r.erp, r.custName, r.arCount, r.arCurrent, r.arOverdue, r.arBalance, r.csTotal, r.csUnsettled, r.csUnsettledAmt || 0]);
+  });
+  var ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:10},{wch:10},{wch:30},{wch:8},{wch:15},{wch:15},{wch:15},{wch:10},{wch:10},{wch:15}];
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'AR+위탁 통합');
+  var today = new Date();
+  XLSX.writeFile(wb, 'AR_위탁_통합_' + today.getFullYear() + String(today.getMonth()+1).padStart(2,'0') + String(today.getDate()).padStart(2,'0') + '.xlsx');
+}
+
+// ── Util ──
+function _crFmt(n) {
+  if (n === null || n === undefined || isNaN(n)) n = 0;
+  n = Number(n) || 0;
+  if (n === 0) return '0';
+  return Math.round(n).toLocaleString('en-US');
+}
+function _crEsc(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+</body>
+</html>

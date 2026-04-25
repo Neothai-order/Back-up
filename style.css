@@ -2588,22 +2588,23 @@
 .qt-confirm-footer .qtc-submit{flex:2;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(124,58,237,.3);}
 .qt-confirm-footer .qtc-submit:active{background:linear-gradient(135deg,#6d28d9,#5b21b6);}
 /* ── 패키지 빌더 ── */
-.pkg-builder{display:none;position:fixed;top:calc(var(--header-h, 0px) + 6px);left:50%;transform:translateX(-50%);width:min(1100px,calc(100vw - 16px));height:calc(100vh - var(--header-h, 0px) - 12px);max-height:calc(100vh - var(--header-h, 0px) - 12px);border:1.5px solid #c4b5fd;border-radius:14px;background:#faf5ff;padding:0;z-index:9910;box-shadow:0 12px 40px rgba(124,58,237,.18);overflow:hidden;transition:width .28s ease;}
+.pkg-builder{display:none;position:fixed;top:0;left:0;right:0;bottom:0;transform:none;width:100vw;max-width:100vw;height:100vh;max-height:100vh;border:none;border-radius:0;background:#faf5ff;padding:0;z-index:9910;box-shadow:0 12px 40px rgba(124,58,237,.18);overflow:hidden;transition:width .28s ease;}
 .pkg-builder.open{display:flex;flex-direction:column;}
 /* 최대화 상태: 다른 규칙(.pkg-has-ov-N 등)과 specificity 같아서 !important 필요 */
-/* 전체화면: body{zoom:0.9} 때문에 100vw/100vh 대신 100% + inset 사용 (pending-detail, pkg-builder 모바일과 동일 패턴) */
-.pkg-builder.pkg-fs{top:var(--header-h, 0px)!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;width:100%!important;max-width:100%!important;height:calc(100% - var(--header-h, 0px))!important;max-height:calc(100% - var(--header-h, 0px))!important;border-radius:0!important;margin:0!important;}
+/* 전체화면: 100vw/100vh 사용 — 헤더 위까지 덮어 최대 작업 공간 확보 */
+.pkg-builder.pkg-fs{top:0!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;width:100vw!important;max-width:100vw!important;height:100vh!important;max-height:100vh!important;border-radius:0!important;margin:0!important;border:none!important;}
 /* 최대화 + 오버플로우 공존 시에도 모달 전체 100vw 유지 */
 .pkg-builder.pkg-fs.pkg-has-ov-1,
 .pkg-builder.pkg-fs.pkg-has-ov-2{width:100%!important;max-width:100%!important;}
 /* pkg-left: 최대화 시 화면의 약 60% 차지 (폼이 넓게 보이도록). 단 확장컬럼 열릴 때는 제외 */
-.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-left{flex:0 1 auto!important;width:60vw!important;max-width:1100px!important;min-width:460px!important;}
+.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-left{flex:0 1 auto!important;width:60vw!important;max-width:1100px!important;min-width:420px!important;}
 /* pkg-right: 나머지 40% 영역 사용 */
-.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-right{flex:1 1 auto!important;width:auto!important;min-width:260px!important;max-width:none!important;}
-/* 최대화 + 확장컬럼 1칸: pkg-left는 남는 공간 모두, pkg-right는 380px 유지 */
-.pkg-builder.pkg-fs.pkg-has-ov-1 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:460px!important;}
-.pkg-builder.pkg-fs.pkg-has-ov-2 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:460px!important;}
+.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-right{flex:1 1 auto!important;width:auto!important;min-width:240px!important;max-width:none!important;}
+/* 최대화 + 확장컬럼 1칸: pkg-left는 남는 공간 모두, pkg-right는 좁힌 폭 유지 */
+.pkg-builder.pkg-fs.pkg-has-ov-1 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:320px!important;}
+.pkg-builder.pkg-fs.pkg-has-ov-2 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:280px!important;}
 body.force-mobile .pkg-builder.open{top:0;left:0;transform:none;width:100vw;max-width:100vw;height:100vh;max-height:100vh;border-radius:0;border:none;}
+.pkg-builder.open{width:100vw!important;max-width:100vw!important;height:100vh!important;max-height:100vh!important;top:0!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;border-radius:0!important;border:none!important;}
 .pkg-builder-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #ede9fe;background:linear-gradient(135deg,#f5f3ff,#ede9fe);cursor:grab;user-select:none;}
 .pkg-builder-hdr:active{cursor:grabbing;}
 .pkg-builder-hdr .pkg-drag-grip{display:inline-block;font-size:14px;color:#a78bfa;margin-right:8px;letter-spacing:-2px;vertical-align:middle;cursor:grab;user-select:none;}
@@ -2612,27 +2613,26 @@ body.force-mobile .pkg-builder.open{top:0;left:0;transform:none;width:100vw;max-
 .pkg-builder-close{background:none;border:none;font-size:18px;cursor:pointer;color:#6b7280;padding:2px 6px;border-radius:6px;}
 .pkg-builder-close:hover{background:#e5e7eb;}
 /* .pkg-mini-icon removed — unified bar style */
-.pkg-body{display:flex;flex:1;overflow:hidden;min-height:0;}
-.pkg-left{flex:1 1 auto;min-width:460px;padding:14px 18px;overflow:auto;border-right:1px solid #ede9fe;}
-.pkg-right{flex:1;min-width:260px;display:flex;flex-direction:column;background:#fff;}
+.pkg-body{display:flex;flex:1;overflow-x:hidden;overflow-y:hidden;min-height:0;}
+.pkg-left{flex:1 1 auto;min-width:420px;padding:14px 18px;overflow:auto;border-right:1px solid #ede9fe;}
+.pkg-right{flex:1;min-width:240px;display:flex;flex-direction:column;background:#fff;}
 .pkg-right-hdr{padding:10px 12px;font-size:13px;font-weight:700;color:#1e293b;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;}
 .pkg-right-hdr .pkg-remain{font-size:12px;font-weight:600;color:#7c3aed;background:#f5f3ff;padding:2px 10px;border-radius:10px;}
-.pkg-right-list{flex:1;overflow-y:auto;padding:6px;display:flex;flex-direction:column;gap:4px;}
-/* 아이템 아래 빈 공간을 고스트 행 패턴(40px + 4px gap)으로 채움.
-   ::after를 flex item으로 만들어 flex:1로 남는 공간 전부 차지하게 함 */
-.pkg-right-list::after{content:"";flex:1 1 auto;min-height:40px;background-image:repeating-linear-gradient(to bottom,#f3f4f6 0,#f3f4f6 40px,transparent 40px,transparent 44px);background-repeat:repeat;pointer-events:none;}
+.pkg-right-list{flex:1;overflow-y:auto;overflow-x:hidden;padding:4px;display:flex;flex-direction:column;gap:2px;}
+/* 아이템 아래 빈 공간을 고스트 행 패턴(32px + 2px gap)으로 채움. */
+.pkg-right-list::after{content:"";flex:1 1 auto;min-height:32px;background-image:repeating-linear-gradient(to bottom,#f3f4f6 0,#f3f4f6 32px,transparent 32px,transparent 34px);background-repeat:repeat;pointer-events:none;}
 .pkg-right-empty{text-align:center;color:#9ca3af;font-size:12px;padding:30px 10px;flex:1;display:flex;align-items:center;justify-content:center;}
-.pkg-right-item{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:#f9fafb;margin-bottom:5px;font-size:11px;border:1px solid #f1f5f9;}
-/* 아이템 40px 고정 */
-.pkg-right-list .pkg-right-item{flex:0 0 auto;height:40px;min-height:40px;max-height:40px;margin-bottom:0;padding:5px 10px;overflow:hidden;}
-.pkg-right-item .pri-cat{font-size:10px;font-weight:700;color:#7c3aed;background:#f5f3ff;padding:1px 6px;border-radius:4px;flex-shrink:0;}
-.pkg-right-item .pri-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;}
-.pkg-right-item .pri-model{font-weight:600;color:#1e293b;font-size:12px;}
-.pkg-right-item .pri-detail{display:flex;gap:8px;font-size:10px;color:#6b7280;}
-.pkg-right-item .pri-no{background:#f3f4f6;padding:1px 5px;border-radius:3px;color:#9ca3af;}
-.pkg-right-item .pri-spec{color:#6b7280;}
-.pkg-right-item .pri-qty{font-weight:700;color:#5b21b6;flex-shrink:0;font-size:12px;}
-.pkg-right-item .pri-del{background:none;border:none;color:#d1d5db;cursor:pointer;font-size:13px;padding:0 2px;flex-shrink:0;}
+.pkg-right-item{display:flex;align-items:center;gap:4px;padding:6px 6px;border-radius:6px;background:#f9fafb;margin-bottom:4px;font-size:11px;border:1px solid #f1f5f9;}
+/* 아이템 32px 고정 — 더 많은 항목이 한 화면에 맞도록 컴팩트화 */
+.pkg-right-list .pkg-right-item{flex:0 0 auto;height:32px;min-height:32px;max-height:32px;margin-bottom:0;padding:2px 6px;overflow:hidden;}
+.pkg-right-item .pri-cat{font-size:8.5px;font-weight:700;color:#7c3aed;background:#f5f3ff;padding:1px 4px;border-radius:3px;flex-shrink:0;max-width:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4;}
+.pkg-right-item .pri-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:0;line-height:1.2;}
+.pkg-right-item .pri-model{font-weight:600;color:#1e293b;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;}
+.pkg-right-item .pri-detail{display:flex;gap:4px;font-size:9px;color:#6b7280;white-space:nowrap;overflow:hidden;line-height:1.2;}
+.pkg-right-item .pri-no{background:#f3f4f6;padding:0 3px;border-radius:3px;color:#9ca3af;flex-shrink:0;font-size:9px;}
+.pkg-right-item .pri-spec{color:#6b7280;overflow:hidden;text-overflow:ellipsis;}
+.pkg-right-item .pri-qty{font-weight:700;color:#5b21b6;flex-shrink:0;font-size:10px;min-width:16px;text-align:right;}
+.pkg-right-item .pri-del{background:none;border:none;color:#d1d5db;cursor:pointer;font-size:11px;padding:0 2px;flex-shrink:0;}
 .pkg-right-item .pri-del:hover{color:#ef4444;}
 .pkg-footer{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid #ede9fe;background:#faf5ff;}
 .pkg-footer-mobile{display:none;}
@@ -2654,18 +2654,18 @@ body.force-mobile .pkg-builder.open{top:0;left:0;transform:none;width:100vw;max-
 .pkg-builder.pkg-has-ov-1:not(.pkg-has-ov-2) #pkgRightOv2{width:0!important;min-width:0!important;max-width:0!important;}
 .pkg-builder.pkg-has-ov-1 #pkgRightOv1,
 .pkg-builder.pkg-has-ov-2 #pkgRightOv1,
-.pkg-builder.pkg-has-ov-2 #pkgRightOv2{width:380px;min-width:380px;max-width:380px;opacity:1;border-left-width:1px;}
+.pkg-builder.pkg-has-ov-2 #pkgRightOv2{width:260px;min-width:260px;max-width:260px;opacity:1;border-left-width:1px;}
 /* 추가 열이 열리면 주문 리스트 폭도 추가 열과 동일하게 고정 */
-.pkg-builder.pkg-has-ov-1 .pkg-right,
-.pkg-builder.pkg-has-ov-2 .pkg-right{flex:none;width:380px;min-width:380px;max-width:380px;}
-/* 1칸 추가 시 빌더 확장 — 콘텐츠 너비에 맞춰 확장 */
-.pkg-builder.pkg-has-ov-1{width:min(1360px, calc(100vw - 16px));}
-.pkg-builder.pkg-has-ov-2{width:min(1760px, calc(100vw - 16px));}
+.pkg-builder.pkg-has-ov-1 .pkg-right#pkgRightDesktop,
+.pkg-builder.pkg-has-ov-2 .pkg-right#pkgRightDesktop{flex:none;width:260px;min-width:260px;max-width:260px;}
+/* 풀스크린이 기본이므로 빌더 자체는 100vw 고정 — pkg-has-ov-N 에서도 폭 변경 없음 */
+.pkg-builder.pkg-has-ov-1,
+.pkg-builder.pkg-has-ov-2{width:100vw;max-width:100vw;}
 .pri-origin{display:inline-block;margin-left:4px;font-size:10px;font-weight:700;color:#7c3aed;background:#f5f3ff;padding:0 5px;border-radius:4px;vertical-align:middle;}
-@media(max-width:1099px){
+@media(max-width:899px){
   .pkg-right-ov{display:none !important;}
   .pkg-builder.pkg-has-ov-1,
-  .pkg-builder.pkg-has-ov-2{width:min(1100px, calc(100vw - 16px)) !important;}
+  .pkg-builder.pkg-has-ov-2{width:100vw !important;max-width:100vw !important;}
 }
 .pkg-row{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid #ede9fe;flex-wrap:nowrap;}
 .pkg-row:last-child{border-bottom:none;}

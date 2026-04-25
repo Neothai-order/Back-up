@@ -6285,9 +6285,10 @@ function openPkgBuilder(node) {
     pkgOverlay.style.cssText = '';
     pkgOverlay.classList.add('open');
     pkgEl.classList.add('open');
-    pkgEl.classList.remove('pkg-fs');
+    // 기본 최대화 (pkg-fs) — VW/VH 100% 풀스크린으로 열기
+    pkgEl.classList.add('pkg-fs');
     var fsBtn = document.getElementById('pkgFsBtn');
-    if (fsBtn) fsBtn.textContent = '☐';
+    if (fsBtn) { fsBtn.textContent = '❐'; fsBtn.title = t('pkg_restore') || '복원'; }
   }
   _bringToFront(pkgOverlay);
   _bringToFront(pkgEl);
@@ -6676,19 +6677,10 @@ function _renderPkgRight() {
     if (builderEl) builderEl.classList.remove('pkg-has-ov-1','pkg-has-ov-2');
     return;
   }
-  // 오버플로우 판정 (데스크탑 + 1100px 이상) — 칸당 최대 개수는 실제 리스트 높이 기준으로 동적 계산
-  // 아이템 1개 = height 40px + margin 4px = 44px (CSS: .pkg-right-list .pkg-right-item)
-  // 메인 리스트 높이를 측정해 "하단 마지막 행까지" 채우도록 함
-  var PKG_ROW_H = 44;
-  var listHeight = (listEl && listEl.clientHeight) || 0;
-  // 리스트가 아직 렌더되지 않은 경우 대비: pkg-body 높이 - 헤더(약 36px) 추정
-  if (listHeight < 100) {
-    var pkgBodyEl = document.querySelector('.pkg-body');
-    if (pkgBodyEl) listHeight = Math.max(pkgBodyEl.clientHeight - 36, 0);
-  }
-  // 최소 8개는 보장 (이전 동작 호환), 실측 기반 상한으로 더 많이 허용
-  var PKG_COL_MAX = Math.max(8, Math.floor(listHeight / PKG_ROW_H));
-  var canOverflow = (window.innerWidth >= 1100) &&
+  // 오버플로우 판정 (데스크탑 + 900px 이상)
+  // 패널당 최대 15칸 고정 — 16번째 아이템부터 다음 패널로 넘어감
+  var PKG_COL_MAX = 15;
+  var canOverflow = (window.innerWidth >= 900) &&
                     !document.documentElement.classList.contains('is-android');
   var total = _pkgOrderItems.length;
   var needOv1 = canOverflow && total > PKG_COL_MAX;

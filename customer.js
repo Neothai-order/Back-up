@@ -2242,17 +2242,34 @@ function deleteNewCustomer(erp) {
   showToast('삭제되었습니다: ' + name);
 }
 
+// ── neoAlert : HTML5 <dialog> Top Layer 우선 사용 (z-index 무관) ──
+// fallback: 미지원 브라우저는 기존 #neoAlertOverlay 사용.
 function neoAlert(msg) {
-  var el = document.getElementById('neoAlertMsg');
-  if (String(msg).includes('\n')) {
-    el.innerHTML = String(msg).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-  } else {
-    el.textContent = msg;
+  var dlg = document.getElementById('neoAlertDialog');
+  var safe = String(msg);
+  function _setBody(elId) {
+    var el = document.getElementById(elId);
+    if (!el) return;
+    if (safe.includes('\n')) {
+      el.innerHTML = safe.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+    } else {
+      el.textContent = safe;
+    }
   }
+  if (dlg && typeof dlg.showModal === 'function') {
+    _setBody('neoAlertMsgDlg');
+    if (!dlg.open) dlg.showModal();   // Top Layer — 어떤 stacking context 위에서도 최상위
+    return;
+  }
+  // Legacy fallback
+  _setBody('neoAlertMsg');
   document.getElementById('neoAlertOverlay').classList.add('open');
 }
 function closeNeoAlert() {
-  document.getElementById('neoAlertOverlay').classList.remove('open');
+  var dlg = document.getElementById('neoAlertDialog');
+  if (dlg && dlg.open) dlg.close();
+  var ov = document.getElementById('neoAlertOverlay');
+  if (ov) ov.classList.remove('open');
 }
 
 var _neoConfirmCb = null;

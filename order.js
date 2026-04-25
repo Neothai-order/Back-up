@@ -6295,19 +6295,10 @@ function openPkgBuilder(node) {
   }
   _bringToFront(pkgOverlay);
   _bringToFront(pkgEl);
-  // _bringToFront가 style.zIndex 직접 할당으로 !important 플래그를 제거하므로,
-  // 그 직후 최대값 !important로 다시 강제. 다른 모달/오버레이가 절대 위로 올 수 없도록 보장.
-  // (max int32 - 안전 마진)
-  pkgOverlay.style.setProperty('z-index', '2147483646', 'important');
-  pkgEl.style.setProperty('z-index', '2147483647', 'important');
-  setTimeout(function() {
-    var _po = document.getElementById('pkgOverlay');
-    var _pe = document.getElementById('pkgBuilder');
-    _bringToFront(_pe);
-    // 재차 !important 강제
-    if (_po) _po.style.setProperty('z-index', '2147483646', 'important');
-    if (_pe) _pe.style.setProperty('z-index', '2147483647', 'important');
-  }, 50);
+  // [REFACTOR 2026-04-25] max int32 !important 강제 제거 — z-index 군비경쟁 종결.
+  // CSS 토큰(.pkg-overlay z=9900, .pkg-builder z=9910)이 자연스럽게 적용됨.
+  // _bringToFront 가 inline z-index(_topZ 카운터)를 더 높게 설정하므로 다른 모달과 충돌 없음.
+  // 알림류는 CSS 의 --z-alert 가 더 위에 있어 가리지 않음.
   // 안드로이드 모바일: 위저드 모드(순차 입력) 활성화
   _setupPkgWizard();
 }

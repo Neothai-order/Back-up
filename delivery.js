@@ -493,10 +493,19 @@ document.addEventListener('DOMContentLoaded', function() {
 })();
 
 // ── 모달/채팅창 포커스 (클릭 시 + 열릴 때 최상단) ──
+// [REFACTOR 2026-04-25 Phase 3A] 관찰 모드 추가:
+//   window._BRINGTOFRONT_OBSERVE_ONLY = true  → 콘솔 로그만 남기고 z-index 조작 X
+//   기본 false (기존 동작 유지). 1주 운영 후 문제 없으면 기본값을 true 로 전환,
+//   추가 1주 후 함수 자체 제거 예정.
 var _topZ = 10700;
+window._BRINGTOFRONT_OBSERVE_ONLY = window._BRINGTOFRONT_OBSERVE_ONLY || false;
 function _bringToFront(el) {
   if (!el) return;
   _topZ++;
+  if (window._BRINGTOFRONT_OBSERVE_ONLY) {
+    if (window._BRINGTOFRONT_LOG) console.log('[bringToFront/observe]', el.id || el.className, '→ would set z=' + _topZ);
+    return; // z-index 조작 안 함
+  }
   el.style.zIndex = _topZ;
 }
 (function() {

@@ -17,6 +17,16 @@
     --z-pkg-stack:     9900;   /* 패키지 빌더 스택 기준 */
     --z-chat:          90000;  /* 채팅 팝업/리스트 */
     --z-header:        99000;  /* 고정 헤더 */
+    /* ── 추가 토큰 (2026-04-25 Phase 2A) — 신규 모달 추가 시 이 토큰만 사용 ──
+       기존 토큰과 충돌 없도록 의미 기반으로 alias/추가. 시각 변화 없음 (값 유지).  */
+    --z-modal:         var(--z-overlay-page);  /* alias = 9000. 일반 모달 */
+    --z-modal-stacked: 9920;                   /* 모달 위 모달 (1단계까지만 권장) */
+    --z-popover:       9700;                   /* tooltip, hover card */
+    --z-pkg-builder:   var(--z-pkg-stack);     /* alias = 9900 */
+    --z-toast:         99500;                  /* toast / snackbar */
+    --z-loader:        99800;                  /* 전역 spinner */
+    --z-alert:         99999;                  /* neoAlert / neoConfirm — 항상 최상위 */
+    --z-top:           2147483647;             /* 최후 수단 (Top Layer 대안). 신규 코드는 --z-alert 권장 */
   }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; }
   input, textarea, [contenteditable="true"] { -webkit-user-select: text; -moz-user-select: text; -ms-user-select: text; user-select: text; }
@@ -5380,8 +5390,12 @@ body.force-tablet .cards-grid { grid-template-columns: 1fr 1fr !important; gap: 
 }
 
 /* ── 커스텀 알림 다이얼로그 ── */
-/* z-index: 다른 모든 모달/오버레이 위에 표시 — 패키지 빌더(9910), 페이지 오버레이(9000) 등 모두 위로 */
-.neo-alert-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2147483647;align-items:center;justify-content:center;}
+/* HTML5 <dialog> 우선 사용 (Top Layer, z-index 무관). 미지원 브라우저는 아래 .neo-alert-overlay fallback. */
+.neo-dialog{padding:0;border:none;background:transparent;max-width:none;max-height:none;overflow:visible;}
+.neo-dialog::backdrop{background:rgba(0,0,0,.4);}
+.neo-dialog[open]{display:flex;align-items:center;justify-content:center;}
+/* fallback: <dialog> 미지원 시 — z-index 는 토큰 사용 (--z-alert) */
+.neo-alert-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:var(--z-alert,99999);align-items:center;justify-content:center;}
 .neo-alert-overlay.open{display:flex;}
 .neo-alert-box{background:#fff;border-radius:14px;width:340px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.25);overflow:hidden;animation:modalPopIn .25s ease-out;}
 .neo-alert-hdr{background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;padding:12px 18px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;}

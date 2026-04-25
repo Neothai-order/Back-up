@@ -232,7 +232,7 @@ function loadJsPDF()       { return loadScript('https://cdnjs.cloudflare.com/aja
 </div>
 
 <!-- PDF 미리보기 오버레이 -->
-<div id="pdfPreviewOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:999999;flex-direction:column;align-items:center;" onclick="if(event.target===this)closePdfPreview()">
+<div id="pdfPreviewOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;flex-direction:column;align-items:center;" onclick="if(event.target===this)closePdfPreview()">
   <div style="width:100%;background:#1e293b;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;">
     <div style="display:flex;align-items:center;gap:14px;">
       <span style="color:#fff;font-size:16px;font-weight:700;">📄 PDF Preview</span>
@@ -254,13 +254,13 @@ function loadJsPDF()       { return loadScript('https://cdnjs.cloudflare.com/aja
 </div>
 
 <!-- neoAlert / showToast -->
-<div id="neoAlertOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999999;align-items:center;justify-content:center;">
+<div id="neoAlertOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:16px;padding:28px 24px 20px;max-width:340px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25);">
     <div id="neoAlertMsg" style="font-size:15px;color:#1e293b;white-space:pre-line;line-height:1.6;"></div>
     <button onclick="document.getElementById('neoAlertOverlay').style.display='none'" style="margin-top:18px;padding:10px 32px;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">확인</button>
   </div>
 </div>
-<div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
+<div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:99500;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
 
 <!-- lang.js -->
 <script src="lang.min.js?v=171"></script>

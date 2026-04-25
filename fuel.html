@@ -65,13 +65,13 @@
 </div>
 
 <!-- neoAlert / showToast -->
-<div id="neoAlertOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:999999;align-items:center;justify-content:center;">
+<div id="neoAlertOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:16px;padding:28px 24px 20px;max-width:340px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25);">
     <div id="neoAlertMsg" style="font-size:15px;color:#1e293b;white-space:pre-line;line-height:1.6;"></div>
     <button onclick="document.getElementById('neoAlertOverlay').style.display='none'" style="margin-top:18px;padding:10px 32px;background:linear-gradient(135deg,#f97316,#ea580c);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;">확인</button>
   </div>
 </div>
-<div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
+<div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:99500;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
 
 <!-- 주변 주유소 오버레이 -->
 <div id="nearbyStationOverlay" style="display:none;position:fixed;inset:0;z-index:100;background:#fff;flex-direction:column;">
@@ -1075,7 +1075,7 @@ function L_divIcon(opt) { return window.L.divIcon(opt); }
   function _createPtr() {
     if (_ptrEl) return;
     _ptrEl = document.createElement('div');
-    _ptrEl.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-50px);z-index:999999;background:#ea580c;color:#fff;padding:8px 20px;border-radius:0 0 12px 12px;font-size:13px;font-weight:600;transition:transform .2s;pointer-events:none;display:flex;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(0,0,0,.3);';
+    _ptrEl.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-50px);z-index:99999;background:#ea580c;color:#fff;padding:8px 20px;border-radius:0 0 12px 12px;font-size:13px;font-weight:600;transition:transform .2s;pointer-events:none;display:flex;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(0,0,0,.3);';
     _ptrEl.innerHTML = '<span id="fuelPtrArrow" style="display:inline-block;transition:transform .2s;">↓</span> <span id="fuelPtrText">' + ({ ko:'당겨서 새로고침', en:'Pull to refresh', th:'ดึงเพื่อรีเฟรช' }[L] || '당겨서 새로고침') + '</span>';
     document.body.appendChild(_ptrEl);
   }

@@ -85,7 +85,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .vl-btn-cancel{background:#f3f4f6;color:#374151;border:none;border-radius:8px;padding:10px 24px;font-size:14px;font-weight:600;cursor:pointer;}
 /* Customer autocomplete */
 .vl-ac-wrap{position:relative;}
-.vl-ac-list{position:fixed;max-height:240px;overflow-y:auto;background:#fff;border:1px solid #d1d5db;border-radius:0 0 10px 10px;z-index:999999;display:none;box-shadow:0 8px 24px rgba(0,0,0,.2);}
+.vl-ac-list{position:fixed;max-height:240px;overflow-y:auto;background:#fff;border:1px solid #d1d5db;border-radius:0 0 10px 10px;z-index:99999;display:none;box-shadow:0 8px 24px rgba(0,0,0,.2);}
 .vl-ac-list.show{display:block;}
 .vl-ac-item{padding:10px 12px;cursor:pointer;border-bottom:1px solid #f3f4f6;display:flex;align-items:center;gap:10px;}
 .vl-ac-item:hover{background:#eff6ff;}
@@ -102,10 +102,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;b
 .vl-cust-clear{background:none;border:none;color:#94a3b8;font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px;}
 .vl-cust-clear:hover{background:#fee2e2;color:#ef4444;}
 /* Toast */
-.vl-toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 24px;border-radius:10px;font-size:14px;font-weight:500;z-index:999999;opacity:0;transition:opacity .3s;pointer-events:none;}
+.vl-toast{position:fixed;bottom:30px;left:50%;transform:translateX(-50%);background:#1e293b;color:#fff;padding:10px 24px;border-radius:10px;font-size:14px;font-weight:500;z-index:99999;opacity:0;transition:opacity .3s;pointer-events:none;}
 .vl-toast.show{opacity:1;}
 /* Photo viewer */
-.vl-viewer{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:999999;justify-content:center;align-items:center;cursor:pointer;}
+.vl-viewer{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;justify-content:center;align-items:center;cursor:pointer;}
 .vl-viewer.open{display:flex;}
 .vl-viewer img{max-width:95%;max-height:90vh;border-radius:8px;}
 /* Mini bar */

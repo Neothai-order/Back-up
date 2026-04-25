@@ -7,6 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1a1a1a">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <link rel="stylesheet" href="style.min.css?v=199">
 <!-- Preconnect 힌트 (CDN/Firestore 연결 조기 수립) -->
@@ -21,7 +22,7 @@
 <!-- 외부 라이브러리 (Excel) -->
 <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <!-- Google Maps -->
-<script defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw&libraries=places,geometry"></script>
+<script defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw&libraries=places,geometry&loading=async"></script>
 <script>
 var _lazyCache = {};
 function loadScript(url) {
@@ -86,6 +87,30 @@ function loadJsPDF()       { return loadScript('https://cdnjs.cloudflare.com/aja
   /* 드래그 가능 커서 */
   .attend-top-bar.floating { cursor:grab; }
   .attend-top-bar.floating:active { cursor:grabbing; }
+  /* ── 출퇴근 집계 검색바 틀고정 (데스크탑 전용) ──
+     body가 min-height:100vh 라서 결과가 많으면 페이지 전체가 스크롤되며 검색바가 같이 밀려 올라감.
+     데스크탑에서 body 를 viewport 에 묶고 #attendSummaryBody 만 스크롤되게 해서 검색바를 고정.
+     ※ flex column 체인의 모든 중간 컨테이너에 min-height:0 필수 — 없으면 자식이 부모를 뚫고 자라
+        overflow-y:auto 가 안 켜짐 (classic flex pitfall). */
+  @media (min-width:701px) {
+    body.summary-active { height:100vh; min-height:100vh; overflow:hidden; }
+    body.summary-active .attend-summary-area,
+    body.summary-active .attend-summary-area .attend-overlay,
+    body.summary-active .attend-summary-area .attend-overlay .attend-modal {
+      min-height:0;
+    }
+    body.summary-active #attendSummaryBody {
+      min-height:0;
+      overflow-y:auto !important;
+      -webkit-overflow-scrolling:touch;
+    }
+    #attSumToolbar {
+      flex-shrink:0;
+      position:relative;
+      z-index:5;
+      box-shadow:0 2px 6px rgba(0,0,0,.05);
+    }
+  }
   @media (max-width:700px) {
     body { padding-top:50px; }
     .bar-ctrl { display:none !important; }
@@ -148,11 +173,11 @@ function loadJsPDF()       { return loadScript('https://cdnjs.cloudflare.com/aja
 <!-- 출퇴근 집계 모드 -->
 <div id="attendSummaryPage" class="attend-summary-area" style="display:none;">
   <div class="attend-overlay attend-fullscreen" id="attendSummaryOverlay">
-    <div class="attend-modal" id="attendSumModal" style="max-width:100%;width:100%;height:100%;max-height:100%;border-radius:0;box-shadow:none;">
+    <div class="attend-modal" id="attendSumModal" style="max-width:100%;width:100%;height:100%;max-height:100%;min-height:0;border-radius:0;box-shadow:none;">
       <div class="attend-hdr">
         <h2>📊 <span data-i18n="att_sum_title">출퇴근 집계</span></h2>
       </div>
-      <div style="display:flex;flex-direction:column;gap:8px;padding:10px 16px 0 16px;background:#f8fafc;">
+      <div id="attSumToolbar" style="display:flex;flex-direction:column;gap:8px;padding:10px 16px 0 16px;background:#f8fafc;flex-shrink:0;">
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <select id="asSMonthFilter" onchange="_asMonthFilterChange(this.value)" style="padding:10px 8px;border:1.5px solid #2563eb;border-radius:8px;font-size:13px;height:40px;font-weight:700;color:#2563eb;cursor:pointer;min-width:120px;background:#eff6ff;">
             <option value="">월 선택</option>
@@ -181,7 +206,7 @@ function loadJsPDF()       { return loadScript('https://cdnjs.cloudflare.com/aja
           </label>
         </div>
       </div>
-      <div id="attendSummaryBody" style="padding:8px 12px;overflow-y:auto;flex:1;">
+      <div id="attendSummaryBody" style="padding:8px 12px;overflow-y:auto;flex:1;min-height:0;">
         <div style="text-align:center;color:#9ca3af;padding:40px 0;" data-i18n="att_sum_placeholder">조회 버튼을 눌러주세요.</div>
       </div>
     </div>
@@ -238,7 +263,7 @@ function loadJsPDF()       { return loadScript('https://cdnjs.cloudflare.com/aja
 <div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:9999999;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
 
 <!-- lang.js -->
-<script src="lang.min.js?v=168"></script>
+<script src="lang.min.js?v=171"></script>
 <!-- 공용 상단 헤더 모듈 -->
 <script src="page-header.js?v=1"></script>
 <script>
@@ -300,12 +325,16 @@ function _asSumMinimize() {
   document.getElementById('attendSummaryPage').style.display = 'none';
   document.querySelector('.attend-top-bar').style.display = 'none';
   document.getElementById('attendMiniBar').classList.add('show');
+  // 미니바 상태에선 페이지 스크롤 잠금 해제
+  document.body.classList.remove('summary-active');
 }
 function _asSumRestore() {
   document.getElementById('attendMiniBar').classList.remove('show');
   var bar = document.querySelector('.attend-top-bar');
   bar.style.display = '';
   document.getElementById('attendSummaryPage').style.display = 'flex';
+  // 다시 풀스크린 진입 → body 잠금 복원
+  document.body.classList.add('summary-active');
   // 최대화 상태로 복원
   _asSumIsFS = true;
   document.getElementById('attendSummaryPage').classList.remove('restored');
@@ -444,7 +473,7 @@ async function apiGetAccounts() {
 }
 </script>
 <!-- attendance.js -->
-<script src="attendance.min.js?v=170"></script>
+<script src="attendance.min.js?v=173"></script>
 <script>
 (function() {
   var params = new URLSearchParams(location.search);
@@ -455,6 +484,9 @@ async function apiGetAccounts() {
 
   if (mode === 'summary') {
     document.getElementById('attendSummaryPage').style.display = 'flex';
+    // 데스크탑에서 검색바 틀고정용: body 를 viewport 에 묶어 페이지 스크롤 방지.
+    // (모바일은 padding-top:50px 로 다른 동작 — 적용 X. CSS @media 에서 분기)
+    document.body.classList.add('summary-active');
     var isMobile = window.innerWidth <= 700;
     if (!isMobile) {
       document.getElementById('barCtrlBtns').style.display = 'flex';

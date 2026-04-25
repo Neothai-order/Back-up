@@ -1132,6 +1132,43 @@ function _calcAttendDistances() {
 
 // ── 출퇴근 집계 ─────────────────────────────────────────────────────────────
 // ── 출퇴근 집계 엑셀 다운로드 ──
+// ── 위치 문자열 클린업 (Open Location Code + 선두 시간 제거) ──
+function _attCleanLocation(s) {
+  if (!s || s === '-') return '';
+  // 선두 "HH:MM" 또는 "HH:MM:SS" 제거
+  s = s.replace(/^\s*\d{1,2}:\d{2}(?::\d{2})?\s*/, '');
+  // Plus Code (Open Location Code): 알파벳 셋 [23456789CFGHJMPQRVWX] 사용. 예: 2MCP+MRV / 2M9Q+F46
+  s = s.replace(/\b[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}\b/g, '');
+  return s.replace(/\s+/g, ' ').trim();
+}
+// ── 거리 셀 클린업 ("41.6 km40분" → "41.6 km") ──
+function _attCleanDistance(s) {
+  if (!s || s === '-') return '';
+  var m = s.match(/^\s*([\d.,]+\s*km)/i);
+  if (m) return m[1].trim();
+  // fallback: 분/min/시 등 시간 단위 제거
+  return s.replace(/\d+\s*(분|min|m\b|시간|hour|h\b)/gi, '').trim();
+}
+// ── 점심시간(12:00-13:00) 공제 + "Xh Ym" 형식 ──
+function _attCalcWorkHoursWithLunch(inHM, outHM) {
+  if (!inHM || !outHM || inHM === '-' || outHM === '-') return '-';
+  var ip = inHM.split(':'), op = outHM.split(':');
+  if (ip.length < 2 || op.length < 2) return '-';
+  var inMin = parseInt(ip[0],10) * 60 + parseInt(ip[1],10);
+  var outMin = parseInt(op[0],10) * 60 + parseInt(op[1],10);
+  if (isNaN(inMin) || isNaN(outMin)) return '-';
+  var diff = outMin - inMin;
+  if (diff <= 0) return '-';
+  // 점심시간 [12:00, 13:00] ∩ [in, out] = 공제할 분
+  var overlap = Math.max(0, Math.min(outMin, 13*60) - Math.max(inMin, 12*60));
+  diff -= overlap;
+  if (diff <= 0) return '0' + (typeof t === 'function' ? t('att_hours_h') : 'h');
+  var h = Math.floor(diff / 60), m = diff % 60;
+  var hSuf = (typeof t === 'function' ? t('att_hours_h') : 'h');
+  var mSuf = (typeof t === 'function' ? t('att_hours_m') : 'm');
+  return h + hSuf + (m > 0 ? ' ' + m + mSuf : '');
+}
+
 function exportAttendanceExcel() {
   var body = document.getElementById('attendSummaryBody');
   if (!body || !body.querySelector('table')) { neoAlert(t('att_excel_search_first')); return; }
@@ -1142,32 +1179,59 @@ function exportAttendanceExcel() {
   if (!_anyChecked.length) { neoAlert(t('att_pdf_no_check')); return; }
 
   var wb = XLSX.utils.book_new();
-  // 테이블 데이터 수집 (직원별 카드)
-  var cards = body.querySelectorAll('div[style*="border:1px solid"]');
+  // ── 헤더: request 시트 형식 (10열) ──
+  // Employee ID | Name | Date | Clock In | Clock Out | Work Hours | Work Details | Distance | Location (depart) | Location (Return)
   var allRows = [];
-  allRows.push([t('att_excel_name'), t('att_excel_empid'), t('att_excel_dept'), t('att_excel_date'), t('att_excel_in'), t('att_excel_out'), t('att_excel_hours'), t('att_excel_loc'), t('att_excel_dist'), t('att_excel_work')]);
+  allRows.push([
+    t('att_excel_empid'), t('att_excel_name'), t('att_excel_date'),
+    t('att_excel_in'), t('att_excel_out'), t('att_excel_hours'),
+    t('att_excel_work'), t('att_excel_dist'),
+    t('att_excel_loc_depart'), t('att_excel_loc_return')
+  ]);
 
+  var cards = body.querySelectorAll('div[style*="border:1px solid"]');
   cards.forEach(function(card) {
-    // 헤더에서 이름, 사번, 부서 추출
     var hdr = card.querySelector('strong');
-    var sub = card.querySelector('span[style*="color:#6b7280"]');
-    var name = hdr ? hdr.textContent : '';
-    var subText = sub ? sub.textContent : '';
-    var empid = '', dept = '';
-    var subMatch = subText.match(/([A-Z]\d+)/);
-    if (subMatch) empid = subMatch[1];
-    if (subText.indexOf('·') !== -1) dept = subText.split('·')[1].trim();
-
+    var cardName = hdr ? hdr.textContent.trim() : '';
     var rows = card.querySelectorAll('tbody tr');
     rows.forEach(function(tr) {
-      // 체크박스 미체크 시 skip
       var cb = tr.querySelector('.as-row-cb');
       if (!cb || !cb.checked) return;
+      var d = cb.dataset || {};
+      var empid = d.emp || '';
+      var rowName = d.empname || cardName || '';
+      var date = d.date || '';
+      // data-in / data-out 은 'HH:MM' 또는 'HH:MM:SS'. 5글자 슬라이스로 HH:MM 만.
+      var clockIn = (d.in || '').slice(0, 5);
+      var clockOut = (d.out || '').slice(0, 5);
+      var hoursLunch = _attCalcWorkHoursWithLunch(clockIn, clockOut);
+      var work = d.work || '';
+
+      // depart/return 풀주소는 셀의 title 속성에 있음 (textContent 는 시간+amphoe province 만)
       var cells = tr.querySelectorAll('td');
-      if (cells.length < 7) return;
-      var row = [name, empid, dept];
-      cells.forEach(function(td) { row.push(td.textContent.trim()); });
-      allRows.push(row);
+      // 셀 인덱스: [0]=cb [1]=date [2]=in [3]=out [4]=hours [5]=work [6]=depart [7]=return [8]=distance [9]=map
+      var departAddr = '', returnAddr = '', distance = '';
+      if (cells.length >= 10) {
+        departAddr = (cells[6].getAttribute('title') || '').trim();
+        returnAddr = (cells[7].getAttribute('title') || '').trim();
+        distance = (cells[8].textContent || '').trim();
+      } else if (cells.length >= 7) {
+        // 모바일: depart/return 셀 없음. distance 는 끝에서 두번째.
+        distance = (cells[cells.length - 2].textContent || '').trim();
+      }
+
+      allRows.push([
+        empid,
+        rowName,
+        date,
+        clockIn || '-',
+        clockOut || '-',
+        hoursLunch,
+        work,
+        _attCleanDistance(distance),
+        _attCleanLocation(departAddr),
+        _attCleanLocation(returnAddr)
+      ]);
     });
   });
 
@@ -1990,6 +2054,30 @@ async function pdfPreviewEmail() {
   }
 }
 
+// sub_dept(부서) 한글 원본값 → lang.js i18n 키 매핑
+// (core.js 의 SUB_DEPT_OPTIONS 와 동일하지만 attend.html 은 core.js 미로드 → 별도 정의)
+var _ATT_SUB_DEPT_I18N = {
+  'Group Leader': 'sub_dept_group_leader',
+  '방콕': 'sub_dept_bangkok',
+  '북부': 'sub_dept_north',
+  '북동부': 'sub_dept_northeast',
+  '동부': 'sub_dept_east',
+  '남부': 'sub_dept_south',
+  'CT': 'sub_dept_ct',
+  '재무': 'sub_dept_finance',
+  '영업관리': 'sub_dept_sales_mgmt',
+  '마케팅': 'sub_dept_marketing',
+  '물류': 'sub_dept_logistics',
+  '인사': 'sub_dept_hr',
+  '기획': 'sub_dept_planning',
+  '장비': 'sub_dept_equipment'
+};
+function _attTranslateSubDept(val) {
+  if (!val) return '';
+  var key = _ATT_SUB_DEPT_I18N[val];
+  return (key && typeof t === 'function' ? t(key) : '') || val;
+}
+
 async function _loadAttendEmpFilter(mode) {
   var sel = document.getElementById('asSEmpFilter');
   var deptSel = document.getElementById('asSDeptFilter');
@@ -2050,14 +2138,17 @@ async function _loadAttendEmpFilter(mode) {
         }
       });
     }
-    // 부서(sub_dept) 필터 채우기
+    // 부서(sub_dept) 필터 채우기 — i18n 키 부여 → applyLang() 시 자동 갱신
     if (subDeptSel && mode !== 'team' && mode !== 'subteam') {
-      subDeptSel.innerHTML = '<option value="">' + t('att_sum_all_dept') + '</option>';
+      var _allDeptOpt = '<option value="" data-i18n="att_sum_all_dept">' + t('att_sum_all_dept') + '</option>';
+      subDeptSel.innerHTML = _allDeptOpt;
       var _subDeptKeys = Object.keys(subDepts).sort();
       _subDeptKeys.forEach(function(sd) {
         var opt = document.createElement('option');
         opt.value = sd;
-        opt.textContent = sd;
+        opt.textContent = _attTranslateSubDept(sd);
+        var _key = _ATT_SUB_DEPT_I18N[sd];
+        if (_key) opt.dataset.i18n = _key; // applyLang 호출 시 자동 재번역
         opt.dataset.dept = subDepts[sd];
         subDeptSel.appendChild(opt);
       });

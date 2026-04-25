@@ -2244,7 +2244,12 @@ function neoAlert(msg) {
   } else {
     el.textContent = msg;
   }
-  document.getElementById('neoAlertOverlay').classList.add('open');
+  var _ov = document.getElementById('neoAlertOverlay');
+  _ov.classList.add('open');
+  // ⬆️ z-index 강제: 패키지 빌더가 max int32 !important 로 점유하고 있어 동률에서 DOM 순서로 밀림.
+  //    setTimeout 으로 _bringToFront MutationObserver 의 inline 덮어쓰기 이후 다시 강제.
+  _ov.style.setProperty('z-index', '2147483647', 'important');
+  setTimeout(function(){ _ov.style.setProperty('z-index', '2147483647', 'important'); }, 0);
 }
 function closeNeoAlert() {
   document.getElementById('neoAlertOverlay').classList.remove('open');

@@ -47,7 +47,9 @@ var _vsI18n = {
   vs_no_logs_for_date: {ko:'해당 날짜의 방문 기록이 없습니다',en:'No visit logs for this date',th:'ไม่มีบันทึกการเยี่ยมสำหรับวันนี้'},
   vs_purpose_label: {ko:'목적',en:'Purpose',th:'วัตถุประสงค์'},
   vs_result_label: {ko:'결과',en:'Result',th:'ผลลัพธ์'},
-  vs_next_action: {ko:'후속조치',en:'Next Action',th:'การดำเนินการต่อ'}
+  vs_next_action: {ko:'후속조치',en:'Next Action',th:'การดำเนินการต่อ'},
+  vs_unreg_cust: {ko:'미등록 고객',en:'Unregistered',th:'ลูกค้าใหม่ (ยังไม่ลงทะเบียน)'},
+  vs_unreg_name_ph: {ko:'고객명 직접 입력',en:'Type customer name',th:'พิมพ์ชื่อลูกค้า'}
 };
 
 var _visitTypeLabels = {
@@ -575,6 +577,9 @@ function openNewModal() {
   document.getElementById('vsCustSearchWrap').style.display = '';
   document.getElementById('vsCustCard').classList.remove('show');
   document.getElementById('vsAcDropdown').classList.remove('show');
+  // 미등록 체크박스 초기화
+  var uchk = document.getElementById('fUnregCust');
+  if (uchk) { uchk.checked = false; _vsToggleUnregCust(false); }
   document.getElementById('vsFormModal').classList.add('show');
 }
 
@@ -592,13 +597,22 @@ function editSchedule(docId) {
   document.getElementById('fErp').value = s.customer_erp || '';
   document.getElementById('fCustName').value = s.customer_name || '';
   document.getElementById('fAddress').value = s.address || '';
-  if (s.customer_erp || s.customer_name) {
-    document.getElementById('vsCcErp').textContent = s.customer_erp ? '[' + s.customer_erp + ']' : '';
+  var uchk = document.getElementById('fUnregCust');
+  // ERP 가 있으면 등록 고객(카드 표시), 없고 이름만 있으면 미등록 고객(직접 입력 모드)
+  if (s.customer_erp) {
+    if (uchk) { uchk.checked = false; _vsToggleUnregCust(false); }
+    document.getElementById('vsCcErp').textContent = '[' + s.customer_erp + ']';
     document.getElementById('vsCcName').textContent = s.customer_name || '';
     document.getElementById('vsCcSub').textContent = '';
     document.getElementById('vsCustSearchWrap').style.display = 'none';
     document.getElementById('vsCustCard').classList.add('show');
+  } else if (s.customer_name) {
+    if (uchk) { uchk.checked = true; _vsToggleUnregCust(true); }
+    document.getElementById('fCustomer').value = s.customer_name;
+    document.getElementById('vsCustSearchWrap').style.display = '';
+    document.getElementById('vsCustCard').classList.remove('show');
   } else {
+    if (uchk) { uchk.checked = false; _vsToggleUnregCust(false); }
     document.getElementById('fCustomer').value = '';
     document.getElementById('vsCustSearchWrap').style.display = '';
     document.getElementById('vsCustCard').classList.remove('show');
@@ -612,11 +626,18 @@ function editSchedule(docId) {
 
 function saveSchedule() {
   var docId = document.getElementById('editDocId').value;
+  // 미등록 고객 모드: fCustomer (검색창) 의 텍스트가 곧 customer_name. ERP 는 비움.
+  var unreg = document.getElementById('fUnregCust') && document.getElementById('fUnregCust').checked;
+  var custErp = unreg ? '' : (document.getElementById('fErp').value || '').trim();
+  var custName = unreg
+    ? (document.getElementById('fCustomer').value || '').trim()
+    : (document.getElementById('fCustName').value || '').trim();
   var data = {
     date: document.getElementById('fDate').value,
     time: document.getElementById('fTime').value,
-    customer_erp: document.getElementById('fErp').value.trim(),
-    customer_name: document.getElementById('fCustName').value.trim(),
+    customer_erp: custErp,
+    customer_name: custName,
+    is_unregistered: !!unreg,
     address: document.getElementById('fAddress').value.trim(),
     visit_type: document.getElementById('fType').value,
     priority: document.getElementById('fPriority').value,
@@ -720,14 +741,37 @@ function confirmPostpone() {
 }
 
 // ── Autocomplete (uses global DATA array from core.js) ──────────────────────
+// dropdown 은 #vsCustSearchWrap (position:relative) 안에 position:absolute 로 들어감.
+// → 입력창에 자연히 붙어 따라 움직임 — JS 위치 계산 불필요.
+// 단, 아래 공간이 부족하면 위로 뒤집어 띄움.
 function _vsPositionAC() {
   var inp = document.getElementById('fCustomer');
   var dd = document.getElementById('vsAcDropdown');
   if (!inp || !dd) return;
   var rect = inp.getBoundingClientRect();
-  dd.style.top = rect.bottom + 'px';
-  dd.style.left = rect.left + 'px';
-  dd.style.width = rect.width + 'px';
+  var ddH = dd.offsetHeight || 240; // 펼쳐진 실제 높이
+  var vh = window.innerHeight || document.documentElement.clientHeight;
+  var spaceBelow = vh - rect.bottom;
+  var spaceAbove = rect.top;
+  var GAP = 4;
+
+  if ((spaceBelow < ddH + 8) && (spaceAbove > spaceBelow)) {
+    // 위로
+    dd.style.top = 'auto';
+    dd.style.bottom = '100%';
+    dd.style.marginTop = '0';
+    dd.style.marginBottom = GAP + 'px';
+    dd.style.maxHeight = Math.min(240, spaceAbove - GAP - 8) + 'px';
+    dd.style.borderRadius = '10px 10px 0 0';
+  } else {
+    // 아래 (기본)
+    dd.style.top = '100%';
+    dd.style.bottom = 'auto';
+    dd.style.marginTop = GAP + 'px';
+    dd.style.marginBottom = '0';
+    dd.style.maxHeight = Math.min(240, spaceBelow - GAP - 8) + 'px';
+    dd.style.borderRadius = '0 0 10px 10px';
+  }
 }
 
 function _vsSelectCust(c) {
@@ -752,6 +796,31 @@ function _vsClearCust() {
   document.getElementById('fCustomer').focus();
 }
 
+// ── 미등록 고객 토글 — 체크 시 검색·자동완성 끄고 직접 입력 모드 ──
+function _vsToggleUnregCust(checked) {
+  var inp = document.getElementById('fCustomer');
+  var dd = document.getElementById('vsAcDropdown');
+  var card = document.getElementById('vsCustCard');
+  var wrap = document.getElementById('vsCustSearchWrap');
+  if (!inp) return;
+  if (checked) {
+    // 직접 입력 모드: ERP 클리어, 카드 숨김, 검색 입력창은 사용 (자동완성만 차단)
+    document.getElementById('fErp').value = '';
+    if (card) card.classList.remove('show');
+    if (wrap) wrap.style.display = '';
+    if (dd) dd.classList.remove('show');
+    inp.value = '';
+    inp.placeholder = _vst('vs_unreg_name_ph');
+    inp.dataset.unreg = '1';
+    inp.focus();
+  } else {
+    inp.placeholder = _vst('vs_customer_search_ph');
+    delete inp.dataset.unreg;
+    inp.value = '';
+    if (dd) dd.classList.remove('show');
+  }
+}
+
 // Expose as global aliases for onclick handlers in HTML
 var selectCust = _vsSelectCust;
 var clearCust = _vsClearCust;
@@ -762,11 +831,28 @@ function _vsSetupAC() {
   var dd = document.getElementById('vsAcDropdown');
   if (!custIn || !dd) return;
   var timer;
+  var _vsAcMatches = []; // 현재 노출된 매치 배열 (키보드 select 용)
+  var _vsAcActive = -1;  // 현재 강조된 인덱스 (-1 = none)
+
+  function _vsAcUpdateActive() {
+    var items = dd.querySelectorAll('.ac-item');
+    items.forEach(function(el, i) {
+      if (i === _vsAcActive) {
+        el.style.background = '#e0f2fe';
+        el.scrollIntoView({ block: 'nearest' });
+      } else {
+        el.style.background = '';
+      }
+    });
+  }
+
   custIn.addEventListener('input', function() {
+    // 미등록 고객 모드 → 자동완성 OFF, 입력창은 그대로 customer_name 입력으로 사용
+    if (custIn.dataset.unreg === '1') { dd.classList.remove('show'); return; }
     clearTimeout(timer);
     timer = setTimeout(function() {
       var q = custIn.value.trim().toLowerCase();
-      if (!q) { dd.classList.remove('show'); return; }
+      if (!q) { dd.classList.remove('show'); _vsAcMatches = []; _vsAcActive = -1; return; }
       var qNoSpace = q.replace(/\s+/g, '');
       var qIsNum = /^\d+$/.test(q);
       // Search global DATA array (fields: erp, nt_code, name_th, name_en, cust_name, clinic, address, province)
@@ -778,6 +864,8 @@ function _vsSetupAC() {
         if (qIsNum && c.nt_code && c.nt_code.toLowerCase().replace(/^nt/i, '').indexOf(q) >= 0) return true;
         return false;
       }).slice(0, 10);
+      _vsAcMatches = matches;
+      _vsAcActive = -1;
       if (!matches.length) { dd.classList.remove('show'); return; }
       dd.innerHTML = matches.map(function(c) {
         var erpStr = c.erp ? '[' + _vsEsc(c.erp) + '] ' : '';
@@ -792,15 +880,44 @@ function _vsSetupAC() {
       }).join('');
       dd.querySelectorAll('.ac-item').forEach(function(el, i) {
         el.onclick = function(e) { e.stopPropagation(); _vsSelectCust(matches[i]); };
+        el.addEventListener('mouseenter', function() { _vsAcActive = i; _vsAcUpdateActive(); });
       });
       _vsPositionAC();
       dd.classList.add('show');
     }, 150);
   });
 
-  // reposition on modal scroll
+  // ── 키보드 ──  ↑↓ 이동 / Enter 선택 / Esc 닫기 / Tab 닫기
+  custIn.addEventListener('keydown', function(e) {
+    if (custIn.dataset.unreg === '1') return; // 직접 입력 모드는 키보드 nav 비활성
+    var open = dd.classList.contains('show') && _vsAcMatches.length > 0;
+    if (!open) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      _vsAcActive = (_vsAcActive + 1) % _vsAcMatches.length;
+      _vsAcUpdateActive();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      _vsAcActive = (_vsAcActive - 1 + _vsAcMatches.length) % _vsAcMatches.length;
+      _vsAcUpdateActive();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      var pick = _vsAcActive >= 0 ? _vsAcMatches[_vsAcActive] : _vsAcMatches[0];
+      if (pick) _vsSelectCust(pick);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      dd.classList.remove('show');
+      _vsAcActive = -1;
+    } else if (e.key === 'Tab') {
+      dd.classList.remove('show');
+    }
+  });
+
+  // reposition on modal scroll + 윈도우 스크롤/리사이즈 (모바일 키보드 push, 페이지 스크롤 등 대응)
   var mb = document.querySelector('#vsFormModal .vs-modal-body');
-  if (mb) mb.addEventListener('scroll', function() { if (dd.classList.contains('show')) _vsPositionAC(); });
+  if (mb) mb.addEventListener('scroll', function() { if (dd.classList.contains('show')) _vsPositionAC(); }, { passive: true });
+  window.addEventListener('scroll', function() { if (dd.classList.contains('show')) _vsPositionAC(); }, { passive: true });
+  window.addEventListener('resize', function() { if (dd.classList.contains('show')) _vsPositionAC(); });
 
   document.addEventListener('click', function(e) {
     if (!e.target.closest('#vsCustSearchWrap') && !e.target.closest('#vsAcDropdown')) {

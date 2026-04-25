@@ -60,6 +60,13 @@ function openOrderForm() {
   _oOv.classList.add('open');
   _mobFullScreen(_oOv, _oOv.querySelector('.order-modal'));
   _bringToFront(_oOv);
+  // 데스크탑: 기본 최대화 상태로 열기
+  var _oMod = document.getElementById('orderModal');
+  if (_oMod && window.innerWidth > 1024 && !_oMod.classList.contains('fullscreen')) {
+    var _fsBtn = _oMod.querySelector('.modal-btn-fs');
+    if (typeof toggleModalFullscreen === 'function') toggleModalFullscreen(_oMod, _fsBtn);
+    else _oMod.classList.add('fullscreen');
+  }
   // 모바일 하단 네비 숨기기 (화면 짤림 방지)
   var mobNav = document.getElementById('mobileBottomNav');
   if (mobNav) mobNav.style.display = 'none';
@@ -1951,6 +1958,13 @@ function openQuoteForm() {
   _qOv.classList.add('open');
   _mobFullScreen(_qOv, _qOv.querySelector('.quote-modal'));
   _bringToFront(_qOv);
+  // 데스크탑: 기본 최대화 상태로 열기
+  var _qMod = document.getElementById('quoteModal');
+  if (_qMod && window.innerWidth > 1024 && !_qMod.classList.contains('fullscreen')) {
+    var _qFsBtn = _qMod.querySelector('.modal-btn-fs');
+    if (typeof toggleModalFullscreen === 'function') toggleModalFullscreen(_qMod, _qFsBtn);
+    else _qMod.classList.add('fullscreen');
+  }
   // 모달 내부 스크롤을 최상단으로 리셋
   var _qBody = document.querySelector('#quoteModal .quote-body');
   if (_qBody) _qBody.scrollTop = 0;
@@ -6667,10 +6681,12 @@ function _renderPkgRight() {
   var builderEl = document.getElementById('pkgBuilder');
   if (remainEl) remainEl.textContent = '';
   if (badge) badge.textContent = _pkgOrderItems.length;
-  var emptyHtml = '<div class="pkg-right-empty">' + t('pkg_empty') + '</div>';
+  // 빈 상태: pkg-right-empty 텍스트 대신 비워두고 ::after 가 회색 행으로 채우도록 — 처음부터 슬롯 표시
+  // (모바일 슬라이드 패널은 가이드가 필요해 텍스트 유지)
+  var emptyMobHtml = '<div class="pkg-right-empty">' + t('pkg_empty') + '</div>';
   if (!_pkgOrderItems.length) {
-    if (listEl) listEl.innerHTML = emptyHtml;
-    if (slideEl) slideEl.innerHTML = emptyHtml;
+    if (listEl) listEl.innerHTML = '';
+    if (slideEl) slideEl.innerHTML = emptyMobHtml;
     if (ov1ListEl) ov1ListEl.innerHTML = '';
     if (ov2ListEl) ov2ListEl.innerHTML = '';
     if (builderEl) builderEl.classList.remove('pkg-has-ov-1','pkg-has-ov-2');

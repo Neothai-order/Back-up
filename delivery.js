@@ -520,6 +520,8 @@ function _bringToFront(el) {
       // pkg-overlay, cat-slide는 별도 관리
       if (cn.indexOf('pkg-overlay') !== -1) return;
       if (cn.indexOf('cat-slide') !== -1 || cn.indexOf('qt-confirm') !== -1) return;
+      // neo-alert(다이얼로그)는 항상 최상위 — _bringToFront 의 inline z-index 덮어쓰기 금지
+      if (cn.indexOf('neo-alert-overlay') !== -1) return;
       if ((cn.indexOf('overlay') !== -1 || cn.indexOf('Overlay') !== -1 || cn.indexOf('modal') !== -1) &&
           (el.classList.contains('open') || el.classList.contains('show'))) {
         _bringToFront(el);

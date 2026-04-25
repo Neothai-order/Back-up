@@ -82,13 +82,14 @@ if ('serviceWorker' in navigator) {
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-functions-compat.js"></script>
 <meta name="theme-color" content="#1e40af">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Neo Sales App">
-<link rel="stylesheet" href="style.min.css?v=236">
+<link rel="stylesheet" href="style.min.css?v=238">
 <!-- XLSX (xlsx-js-style — 스타일 지원 통합본, xlsx.full.min.js 대체) -->
 <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <!-- Google Maps Places -->
-<script defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw&libraries=places,geometry&callback=_initGooglePlaces"></script>
+<script defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw&libraries=places,geometry&loading=async&callback=_initGooglePlaces"></script>
 <!-- 아래 라이브러리는 필요 시 동적 로드 (초기 로딩 속도 개선) -->
 <script>
 // ══ Lazy-load helper ══
@@ -1321,10 +1322,10 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
 
 
 <!-- ══ Separated JS Modules ══ -->
-<script src="lang.min.js?v=170"></script>
-<script src="customer.min.js?v=173"></script>
-<script src="order.min.js?v=178"></script>
-<script src="delivery.min.js?v=165"></script>
+<script src="lang.min.js?v=171"></script>
+<script src="customer.min.js?v=174"></script>
+<script src="order.min.js?v=180"></script>
+<script src="delivery.min.js?v=166"></script>
 <script src="extra.min.js?v=159"></script>
 <script src="account.min.js?v=184"></script>
 <script src="sync_monitor.min.js?v=4"></script>
@@ -2331,7 +2332,7 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
   </div>
 </div>
 
-<script src="attendance.min.js?v=171"></script>
+<script src="attendance.min.js?v=173"></script>
 <script src="expense.min.js?v=9"></script>
 
 <!-- ══════════════════════════════════════════
@@ -3626,7 +3627,7 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
 .vs-postpone-modal.show{display:block;}
 .vs-list-group-date{font-size:13px;font-weight:700;color:#0891b2;padding:8px 0 4px;border-bottom:1px solid #e2e8f0;margin-top:12px;}
 .vs-list-group-date:first-child{margin-top:0;}
-@media(min-width:601px){.vs-overlay{top:var(--vs-header-offset,0px);}}
+@media(min-width:601px){.vs-overlay{top:var(--vs-header-offset,0px);}.vs-modal-overlay{top:var(--vs-header-offset,0px);}}
 @media(max-width:600px){.vs-cal-cell{height:44px;padding-top:4px;padding-bottom:4px;}.vs-cal-cell .day-num-wrap{width:30px;height:30px;}.vs-cal-cell .day-num{font-size:13px;}.vs-cal-cell .holiday-bar,.vs-cal-cell .sched-bar{height:2px;}.vs-day-detail-header .day-big{font-size:28px;}.vs-form-row{grid-template-columns:1fr;}.vs-container{padding:8px;}}
 </style>
 
@@ -3688,8 +3689,14 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
           <div class="vs-form-group"><label data-t="vs_time">시간</label><input type="time" id="fTime"></div>
         </div>
         <div class="vs-form-group">
-          <label data-t="vs_customer">고객</label>
-          <div id="vsCustSearchWrap"><input type="text" id="fCustomer" data-t-ph="vs_customer_search_ph" placeholder="ERP 코드 또는 고객명 검색" autocomplete="off"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px;">
+            <label data-t="vs_customer" style="margin:0;">고객</label>
+            <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#475569;cursor:pointer;font-weight:500;">
+              <input type="checkbox" id="fUnregCust" onchange="_vsToggleUnregCust(this.checked)" style="width:14px;height:14px;cursor:pointer;accent-color:#0891b2;">
+              <span data-t="vs_unreg_cust">미등록 고객</span>
+            </label>
+          </div>
+          <div id="vsCustSearchWrap" style="position:relative;"><input type="text" id="fCustomer" data-t-ph="vs_customer_search_ph" placeholder="ERP 코드 또는 고객명 검색" autocomplete="off"><div class="vs-ac-dropdown" id="vsAcDropdown" style="position:absolute;top:100%;left:0;right:0;width:auto;margin-top:4px;"></div></div>
           <div class="vs-cust-card" id="vsCustCard">
             <div class="cc-info"><span class="cc-erp" id="vsCcErp"></span><div class="cc-name" id="vsCcName"></div><div class="cc-sub" id="vsCcSub"></div></div>
             <button class="cc-clear" onclick="clearCust()" data-t-title="vs_change" title="변경">&#x2715;</button>
@@ -3723,11 +3730,10 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
       <button class="btn vs-btn-primary vs-btn-sm" onclick="confirmPostpone()" data-t="vs_save">확인</button>
     </div>
   </div>
-  <div class="vs-ac-dropdown" id="vsAcDropdown"></div>
   <div class="vs-toast" id="vsToast"></div>
 </div><!-- /vs-scroll-body -->
 </div><!-- /vs-overlay -->
-<script src="schedule.js?v=5"></script>
+<script src="schedule.js?v=8"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════
      일일 업무 보고 (Daily Report) Overlay

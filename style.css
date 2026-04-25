@@ -2596,10 +2596,12 @@
 /* 최대화 + 오버플로우 공존 시에도 모달 전체 100vw 유지 */
 .pkg-builder.pkg-fs.pkg-has-ov-1,
 .pkg-builder.pkg-fs.pkg-has-ov-2{width:100%!important;max-width:100%!important;}
-/* pkg-left: 최대화 시 화면의 약 60% 차지 (폼이 넓게 보이도록). 단 확장컬럼 열릴 때는 제외 */
-.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-left{flex:0 1 auto!important;width:60vw!important;max-width:1100px!important;min-width:460px!important;}
-/* pkg-right: 나머지 40% 영역 사용 */
-.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-right{flex:1 1 auto!important;width:auto!important;min-width:260px!important;max-width:none!important;}
+/* pkg-left: 최대화 시 폼 폭에 맞춰 컴팩트하게 (Order List 가 Add 버튼 옆에 바로 붙도록) */
+.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-left{flex:0 0 auto!important;width:600px!important;max-width:600px!important;min-width:460px!important;}
+/* pkg-right: 폼 옆 고정 폭 (~320px) — 빈 회색 행이 list area 채움 */
+.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-right{flex:0 0 auto!important;width:320px!important;min-width:280px!important;max-width:340px!important;}
+/* 최대화 시 builder 자체도 컴팩트: 600 + 320 + 약간 padding ≒ 940px */
+.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2){width:min(940px,calc(100vw - 16px))!important;max-width:min(940px,calc(100vw - 16px))!important;}
 /* 최대화 + 확장컬럼 1칸: pkg-left는 남는 공간 모두, pkg-right는 380px 유지 */
 .pkg-builder.pkg-fs.pkg-has-ov-1 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:460px!important;}
 .pkg-builder.pkg-fs.pkg-has-ov-2 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:460px!important;}
@@ -5378,7 +5380,8 @@ body.force-tablet .cards-grid { grid-template-columns: 1fr 1fr !important; gap: 
 }
 
 /* ── 커스텀 알림 다이얼로그 ── */
-.neo-alert-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99999;align-items:center;justify-content:center;}
+/* z-index: 다른 모든 모달/오버레이 위에 표시 — 패키지 빌더(9910), 페이지 오버레이(9000) 등 모두 위로 */
+.neo-alert-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:2147483647;align-items:center;justify-content:center;}
 .neo-alert-overlay.open{display:flex;}
 .neo-alert-box{background:#fff;border-radius:14px;width:340px;max-width:90vw;box-shadow:0 12px 40px rgba(0,0,0,.25);overflow:hidden;animation:modalPopIn .25s ease-out;}
 .neo-alert-hdr{background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;padding:12px 18px;font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px;}

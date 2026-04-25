@@ -6300,9 +6300,10 @@ function openPkgBuilder(node) {
     pkgOverlay.style.cssText = '';
     pkgOverlay.classList.add('open');
     pkgEl.classList.add('open');
-    pkgEl.classList.remove('pkg-fs');
+    // [2026-04-25] 데스크탑 기본 = 풀스크린(pkg-fs). 사용자가 ☐ 클릭 시 복원
+    pkgEl.classList.add('pkg-fs');
     var fsBtn = document.getElementById('pkgFsBtn');
-    if (fsBtn) fsBtn.textContent = '☐';
+    if (fsBtn) fsBtn.textContent = '⛶'; // 복원 아이콘 (= "restore" — 다시 누르면 작아짐)
   }
   _bringToFront(pkgOverlay);
   _bringToFront(pkgEl);

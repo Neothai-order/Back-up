@@ -2606,12 +2606,13 @@
 /* 최대화 + 오버플로우 공존 시에도 모달 전체 100vw 유지 */
 .pkg-builder.pkg-fs.pkg-has-ov-1,
 .pkg-builder.pkg-fs.pkg-has-ov-2{width:100%!important;max-width:100%!important;}
-/* pkg-left: 최대화 시 폼 폭에 맞춰 컴팩트하게 (Order List 가 Add 버튼 옆에 바로 붙도록) */
+/* [2026-04-25] 풀스크린 = 진짜 풀스크린. pkg-left 폼 컴팩트(600), pkg-right Order List 1열(320).
+   Order List 가 가득 차면 ov1/ov2 컬럼이 좌측부터 차례로 추가되어 빈 공간을 채움. */
+.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2){width:calc(100vw - 16px)!important;max-width:calc(100vw - 16px)!important;}
 .pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-left{flex:0 0 auto!important;width:600px!important;max-width:600px!important;min-width:460px!important;}
-/* pkg-right: 폼 옆 고정 폭 (~320px) — 빈 회색 행이 list area 채움 */
 .pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-right{flex:0 0 auto!important;width:320px!important;min-width:280px!important;max-width:340px!important;}
-/* 최대화 시 builder 자체도 컴팩트: 600 + 320 + 약간 padding ≒ 940px */
-.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2){width:min(940px,calc(100vw - 16px))!important;max-width:min(940px,calc(100vw - 16px))!important;}
+/* pkg-body 의 빈 공간이 흰색으로 보이도록 (Order List 옆 우측 여백) */
+.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-body{justify-content:flex-start;}
 /* 최대화 + 확장컬럼 1칸: pkg-left는 남는 공간 모두, pkg-right는 380px 유지 */
 .pkg-builder.pkg-fs.pkg-has-ov-1 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:460px!important;}
 .pkg-builder.pkg-fs.pkg-has-ov-2 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:460px!important;}

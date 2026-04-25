@@ -5812,7 +5812,10 @@ function _isMobileView() {
 
 /* ── 모바일 전체화면 모달 (인라인 스타일 강제 적용) ── */
 function _mobFullScreen(ovEl, mEl) {
-  if (window.innerWidth > 1024 || !ovEl || !mEl) return;
+  if (!ovEl || !mEl) return;
+  // 견적/주문 모달은 데스크탑에서도 기본 풀스크린 (사용자 요청)
+  var _alwaysFS = ovEl.id === 'orderOverlay' || ovEl.id === 'quoteOverlay';
+  if (!_alwaysFS && window.innerWidth > 1024) return;
   ovEl.style.cssText += ';padding:0!important;align-items:stretch!important;overflow:hidden!important;';
   // 중간 래퍼(slide-wrap 등)도 전체화면 처리
   var wrap = mEl.parentElement;
@@ -6285,9 +6288,10 @@ function openPkgBuilder(node) {
     pkgOverlay.style.cssText = '';
     pkgOverlay.classList.add('open');
     pkgEl.classList.add('open');
-    pkgEl.classList.remove('pkg-fs');
+    // 데스크탑: 기본 풀스크린(pkg-fs) 으로 열기 — VW VH 100% (CSS 규칙 활용, body{zoom:0.9} 회피)
+    pkgEl.classList.add('pkg-fs');
     var fsBtn = document.getElementById('pkgFsBtn');
-    if (fsBtn) fsBtn.textContent = '☐';
+    if (fsBtn) fsBtn.textContent = '⛶';
   }
   _bringToFront(pkgOverlay);
   _bringToFront(pkgEl);
@@ -6676,18 +6680,10 @@ function _renderPkgRight() {
     if (builderEl) builderEl.classList.remove('pkg-has-ov-1','pkg-has-ov-2');
     return;
   }
-  // 오버플로우 판정 (데스크탑 + 1100px 이상) — 칸당 최대 개수는 실제 리스트 높이 기준으로 동적 계산
+  // 오버플로우 판정 (데스크탑 + 1100px 이상) — 한 패널당 13개 고정 (사용자 요청)
   // 아이템 1개 = height 40px + margin 4px = 44px (CSS: .pkg-right-list .pkg-right-item)
-  // 메인 리스트 높이를 측정해 "하단 마지막 행까지" 채우도록 함
   var PKG_ROW_H = 44;
-  var listHeight = (listEl && listEl.clientHeight) || 0;
-  // 리스트가 아직 렌더되지 않은 경우 대비: pkg-body 높이 - 헤더(약 36px) 추정
-  if (listHeight < 100) {
-    var pkgBodyEl = document.querySelector('.pkg-body');
-    if (pkgBodyEl) listHeight = Math.max(pkgBodyEl.clientHeight - 36, 0);
-  }
-  // 최소 8개는 보장 (이전 동작 호환), 실측 기반 상한으로 더 많이 허용
-  var PKG_COL_MAX = Math.max(8, Math.floor(listHeight / PKG_ROW_H));
+  var PKG_COL_MAX = 13;
   var canOverflow = (window.innerWidth >= 1100) &&
                     !document.documentElement.classList.contains('is-android');
   var total = _pkgOrderItems.length;

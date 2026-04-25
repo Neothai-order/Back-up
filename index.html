@@ -84,7 +84,7 @@ if ('serviceWorker' in navigator) {
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Neo Sales App">
-<link rel="stylesheet" href="style.min.css?v=236">
+<link rel="stylesheet" href="style.min.css?v=240">
 <!-- XLSX (xlsx-js-style — 스타일 지원 통합본, xlsx.full.min.js 대체) -->
 <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <!-- Google Maps Places -->
@@ -188,7 +188,7 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
   <div id="popupEditBody" style="padding:16px;overflow-y:auto;flex:1;"></div>
 </div>
 
-<script src="popup.js?v=9"></script>
+<script src="popup.js?v=11"></script>
 
 <!-- 신규 가입자 권한 없음 안내 – Close 누르기 전까지 유지, 로그인 시 권한 없으면 매번 표시 -->
 <div id="noPermOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:99999;align-items:center;justify-content:center;">
@@ -1322,14 +1322,14 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
 
 <!-- ══ Separated JS Modules ══ -->
 <script src="lang.min.js?v=170"></script>
-<script src="customer.min.js?v=173"></script>
-<script src="order.min.js?v=178"></script>
+<script src="customer.min.js?v=174"></script>
+<script src="order.min.js?v=181"></script>
 <script src="delivery.min.js?v=165"></script>
 <script src="extra.min.js?v=159"></script>
-<script src="account.min.js?v=184"></script>
+<script src="account.min.js?v=188"></script>
 <script src="sync_monitor.min.js?v=4"></script>
 
-<script src="core.min.js?v=217"></script>
+<script src="core.min.js?v=220"></script>
 
 <!-- 주문 오버레이 -->
 <div class="order-overlay" id="orderOverlay" onclick="orderOverlayClick(event)">
@@ -2331,7 +2331,7 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
   </div>
 </div>
 
-<script src="attendance.min.js?v=171"></script>
+<script src="attendance.min.js?v=179"></script>
 <script src="expense.min.js?v=9"></script>
 
 <!-- ══════════════════════════════════════════

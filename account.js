@@ -2433,6 +2433,27 @@ function onOrdAddrInput(ta) {
   }
 }
 
+// 주문 주소 입력창 우측 X(지우기) 토글/클리어 헬퍼
+function _toggleOrdAddrClear(id) {
+  var inp = document.getElementById(id);
+  var btn = document.getElementById(id + '_clr');
+  if (!inp || !btn) return;
+  btn.style.display = inp.value ? 'flex' : 'none';
+}
+function _clearOrdAddrInput(id, evt) {
+  if (evt) { evt.stopPropagation(); evt.preventDefault(); }
+  var inp = document.getElementById(id);
+  if (!inp) return;
+  inp.value = '';
+  _toggleOrdAddrClear(id);
+  // pac-container(Google Places 제안) 숨김 처리
+  try {
+    var pacs = document.querySelectorAll('.pac-container');
+    pacs.forEach(function(pac){ pac.style.display = 'none'; });
+  } catch(_) {}
+  try { inp.focus(); } catch(_) {}
+}
+
 function addOrderAddrBlock() {
   var blocksEl = document.getElementById('ordAddrBlocks');
   var count = blocksEl.querySelectorAll('.ord-addr-block').length;
@@ -2461,8 +2482,13 @@ function addOrderAddrBlock() {
         '<button class="ord-addr-block-del" onclick="removeOrdAddrBlock(this,event)" title="삭제">✕</button>' +
       '</div>' +
       '<div class="addr-wrap">' +
-        '<input type="text" id="' + addrInputId + '" placeholder="' + t('addr_direct_placeholder') + '" autocomplete="new-password" name="ord_addr_place_' + _ordAddrCounter + '"' +
-          ' style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:10px 12px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;" />' +
+        '<div style="position:relative;">' +
+          '<input type="text" id="' + addrInputId + '" placeholder="' + t('addr_direct_placeholder') + '" autocomplete="new-password" name="ord_addr_place_' + _ordAddrCounter + '"' +
+            ' oninput="_toggleOrdAddrClear(\'' + addrInputId + '\')"' +
+            ' style="width:100%;border:1.5px solid #d1d5db;border-radius:8px;padding:10px 38px 10px 12px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;" />' +
+          '<span id="' + addrInputId + '_clr" onclick="_clearOrdAddrInput(\'' + addrInputId + '\',event)" title="Clear"' +
+            ' style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);width:18px;height:18px;border-radius:50%;background:#9ca3af;color:#fff;font-size:11px;font-weight:700;cursor:pointer;align-items:center;justify-content:center;line-height:1;user-select:none;box-shadow:0 1px 2px rgba(0,0,0,0.15);">✕</span>' +
+        '</div>' +
         '<div style="display:flex;align-items:center;gap:8px;margin-top:6px;">' +
           '<div class="addr-zip-row" style="margin:0;">' +
             '<label style="font-size:11px;color:#6b7280;font-weight:600;">📮 ' + t('postal_code') + '</label>' +
@@ -2740,21 +2766,28 @@ var _placesReady = false;
 function _initGooglePlaces() { _placesReady = true; console.log('[GooglePlaces] API READY, _placesReady=true'); _checkGmapsAvailable(); }
 
 // pac-container(자동완성 드롭다운)를 입력 필드 바로 아래에 강제 고정
+// 🔧 body{zoom:0.9} 보정: pac-container 를 document.documentElement 로 이동시켜 zoom 영향 제거
 var _pacFixInterval = null;
 function _fixPacPosition(inputEl) {
   function _forcePacBelow() {
     var pacs = document.querySelectorAll('.pac-container');
     if (!pacs.length) return;
     var rect = inputEl.getBoundingClientRect();
-    // pac-container 는 position:fixed (style.css) 이므로 viewport 좌표 그대로 사용
-    var topPos = rect.bottom;
-    var leftPos = rect.left;
+    // body 의 zoom 값을 읽어 보정 (Chrome: body{zoom:0.9} → 자식 좌표가 0.9배로 렌더됨)
+    var bodyZoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
     pacs.forEach(function(pac) {
       if (pac.style.display === 'none' || !pac.childElementCount) return;
+      // 1) pac-container 를 <html> 루트로 옮겨 body zoom 영향 벗어나게 함
+      if (pac.parentNode !== document.documentElement) {
+        document.documentElement.appendChild(pac);
+      }
+      // 2) viewport 좌표 기준으로 바로 아래 배치 (html 은 zoom 없음 → rect 값 그대로 사용)
       pac.style.setProperty('position', 'fixed', 'important');
-      pac.style.setProperty('top', topPos + 'px', 'important');
-      pac.style.setProperty('left', leftPos + 'px', 'important');
+      pac.style.setProperty('top', rect.bottom + 'px', 'important');
+      pac.style.setProperty('left', rect.left + 'px', 'important');
       pac.style.setProperty('width', rect.width + 'px', 'important');
+      pac.style.setProperty('zoom', '1', 'important'); // 혹시 모를 상속 차단
+      pac.style.setProperty('transform', 'none', 'important');
     });
   }
   inputEl.addEventListener('focus', function() {
@@ -2778,13 +2811,24 @@ function _fixPacPosition(inputEl) {
 
 // ── 고객 등록 폼용 Places Autocomplete + 지도 ──
 function _attachRegPlaces(inputEl, mapContainerId, mapDivId, zipInputEl, retryCount) {
+  if (!inputEl) return;
+  // 🛡️ lazy focus 안전망: Google API 로드 타이밍 문제로 초기 attach 실패해도 포커스 시 재시도
+  if (!inputEl._regLazyBound) {
+    inputEl._regLazyBound = true;
+    inputEl.addEventListener('focus', function _regLazyInit() {
+      if (!inputEl._gPlacesAttached && _placesReady && window.google && google.maps && google.maps.places) {
+        _attachRegPlaces(inputEl, mapContainerId, mapDivId, zipInputEl);
+      }
+    });
+  }
   if (!_placesReady || !window.google || !google.maps || !google.maps.places) {
     var rc = retryCount || 0;
-    if (rc < 20) setTimeout(function(){ _attachRegPlaces(inputEl, mapContainerId, mapDivId, zipInputEl, rc + 1); }, 300);
+    if (rc < 40) setTimeout(function(){ _attachRegPlaces(inputEl, mapContainerId, mapDivId, zipInputEl, rc + 1); }, 300);
     return;
   }
   if (inputEl._gPlacesAttached) return;
   inputEl._gPlacesAttached = true;
+  console.log('[RegPlaces] ATTACHING to input id=' + inputEl.id);
   inputEl.addEventListener('focus', function() { document.body.classList.add('places-input-active'); });
   inputEl.addEventListener('blur', function() { setTimeout(function(){ document.body.classList.remove('places-input-active'); }, 300); });
   var ac = new google.maps.places.Autocomplete(inputEl, {
@@ -2851,13 +2895,22 @@ function _attachRegPlaces(inputEl, mapContainerId, mapDivId, zipInputEl, retryCo
 }
 
 function _initRegPlacesAll() {
-  if (!_placesReady) return;
+  // _placesReady 체크 제거: _attachRegPlaces 내부에서 retry + lazy focus init 처리
   // 등록 주소
   var regAddr = document.getElementById('reg_addr_reg');
   if (regAddr) _attachRegPlaces(regAddr, 'regAddrMapContainer', 'regAddrMapDiv', document.getElementById('reg_zip_reg'));
-  // 배송 주소 1
+  // 배송 주소 1 (Delivery Address 1 - 기본 블록)
   var delAddr = document.getElementById('reg_addr_del');
   if (delAddr) _attachRegPlaces(delAddr, 'regDelMapContainer1', 'regDelMapDiv1', document.getElementById('reg_zip_del1'));
+  // 추가로 생성된 배송 주소 블록들 (동적 +)
+  var extraInputs = document.querySelectorAll('#deliveryAddrContainer input[type="text"][id^="reg_addr_del_"]');
+  extraInputs.forEach(function(inp) {
+    var m = inp.id.match(/^reg_addr_del_(\d+)$/);
+    if (!m) return;
+    var n = m[1];
+    var zip = document.getElementById('reg_zip_del_' + n);
+    _attachRegPlaces(inp, 'regDelMapContainer' + n, 'regDelMapDiv' + n, zip);
+  });
 }
 
 function attachPlacesAutocomplete(inputEl, block, retryCount) {
@@ -2928,15 +2981,19 @@ function _attachOrdManualPlaces(inputEl, mapContainerId, mapDivId, zipInputEl, b
       var pacs = document.querySelectorAll('.pac-container');
       if (!pacs.length) return;
       var rect = inputEl.getBoundingClientRect();
-      // pac-container 는 position:fixed → viewport 좌표 그대로
-      var topPos = rect.bottom;
-      var leftPos = rect.left;
       pacs.forEach(function(pac) {
         if (pac.style.display === 'none' || !pac.childElementCount) return;
+        // body zoom / transform / will-change 조상으로 인해 position:fixed 좌표가 스케일되는 문제 회피
+        // → pac-container 를 html 루트로 재부모화 + zoom/transform 초기화
+        if (pac.parentNode !== document.documentElement) {
+          document.documentElement.appendChild(pac);
+        }
         pac.style.setProperty('position', 'fixed', 'important');
-        pac.style.setProperty('top', topPos + 'px', 'important');
-        pac.style.setProperty('left', leftPos + 'px', 'important');
+        pac.style.setProperty('top', rect.bottom + 'px', 'important');
+        pac.style.setProperty('left', rect.left + 'px', 'important');
         pac.style.setProperty('width', rect.width + 'px', 'important');
+        pac.style.setProperty('zoom', '1', 'important');
+        pac.style.setProperty('transform', 'none', 'important');
       });
     }, 100);
   });
@@ -2961,6 +3018,8 @@ function _attachOrdManualPlaces(inputEl, mapContainerId, mapDivId, zipInputEl, b
     if (name && addr && !addr.startsWith(name)) fullAddr = name + ', ' + addr;
     else if (!addr && name) fullAddr = name;
     inputEl.value = fullAddr;
+    // X(지우기) 버튼 표시 토글
+    try { if (typeof _toggleOrdAddrClear === 'function') _toggleOrdAddrClear(inputEl.id); } catch(_){}
     // 우편번호 자동 입력
     if (place.address_components) {
       place.address_components.forEach(function(c) {
@@ -3050,6 +3109,8 @@ function resetOrdManualAddr(addrInputId, zipInputId, mapContId, evt) {
   if (addrInput) { addrInput.value = ''; addrInput.focus(); }
   if (zipInput) zipInput.value = '';
   if (mapCont) mapCont.style.display = 'none';
+  // X(지우기) 버튼 숨김
+  try { if (typeof _toggleOrdAddrClear === 'function') _toggleOrdAddrClear(addrInputId); } catch(_){}
   // data-addr 초기화
   if (addrInput) {
     var block = addrInput.closest('.ord-addr-block');

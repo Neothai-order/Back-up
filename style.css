@@ -2596,13 +2596,12 @@
 /* 최대화 + 오버플로우 공존 시에도 모달 전체 100vw 유지 */
 .pkg-builder.pkg-fs.pkg-has-ov-1,
 .pkg-builder.pkg-fs.pkg-has-ov-2{width:100%!important;max-width:100%!important;}
-/* pkg-left: 최대화 시 화면의 약 60% 차지 (폼이 넓게 보이도록). 단 확장컬럼 열릴 때는 제외 */
-.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-left{flex:0 1 auto!important;width:60vw!important;max-width:1100px!important;min-width:460px!important;}
-/* pkg-right: 나머지 40% 영역 사용 */
-.pkg-builder.pkg-fs:not(.pkg-has-ov-1):not(.pkg-has-ov-2) .pkg-right{flex:1 1 auto!important;width:auto!important;min-width:260px!important;max-width:none!important;}
-/* 최대화 + 확장컬럼 1칸: pkg-left는 남는 공간 모두, pkg-right는 380px 유지 */
-.pkg-builder.pkg-fs.pkg-has-ov-1 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:460px!important;}
-.pkg-builder.pkg-fs.pkg-has-ov-2 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:460px!important;}
+/* 최대화: pkg-left 폼 영역은 컨텐츠 폭(720px)으로 고정, Order List 가 Add 버튼 바로 오른쪽에 붙음 */
+.pkg-builder.pkg-fs .pkg-left{flex:0 0 auto!important;width:720px!important;min-width:460px!important;max-width:780px!important;}
+/* pkg-right (Order List): 위치/폭 모든 상태에서 동일 — 13개 fit 폭 480px */
+.pkg-builder.pkg-fs .pkg-right{flex:0 0 auto!important;width:480px!important;min-width:480px!important;max-width:480px!important;}
+/* pkg-body 의 남은 공간을 회색 라인 패턴으로 채움 (ov 가 슬라이드로 들어올 자리) */
+.pkg-builder.pkg-fs .pkg-body::after{content:"";flex:1 1 auto;background-image:repeating-linear-gradient(to bottom,#f3f4f6 0,#f3f4f6 40px,transparent 40px,transparent 44px);background-repeat:repeat;pointer-events:none;align-self:stretch;}
 body.force-mobile .pkg-builder.open{top:0;left:0;transform:none;width:100vw;max-width:100vw;height:100vh;max-height:100vh;border-radius:0;border:none;}
 .pkg-builder-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #ede9fe;background:linear-gradient(135deg,#f5f3ff,#ede9fe);cursor:grab;user-select:none;}
 .pkg-builder-hdr:active{cursor:grabbing;}
@@ -2613,7 +2612,9 @@ body.force-mobile .pkg-builder.open{top:0;left:0;transform:none;width:100vw;max-
 .pkg-builder-close:hover{background:#e5e7eb;}
 /* .pkg-mini-icon removed — unified bar style */
 .pkg-body{display:flex;flex:1;overflow:hidden;min-height:0;}
-.pkg-left{flex:1 1 auto;min-width:460px;padding:14px 18px;overflow:auto;border-right:1px solid #ede9fe;}
+.pkg-left{flex:1 1 auto;min-width:460px;padding:14px 18px;overflow:auto;border-right:1px solid #ede9fe;display:flex;flex-direction:column;}
+/* 빈 공간을 회색 라인 패턴으로 채움 (오른쪽 Order List 와 동일한 스타일) */
+.pkg-left::after{content:"";flex:1 1 auto;min-height:60px;background-image:repeating-linear-gradient(to bottom,#f3f4f6 0,#f3f4f6 40px,transparent 40px,transparent 44px);background-repeat:repeat;pointer-events:none;margin-top:14px;border-radius:8px;}
 .pkg-right{flex:1;min-width:260px;display:flex;flex-direction:column;background:#fff;}
 .pkg-right-hdr{padding:10px 12px;font-size:13px;font-weight:700;color:#1e293b;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;}
 .pkg-right-hdr .pkg-remain{font-size:12px;font-weight:600;color:#7c3aed;background:#f5f3ff;padding:2px 10px;border-radius:10px;}
@@ -2655,9 +2656,9 @@ body.force-mobile .pkg-builder.open{top:0;left:0;transform:none;width:100vw;max-
 .pkg-builder.pkg-has-ov-1 #pkgRightOv1,
 .pkg-builder.pkg-has-ov-2 #pkgRightOv1,
 .pkg-builder.pkg-has-ov-2 #pkgRightOv2{width:380px;min-width:380px;max-width:380px;opacity:1;border-left-width:1px;}
-/* 추가 열이 열리면 주문 리스트 폭도 추가 열과 동일하게 고정 */
-.pkg-builder.pkg-has-ov-1 .pkg-right,
-.pkg-builder.pkg-has-ov-2 .pkg-right{flex:none;width:380px;min-width:380px;max-width:380px;}
+/* 추가 열이 열려도 fs 모드면 위 .pkg-builder.pkg-fs .pkg-right(480px) 가 우선 */
+.pkg-builder.pkg-has-ov-1:not(.pkg-fs) .pkg-right,
+.pkg-builder.pkg-has-ov-2:not(.pkg-fs) .pkg-right{flex:none;width:380px;min-width:380px;max-width:380px;}
 /* 1칸 추가 시 빌더 확장 — 콘텐츠 너비에 맞춰 확장 */
 .pkg-builder.pkg-has-ov-1{width:min(1360px, calc(100vw - 16px));}
 .pkg-builder.pkg-has-ov-2{width:min(1760px, calc(100vw - 16px));}
@@ -3803,10 +3804,12 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
 .ord-addr-add-btn{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:8px 16px;border:2px dashed #d1d5db;border-radius:10px;background:#fff;color:#6b7280;font-size:13px;font-weight:600;cursor:pointer;transition:border-color .15s,color .15s;}
 .ord-addr-add-btn:hover{border-color:#2563eb;color:#2563eb;}
 /* Google Places Autocomplete 드롭다운 */
-.pac-container{position:fixed!important;z-index:100000!important;margin-top:2px!important;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,.2);border:1px solid #e5e7eb;background:#fff;}
+/* body{zoom:0.9} 우회 위해 <html> 루트로 이동시키는 JS 로직과 함께 동작 */
+.pac-container{position:fixed!important;z-index:100000!important;margin-top:2px!important;border-radius:12px;box-shadow:0 10px 25px rgba(0,0,0,.2);border:1px solid #e5e7eb;background:#fff;zoom:1!important;}
 .pac-container:empty,.pac-container[style*="display: none"]{display:none!important;}
-/* 주문 주소 입력 외 pac-container 숨기기 */
-body:not(.places-input-active) .pac-container{display:none!important;visibility:hidden!important;}
+/* 주문 주소 입력 외 pac-container 숨기기 (body / html 어느 쪽 자식이든 작동) */
+body:not(.places-input-active) .pac-container,
+html:not(:has(body.places-input-active)) > .pac-container{display:none!important;visibility:hidden!important;}
 
 
 /* ── 언어 선택 ── */

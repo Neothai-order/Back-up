@@ -1078,50 +1078,74 @@ function _extractAmphoeProvince(addr) {
 }
 
 // ── 이동거리 계산 (Distance Matrix API) ──
+// 셀마다 최대 2구간 (morning: depart→in, evening: out→return) 을 각각 계산
 function _calcAttendDistances() {
   if (!window.google || !google.maps || !google.maps.DistanceMatrixService) return;
-  var cells = document.querySelectorAll('[id^="asDist_"][data-in-lat]');
+  var cells = document.querySelectorAll('[id^="asDist_"]');
   if (!cells.length) return;
   var service = new google.maps.DistanceMatrixService();
-  // API 제한으로 한 번에 최대 25개씩 처리
-  var arr = Array.from(cells);
+  var arr = Array.from(cells).filter(function(c) {
+    return c.dataset.m1Lat || c.dataset.e1Lat; // 두 구간 중 하나라도 있으면 처리
+  });
+  if (!arr.length) return;
   var batchSize = 10;
+
+  // 셀 내부에 morning/evening 두 슬롯을 미리 생성
+  arr.forEach(function(cell) {
+    var hasM = !!cell.dataset.m1Lat;
+    var hasE = !!cell.dataset.e1Lat;
+    var html = '';
+    if (hasM) html += '<div id="' + cell.id + '_m" style="color:#f59e0b;line-height:1.25;">🚗 <span style="color:#6b7280;">...</span></div>';
+    if (hasE) html += '<div id="' + cell.id + '_e" style="color:#8b5cf6;line-height:1.25;margin-top:' + (hasM ? '3px' : '0') + ';">🏠 <span style="color:#6b7280;">...</span></div>';
+    if (!html) html = '-';
+    cell.innerHTML = html;
+  });
+
+  function renderLeg(slotEl, color, icon, km, dur) {
+    // duration(분) 제거
+    slotEl.innerHTML = icon + ' <strong style="color:' + color + ';">' + km + ' km</strong>';
+  }
+
+  function callLeg(cell, slotId, oLat, oLng, dLat, dLng, color, icon, useHwy) {
+    var slotEl = document.getElementById(slotId);
+    if (!slotEl) return;
+    var origin = new google.maps.LatLng(parseFloat(oLat), parseFloat(oLng));
+    var dest = new google.maps.LatLng(parseFloat(dLat), parseFloat(dLng));
+    service.getDistanceMatrix({
+      origins: [origin],
+      destinations: [dest],
+      travelMode: 'DRIVING',
+      avoidHighways: !useHwy,
+      unitSystem: google.maps.UnitSystem.METRIC
+    }, function(response, status) {
+      if (status === 'OK' && response.rows[0] && response.rows[0].elements[0] && response.rows[0].elements[0].status === 'OK') {
+        var el = response.rows[0].elements[0];
+        var hwyMark = useHwy ? ' <span style="font-size:9px;color:#2563eb;">🛣️</span>' : '';
+        // duration(분) 제거 — km 만 표시
+        slotEl.innerHTML = icon + ' <strong style="color:' + color + ';">' + (el.distance.value / 1000).toFixed(1) + ' km</strong>' + hwyMark;
+      } else {
+        slotEl.innerHTML = icon + ' <span style="color:#d1d5db;">-</span>';
+      }
+    });
+  }
 
   function processBatch(startIdx) {
     if (startIdx >= arr.length) return;
     var batch = arr.slice(startIdx, startIdx + batchSize);
-    var origins = [], destinations = [];
     batch.forEach(function(cell) {
-      origins.push(new google.maps.LatLng(parseFloat(cell.dataset.inLat), parseFloat(cell.dataset.inLng)));
-      destinations.push(new google.maps.LatLng(parseFloat(cell.dataset.outLat), parseFloat(cell.dataset.outLng)));
+      if (cell.dataset.m1Lat) {
+        callLeg(cell, cell.id + '_m',
+          cell.dataset.m1Lat, cell.dataset.m1Lng,
+          cell.dataset.m2Lat, cell.dataset.m2Lng,
+          '#b45309', '🚗', cell.dataset.mHwy === '1');
+      }
+      if (cell.dataset.e1Lat) {
+        callLeg(cell, cell.id + '_e',
+          cell.dataset.e1Lat, cell.dataset.e1Lng,
+          cell.dataset.e2Lat, cell.dataset.e2Lng,
+          '#6d28d9', '🏠', cell.dataset.eHwy === '1');
+      }
     });
-
-    // Distance Matrix는 origins×destinations 매트릭스를 반환 → 1:1 매핑을 위해 개별 호출
-    batch.forEach(function(cell, i) {
-      var origin = new google.maps.LatLng(parseFloat(cell.dataset.inLat), parseFloat(cell.dataset.inLng));
-      var dest = new google.maps.LatLng(parseFloat(cell.dataset.outLat), parseFloat(cell.dataset.outLng));
-      service.getDistanceMatrix({
-        origins: [origin],
-        destinations: [dest],
-        travelMode: 'DRIVING',
-        unitSystem: google.maps.UnitSystem.METRIC
-      }, function(response, status) {
-        if (status === 'OK' && response.rows[0] && response.rows[0].elements[0]) {
-          var el = response.rows[0].elements[0];
-          if (el.status === 'OK') {
-            var km = (el.distance.value / 1000).toFixed(1);
-            var dur = el.duration.text;
-            cell.innerHTML = '<strong style="color:#374151;">' + km + ' km</strong><br><span style="font-size:10px;color:#9ca3af;">' + dur + '</span>';
-          } else {
-            cell.textContent = '-';
-          }
-        } else {
-          cell.textContent = '-';
-        }
-      });
-    });
-
-    // 다음 배치 (Rate limit 방지 딜레이)
     if (startIdx + batchSize < arr.length) {
       setTimeout(function() { processBatch(startIdx + batchSize); }, 1000);
     }
@@ -1202,6 +1226,113 @@ function exportAttendanceExcel() {
 function _isAttendAdmin() {
   var me = getCurrentUser();
   return _isAdmin(me);
+}
+
+// sub_dept 값(한국어) → i18n 키 매핑 (core.js 의 SUB_DEPT_OPTIONS 와 동일)
+var _ATT_SUB_DEPT_I18N = {
+  'Group Leader': 'sub_dept_group_leader',
+  '방콕':       'sub_dept_bangkok',
+  '북부':       'sub_dept_north',
+  '북동부':     'sub_dept_northeast',
+  '동부':       'sub_dept_east',
+  '남부':       'sub_dept_south',
+  'CT':         'sub_dept_ct',
+  '재무':       'sub_dept_finance',
+  '영업관리':    'sub_dept_sales_mgmt',
+  '마케팅':     'sub_dept_marketing',
+  '물류':       'sub_dept_logistics',
+  '인사':       'sub_dept_hr',
+  '기획':       'sub_dept_planning',
+  '장비':       'sub_dept_equipment'
+};
+function _attTranslateSubDept(val) {
+  if (!val) return '';
+  var key = _ATT_SUB_DEPT_I18N[val];
+  return key ? (t(key) || val) : val;
+}
+
+// 직원 select 필터링 (이름·닉네임·사번 검색)
+function _attFilterEmpOptions(query) {
+  var sel = document.getElementById('asSEmpFilter');
+  if (!sel) return;
+  var q = (query || '').toLowerCase().trim();
+  for (var i = 1; i < sel.options.length; i++) {
+    var opt = sel.options[i];
+    if (!q) {
+      // 검색어 없으면 원래 dept/subDept 필터 결과 유지 (style.display 건들지 않음)
+      opt.style.display = '';
+      continue;
+    }
+    var hay = ((opt.textContent || '') + ' ' + (opt.dataset.nickname || '')).toLowerCase();
+    opt.style.display = (hay.indexOf(q) !== -1) ? '' : 'none';
+  }
+}
+
+// 관리자만 보이도록 삭제 버튼 노출
+function _showDeleteBtnIfAdmin() {
+  var btn = document.getElementById('btnDeleteAttend');
+  if (!btn) return;
+  if (_isAttendAdmin()) btn.style.display = 'inline-flex';
+  else btn.style.display = 'none';
+}
+
+// 체크된 행의 출퇴근 기록 삭제 (관리자 전용)
+async function deleteAttendanceRows() {
+  if (!_isAttendAdmin()) { neoAlert(t('att_delete_admin_only')); return; }
+  var checked = document.querySelectorAll('.as-row-cb:checked');
+  if (!checked.length) { neoAlert(t('att_delete_no_check')); return; }
+
+  var rows = Array.from(checked).map(function(cb) {
+    return {
+      empid: cb.dataset.emp,
+      empName: cb.dataset.empname || cb.dataset.nickname || cb.dataset.emp,
+      date: cb.dataset.date
+    };
+  });
+
+  // 확인 다이얼로그 (최대 5건 미리보기)
+  var preview = rows.slice(0, 5).map(function(r) { return '• ' + r.empName + ' (' + r.date + ')'; }).join('\n');
+  var more = rows.length > 5 ? '\n... ' + t('att_delete_and_more').replace('{0}', rows.length - 5) : '';
+  var msg = t('att_delete_confirm').replace('{0}', rows.length) + '\n\n' + preview + more + '\n\n' + t('att_delete_warning');
+  if (!confirm(msg)) return;
+
+  showToast(t('att_delete_progress'));
+
+  // 날짜별로 묶어서 효율적으로 쿼리
+  var byDate = {};
+  rows.forEach(function(r) {
+    if (!byDate[r.date]) byDate[r.date] = [];
+    byDate[r.date].push(r.empid);
+  });
+
+  var totalDeleted = 0;
+  try {
+    for (var date in byDate) {
+      var snap = await _fbDb.collection('attendance').where('date', '==', date).get();
+      var empids = byDate[date];
+      var batch = _fbDb.batch();
+      var batchCount = 0;
+      snap.forEach(function(doc) {
+        // 문서 ID 형식: {empid}_{timestamp}_{random}
+        for (var i = 0; i < empids.length; i++) {
+          if (doc.id.indexOf(empids[i] + '_') === 0) {
+            batch.delete(doc.ref);
+            batchCount++;
+            break;
+          }
+        }
+      });
+      if (batchCount > 0) {
+        await batch.commit();
+        totalDeleted += batchCount;
+      }
+    }
+    neoAlert(t('att_delete_done').replace('{0}', rows.length).replace('{1}', totalDeleted));
+    if (typeof loadAttendanceSummary === 'function') loadAttendanceSummary();
+  } catch (e) {
+    console.error('[deleteAttendanceRows] error:', e);
+    neoAlert(t('att_delete_error') + ' ' + e.message);
+  }
 }
 
 // 출퇴근 집계 열람 등급:
@@ -1396,11 +1527,12 @@ function _initAttendSumDrag() {
 // ── 출퇴근 지도 ──
 var _attendMapInstance = null;
 var _attendMapDirections = null;
-function openAttendMap(inLat, inLng, outLat, outLng, empName, date) {
+// 2-leg 지원: openAttendMap(empName, date, dLat,dLng, iLat,iLng, oLat,oLng, rLat,rLng, mHwy, eHwy)
+// 각 좌표는 null/undefined/0/NaN 이면 미존재로 간주. mHwy/eHwy 는 clock-in/return 시 사용자가 선택한 고속도로 사용 여부.
+function openAttendMap(empName, date, dLat, dLng, iLat, iLng, oLat, oLng, rLat, rLng, mHwy, eHwy) {
   var ov = document.getElementById('attendMapOverlay');
   if (!ov) { console.error('[AttendMap] overlay not found'); return; }
 
-  // 오버레이 표시
   ov.style.display = 'flex';
   ov.style.zIndex = '999999';
 
@@ -1410,137 +1542,170 @@ function openAttendMap(inLat, inLng, outLat, outLng, empName, date) {
   if (distEl) distEl.innerHTML = '<span style="color:#9ca3af;">로딩 중...</span>';
 
   var container = document.getElementById('attendMapContainer');
-  container.innerHTML = ''; // 이전 지도 제거
+  container.innerHTML = '';
   container.style.minHeight = '400px';
 
-  // 지도 생성
   if (!window.google || !google.maps) {
     container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ef4444;font-size:16px;font-weight:600;">⚠️ Google Maps를 불러올 수 없습니다.</div>';
     return;
   }
 
-  var inPos = { lat: parseFloat(inLat), lng: parseFloat(inLng) };
-  var outPos = { lat: parseFloat(outLat), lng: parseFloat(outLng) };
+  function _toPos(la, ln) {
+    var a = parseFloat(la), b = parseFloat(ln);
+    if (!isFinite(a) || !isFinite(b) || (a === 0 && b === 0)) return null;
+    return { lat: a, lng: b };
+  }
+  var departPos = _toPos(dLat, dLng);
+  var inPos     = _toPos(iLat, iLng);
+  var outPos    = _toPos(oLat, oLng);
+  var returnPos = _toPos(rLat, rLng);
 
-  // 약간 지연 후 지도 생성 (DOM 렌더 완료 대기)
+  // 가능한 경로 조합
+  var hasMorning = departPos && inPos;            // 🚗 Depart → IN
+  var hasEvening = outPos && returnPos;           // 🏠 OUT → Return
+  var hasDirect  = inPos && outPos && !hasMorning && !hasEvening; // fallback: IN → OUT
+
   setTimeout(function() {
     var bounds = new google.maps.LatLngBounds();
-    bounds.extend(inPos);
-    bounds.extend(outPos);
+    [departPos, inPos, outPos, returnPos].forEach(function(p){ if (p) bounds.extend(p); });
 
     _attendMapInstance = new google.maps.Map(container, {
-      center: bounds.getCenter(),
+      center: bounds.getCenter ? bounds.getCenter() : (inPos || outPos || departPos || returnPos),
       zoom: 14,
       mapTypeControl: true,
       streetViewControl: false,
       fullscreenControl: true
     });
 
-    // 출근 마커 (녹색)
-    new google.maps.Marker({
-      position: inPos,
-      map: _attendMapInstance,
-      title: 'Clock In',
-      label: { text: 'IN', color: '#fff', fontWeight: '700', fontSize: '11px' },
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        fillColor: '#16a34a',
-        fillOpacity: 1,
-        strokeColor: '#fff',
-        strokeWeight: 2,
-        scale: 16
-      }
-    });
-
-    // 퇴근 마커 (파란색)
-    new google.maps.Marker({
-      position: outPos,
-      map: _attendMapInstance,
-      title: 'Clock Out',
-      label: { text: 'OUT', color: '#fff', fontWeight: '700', fontSize: '10px' },
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        fillColor: '#2563eb',
-        fillOpacity: 1,
-        strokeColor: '#fff',
-        strokeWeight: 2,
-        scale: 16
-      }
-    });
+    // ── 마커 ──
+    function _mk(pos, txt, fill) {
+      if (!pos) return;
+      new google.maps.Marker({
+        position: pos,
+        map: _attendMapInstance,
+        title: txt,
+        label: { text: txt, color: '#fff', fontWeight: '700', fontSize: '10px' },
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: fill, fillOpacity: 1,
+          strokeColor: '#fff', strokeWeight: 2, scale: 16
+        }
+      });
+    }
+    _mk(departPos, 'DEP', '#f59e0b');  // 🚗 출발
+    _mk(inPos,     'IN',  '#16a34a');  // ☀️ 출근
+    _mk(outPos,    'OUT', '#2563eb');  // 🌙 퇴근
+    _mk(returnPos, 'RET', '#8b5cf6');  // 🏠 복귀
 
     _attendMapInstance.fitBounds(bounds, 60);
-
-    // 지도 크기 갱신
     google.maps.event.trigger(_attendMapInstance, 'resize');
     _attendMapInstance.fitBounds(bounds, 60);
 
-    // 기본 경로 (일반도로 — avoidHighways)
-    _attendMapDirections = new google.maps.DirectionsRenderer({
-      map: _attendMapInstance,
-      suppressMarkers: true,
+    // ── 경로 렌더러 ──
+    // Morning (일반도로): 주황 실선
+    var morningRenderer = new google.maps.DirectionsRenderer({
+      map: _attendMapInstance, suppressMarkers: true,
+      polylineOptions: { strokeColor: '#f59e0b', strokeWeight: 5, strokeOpacity: 0.85 }
+    });
+    // Evening (일반도로): 보라 실선
+    var eveningRenderer = new google.maps.DirectionsRenderer({
+      map: _attendMapInstance, suppressMarkers: true,
+      polylineOptions: { strokeColor: '#8b5cf6', strokeWeight: 5, strokeOpacity: 0.85 }
+    });
+    // Direct fallback (IN→OUT): 파랑
+    var directRenderer = new google.maps.DirectionsRenderer({
+      map: _attendMapInstance, suppressMarkers: true,
       polylineOptions: { strokeColor: '#7c3aed', strokeWeight: 5, strokeOpacity: 0.8 }
     });
-
-    // 고속도로 경로 렌더러 (숨김 상태)
-    _attendMapHwyRenderer = new google.maps.DirectionsRenderer({
-      map: _attendMapInstance,
-      suppressMarkers: true,
-      polylineOptions: { strokeColor: '#2563eb', strokeWeight: 5, strokeOpacity: 0.8 }
+    // 고속도로 (morning/evening 결합) 렌더러
+    var mHwyRenderer = new google.maps.DirectionsRenderer({
+      map: _attendMapInstance, suppressMarkers: true,
+      polylineOptions: { strokeColor: '#d97706', strokeWeight: 5, strokeOpacity: 0.65 }
     });
-    _attendMapHwyRenderer.setMap(null); // 기본 숨김
+    var eHwyRenderer = new google.maps.DirectionsRenderer({
+      map: _attendMapInstance, suppressMarkers: true,
+      polylineOptions: { strokeColor: '#6d28d9', strokeWeight: 5, strokeOpacity: 0.65 }
+    });
+    mHwyRenderer.setMap(null);
+    eHwyRenderer.setMap(null);
 
-    // 좌표 저장 (토글에서 재사용)
-    _attendMapRoute = { inPos: inPos, outPos: outPos };
+    _attendMapRoute = {
+      hasMorning: hasMorning, hasEvening: hasEvening, hasDirect: hasDirect,
+      departPos: departPos, inPos: inPos, outPos: outPos, returnPos: returnPos,
+      mHwyRenderer: mHwyRenderer, eHwyRenderer: eHwyRenderer,
+      legs: {} // { morning: {normalDist,normalTime,hwyDist,hwyTime,hwyResult}, evening: {...}, direct: {...} }
+    };
+    _attendMapDirections = morningRenderer; // 주 (backward compat)
+    _attendMapHwyRenderer = mHwyRenderer;   // 주 (backward compat)
 
     var directionsService = new google.maps.DirectionsService();
 
-    // 일반도로 경로 (고속도로 제외)
-    directionsService.route({
-      origin: inPos,
-      destination: outPos,
-      travelMode: 'DRIVING',
-      avoidHighways: true
-    }, function(result, status) {
-      if (status === 'OK') {
-        _attendMapDirections.setDirections(result);
-        var leg = result.routes[0].legs[0];
-        _attendMapRoute.normalDist = leg.distance.text;
-        _attendMapRoute.normalTime = leg.duration.text;
+    function _routeLeg(key, origin, dest, renderer) {
+      _attendMapRoute.legs[key] = _attendMapRoute.legs[key] || {};
+      // 일반도로
+      directionsService.route({
+        origin: origin, destination: dest,
+        travelMode: 'DRIVING', avoidHighways: true
+      }, function(result, status) {
+        if (status === 'OK') {
+          renderer.setDirections(result);
+          var leg = result.routes[0].legs[0];
+          _attendMapRoute.legs[key].normalDist = leg.distance.text;
+          _attendMapRoute.legs[key].normalTime = leg.duration.text;
+          _attendMapRoute.legs[key].normalDistVal = leg.distance.value;
+          _attendMapRoute.legs[key].normalTimeVal = leg.duration.value;
+        } else {
+          new google.maps.Polyline({
+            path: [origin, dest], geodesic: true,
+            strokeColor: renderer.get('polylineOptions').strokeColor,
+            strokeOpacity: 0.6, strokeWeight: 3, map: _attendMapInstance
+          });
+          var dist = google.maps.geometry ? google.maps.geometry.spherical.computeDistanceBetween(
+            new google.maps.LatLng(origin.lat, origin.lng), new google.maps.LatLng(dest.lat, dest.lng)
+          ) : null;
+          if (dist) {
+            _attendMapRoute.legs[key].normalDist = (dist/1000).toFixed(1) + ' km';
+            _attendMapRoute.legs[key].normalTime = '직선';
+            _attendMapRoute.legs[key].normalDistVal = dist;
+            _attendMapRoute.legs[key].normalTimeVal = 0;
+          }
+        }
         _updateRouteInfo();
-      } else {
-        // 실패 시 직선 표시
-        new google.maps.Polyline({
-          path: [inPos, outPos], geodesic: true,
-          strokeColor: '#7c3aed', strokeOpacity: 0.7, strokeWeight: 3,
-          map: _attendMapInstance
-        });
-        var dist = google.maps.geometry ? google.maps.geometry.spherical.computeDistanceBetween(
-          new google.maps.LatLng(inLat, inLng), new google.maps.LatLng(outLat, outLng)
-        ) : null;
-        if (dist) { _attendMapRoute.normalDist = (dist/1000).toFixed(1) + ' km'; _attendMapRoute.normalTime = '직선'; }
-        _updateRouteInfo();
-      }
-    });
+      });
+      // 고속도로 포함
+      directionsService.route({
+        origin: origin, destination: dest,
+        travelMode: 'DRIVING', avoidHighways: false
+      }, function(result, status) {
+        if (status === 'OK') {
+          _attendMapRoute.legs[key].hwyResult = result;
+          var leg = result.routes[0].legs[0];
+          _attendMapRoute.legs[key].hwyDist = leg.distance.text;
+          _attendMapRoute.legs[key].hwyTime = leg.duration.text;
+          _attendMapRoute.legs[key].hwyDistVal = leg.distance.value;
+          _attendMapRoute.legs[key].hwyTimeVal = leg.duration.value;
+          _loadTollRates().then(function(){ _updateRouteInfo(); });
+        }
+      });
+    }
 
-    // 고속도로 경로 미리 조회 (캐시)
-    directionsService.route({
-      origin: inPos,
-      destination: outPos,
-      travelMode: 'DRIVING',
-      avoidHighways: false
-    }, function(result, status) {
-      if (status === 'OK') {
-        _attendMapRoute.hwyResult = result;
-        var leg = result.routes[0].legs[0];
-        _attendMapRoute.hwyDist = leg.distance.text;
-        _attendMapRoute.hwyTime = leg.duration.text;
-        _loadTollRates().then(function(){ _updateRouteInfo(); });
-      }
-    });
+    if (hasMorning) _routeLeg('morning', departPos, inPos, morningRenderer);
+    else morningRenderer.setMap(null);
+    if (hasEvening) _routeLeg('evening', outPos, returnPos, eveningRenderer);
+    else eveningRenderer.setMap(null);
+    if (hasDirect)  _routeLeg('direct',  inPos,     outPos,    directRenderer);
+    else directRenderer.setMap(null);
 
-    // 체크박스 초기화
     var hwyChk = document.getElementById('attendHwyChk');
-    if (hwyChk) hwyChk.checked = false;
+    // 사용자가 clock-in 또는 return 시 고속도로를 이용했다고 선택했으면 자동 체크
+    var _autoHwy = !!(mHwy || eHwy);
+    if (hwyChk) {
+      hwyChk.checked = _autoHwy;
+      if (_autoHwy) {
+        // 체크 상태 반영을 위해 약간 지연 후 toggle (legs API 응답 대기)
+        setTimeout(function(){ if (typeof _toggleHighwayRoute === 'function') _toggleHighwayRoute(); }, 1500);
+      }
+    }
 
   }, 100);
 }
@@ -1610,54 +1775,137 @@ window._debugToll = function() {
 function _updateRouteInfo() {
   var distEl = document.getElementById('attendMapDist');
   if (!distEl) return;
-  var r = _attendMapRoute;
-  var html = '<span style="color:#7c3aed;">🚗 일반: ' + (r.normalDist || '-') + ' · ' + (r.normalTime || '-') + '</span>';
+  var r = _attendMapRoute || {};
+  var legs = r.legs || {};
   var hwyChk = document.getElementById('attendHwyChk');
-  if (hwyChk && hwyChk.checked && r.hwyDist) {
-    var hwyHtml = '🛣️ 고속도로: ' + r.hwyDist + ' · ' + r.hwyTime;
-    var toll = r.hwyResult && _tollRatesCache ? _estimateToll(r.hwyResult, _tollRatesCache) : null;
-    if (toll && toll.total > 0) {
-      var tip = toll.breakdown.map(function(b){ return b.name + ' ฿' + b.fare; }).join(' + ');
-      hwyHtml += ' · <span title="' + tip.replace(/"/g,'&quot;') + '" style="color:#dc2626;font-weight:600;">≈ ฿' + toll.total + '</span>';
-    }
-    html += '<span style="margin-left:12px;color:#2563eb;">' + hwyHtml + '</span>';
+  var hwyOn = !!(hwyChk && hwyChk.checked);
+
+  // 열 정의
+  var cols = [];
+  if (r.hasMorning) cols.push({ key: 'morning', icon: '🚗', label: '출발', color: '#b45309' });
+  if (r.hasEvening) cols.push({ key: 'evening', icon: '🏠', label: '복귀', color: '#6d28d9' });
+  if (r.hasDirect)  cols.push({ key: 'direct',  icon: '🚗', label: '이동', color: '#7c3aed' });
+
+  if (!cols.length) { distEl.innerHTML = '<span style="color:#9ca3af;">-</span>'; return; }
+
+  // ── 고속도로 OFF: 간단한 한줄 표시 ──
+  if (!hwyOn) {
+    var parts = cols.map(function(c) {
+      var l = legs[c.key]; if (!l) return '';
+      return '<span style="color:' + c.color + ';">' + c.icon + ' ' + (l.normalDist || '-') + ' · ' + (l.normalTime || '-') + '</span>';
+    }).filter(Boolean);
+    distEl.innerHTML = parts.join('<span style="color:#d1d5db;margin:0 10px;">|</span>');
+    return;
   }
+
+  // ── 고속도로 ON: 테이블 표시 ──
+  function fmtDist(m) { return (m == null) ? '-' : (m/1000).toFixed(1) + ' km'; }
+  function fmtTime(s) {
+    if (s == null) return '-';
+    s = Math.round(s);
+    var h = Math.floor(s/3600), mm = Math.round((s%3600)/60);
+    return h > 0 ? (h + '시간 ' + mm + '분') : (mm + '분');
+  }
+
+  // 합계 계산
+  var sumNorm = { d: 0, t: 0, any: false };
+  var sumHwy  = { d: 0, t: 0, any: false };
+  var sumToll = { v: 0, any: false };
+  var tolls = {};
+  cols.forEach(function(c) {
+    var l = legs[c.key] || {};
+    if (l.normalDistVal != null) { sumNorm.d += l.normalDistVal; sumNorm.t += (l.normalTimeVal||0); sumNorm.any = true; }
+    if (l.hwyDistVal != null)    { sumHwy.d  += l.hwyDistVal;    sumHwy.t  += (l.hwyTimeVal||0);    sumHwy.any  = true; }
+    var toll = (l.hwyResult && _tollRatesCache) ? _estimateToll(l.hwyResult, _tollRatesCache) : null;
+    tolls[c.key] = toll;
+    if (toll && toll.total > 0) { sumToll.v += toll.total; sumToll.any = true; }
+  });
+
+  var hasTollData = Object.keys(tolls).some(function(k){ return tolls[k] && tolls[k].total > 0; });
+  var showSum = cols.length > 1;
+
+  var thS = 'padding:4px 22px;font-size:11px;font-weight:700;color:#374151;border-bottom:1px solid #d1d5db;text-align:center;white-space:nowrap;min-width:95px;';
+  var tdS = 'padding:4px 22px;font-size:11px;text-align:center;border-bottom:1px solid #e5e7eb;white-space:nowrap;min-width:95px;';
+  var lblS = 'padding:4px 14px;font-size:11px;font-weight:700;text-align:left;background:#f1f5f9;border-bottom:1px solid #e5e7eb;white-space:nowrap;';
+
+  // 셀 내부: 무료 + 고속 나란히 (좌/우 flex)
+  function _cellDual(normDist, normTime, hwyDist, hwyTime) {
+    var left  = '<div style="flex:1;color:#059669;line-height:1.3;"><div style="font-weight:700;">🟢 ' + (normDist || '-') + '</div><div style="color:#6b7280;font-weight:500;font-size:10px;">' + (normTime || '-') + '</div></div>';
+    var right = '<div style="flex:1;color:#2563eb;line-height:1.3;border-left:1px dashed #cbd5e1;"><div style="font-weight:700;">🛣️ ' + (hwyDist || '-') + '</div><div style="color:#6b7280;font-weight:500;font-size:10px;">' + (hwyTime || '-') + '</div></div>';
+    return '<div style="display:flex;align-items:center;gap:8px;">' + left + right + '</div>';
+  }
+
+  var html = '<table style="border-collapse:collapse;font-size:11px;margin:0;">';
+  // 헤더
+  html += '<thead><tr>';
+  html += '<th style="' + thS + 'background:#f1f5f9;"></th>';
+  cols.forEach(function(c) {
+    html += '<th style="' + thS + 'color:' + c.color + ';">' + c.icon + ' ' + c.label + '</th>';
+  });
+  if (showSum) html += '<th style="' + thS + 'color:#059669;">합계</th>';
+  html += '</tr></thead><tbody>';
+
+  // Row 1: 무료 + 고속 (한 행에 나란히)
+  html += '<tr>';
+  html += '<td style="' + lblS + '"><span style="color:#059669;">🟢 무료</span> <span style="color:#cbd5e1;">/</span> <span style="color:#2563eb;">🛣️ 고속</span></td>';
+  cols.forEach(function(c) {
+    var l = legs[c.key] || {};
+    html += '<td style="' + tdS + '">' + _cellDual(l.normalDist, l.normalTime, l.hwyDist, l.hwyTime) + '</td>';
+  });
+  if (showSum) {
+    var sumN = sumNorm.any ? fmtDist(sumNorm.d) : '-';
+    var sumNt = sumNorm.any ? fmtTime(sumNorm.t) : '-';
+    var sumH = sumHwy.any ? fmtDist(sumHwy.d) : '-';
+    var sumHt = sumHwy.any ? fmtTime(sumHwy.t) : '-';
+    html += '<td style="' + tdS + '">' + _cellDual(sumN, sumNt, sumH, sumHt) + '</td>';
+  }
+  html += '</tr>';
+
+  // Row 2: 톨비
+  if (hasTollData) {
+    html += '<tr>';
+    html += '<td style="' + lblS + 'color:#dc2626;">💰 톨비</td>';
+    cols.forEach(function(c) {
+      var toll = tolls[c.key];
+      var tollTxt = (toll && toll.total > 0) ? ('≈ ฿' + toll.total) : '-';
+      var tip = (toll && toll.breakdown && toll.breakdown.length) ? toll.breakdown.map(function(b){return b.name+' ฿'+b.fare}).join(' + ') : '';
+      html += '<td style="' + tdS + 'color:#dc2626;font-weight:600;" title="' + tip.replace(/"/g,'&quot;') + '">' + tollTxt + '</td>';
+    });
+    if (showSum) html += '<td style="' + tdS + 'font-weight:700;color:#dc2626;">' + (sumToll.any ? ('≈ ฿' + sumToll.v) : '-') + '</td>';
+    html += '</tr>';
+  }
+
+  html += '</tbody></table>';
   distEl.innerHTML = html;
 }
 
 function _toggleHighwayRoute() {
   var hwyChk = document.getElementById('attendHwyChk');
   if (!hwyChk || !_attendMapInstance) return;
+  var r = _attendMapRoute || {};
+  var legs = r.legs || {};
 
   if (hwyChk.checked) {
     _loadTollRates().then(function(){ _updateRouteInfo(); });
-    // 고속도로 경로 표시
-    if (_attendMapRoute.hwyResult) {
+    // Morning hwy
+    if (r.hasMorning && legs.morning && legs.morning.hwyResult && r.mHwyRenderer) {
+      r.mHwyRenderer.setMap(_attendMapInstance);
+      r.mHwyRenderer.setDirections(legs.morning.hwyResult);
+    }
+    // Evening hwy
+    if (r.hasEvening && legs.evening && legs.evening.hwyResult && r.eHwyRenderer) {
+      r.eHwyRenderer.setMap(_attendMapInstance);
+      r.eHwyRenderer.setDirections(legs.evening.hwyResult);
+    }
+    // Direct (fallback, backward compat)
+    if (r.hasDirect && legs.direct && legs.direct.hwyResult && _attendMapHwyRenderer) {
       _attendMapHwyRenderer.setMap(_attendMapInstance);
-      _attendMapHwyRenderer.setDirections(_attendMapRoute.hwyResult);
-    } else {
-      // 아직 로딩 안 됨 → 재조회
-      var ds = new google.maps.DirectionsService();
-      ds.route({
-        origin: _attendMapRoute.inPos,
-        destination: _attendMapRoute.outPos,
-        travelMode: 'DRIVING',
-        avoidHighways: false
-      }, function(result, status) {
-        if (status === 'OK') {
-          _attendMapRoute.hwyResult = result;
-          var leg = result.routes[0].legs[0];
-          _attendMapRoute.hwyDist = leg.distance.text;
-          _attendMapRoute.hwyTime = leg.duration.text;
-          _attendMapHwyRenderer.setMap(_attendMapInstance);
-          _attendMapHwyRenderer.setDirections(result);
-          _updateRouteInfo();
-        }
-      });
+      _attendMapHwyRenderer.setDirections(legs.direct.hwyResult);
     }
   } else {
-    // 고속도로 경로 숨김
-    _attendMapHwyRenderer.setMap(null);
+    if (r.mHwyRenderer) r.mHwyRenderer.setMap(null);
+    if (r.eHwyRenderer) r.eHwyRenderer.setMap(null);
+    if (_attendMapHwyRenderer && _attendMapHwyRenderer !== r.mHwyRenderer) _attendMapHwyRenderer.setMap(null);
   }
   _updateRouteInfo();
 }
@@ -1742,24 +1990,54 @@ function _buildAttendPageHTML(row, idx, total, fromVal, toVal) {
   h += '<tr><td style="padding:8px 12px;background:#f8fafc;border-radius:8px 0 0 8px;font-weight:600;color:#475569;">Hours</td>';
   h += '<td style="padding:8px 12px;background:#f8fafc;border-radius:0 8px 8px 0;font-weight:700;font-size:16px;">' + row.hours + '</td><td></td>';
   h += '<td style="padding:8px 12px;background:#f8fafc;border-radius:8px 0 0 8px;font-weight:600;color:#475569;">Distance</td>';
-  h += '<td style="padding:8px 12px;background:#f8fafc;border-radius:0 8px 8px 0;font-weight:700;font-size:16px;">' + row.dist + '</td></tr>';
+  var _distDisp = (row.distTotal || row.dist || '-');
+  if (row.timeTotal) _distDisp += ' <span style="font-size:13px;color:#6b7280;font-weight:600;">(' + row.timeTotal + ')</span>';
+  h += '<td style="padding:8px 12px;background:#f8fafc;border-radius:0 8px 8px 0;font-weight:700;font-size:16px;">' + _distDisp + '</td></tr>';
+  // 구간별 거리 brekadown (2구간 있을 때)
+  if (row.distBreakdown && (row._morning || row._evening)) {
+    h += '<tr><td style="padding:6px 12px;background:#fef3c7;border-radius:8px 0 0 8px;font-weight:600;color:#92400e;font-size:12px;">Route</td>';
+    h += '<td colspan="4" style="padding:6px 12px;background:#fef3c7;border-radius:0 8px 8px 0;font-weight:600;color:#78350f;font-size:13px;">' + row.distBreakdown + '</td></tr>';
+  }
   if (row.work && row.work !== '-') {
     h += '<tr><td style="padding:8px 12px;background:#fefce8;border-radius:8px 0 0 8px;font-weight:600;color:#854d0e;">Work</td>';
     h += '<td colspan="4" style="padding:8px 12px;background:#fefce8;border-radius:0 8px 8px 0;font-weight:600;color:#713f12;word-spacing:0.12em;">' + row.work + '</td></tr>';
   }
   h += '</table>';
-  h += '<div style="margin-bottom:14px;font-size:12px;line-height:1.8;word-spacing:0.12em;">';
-  h += '<div style="display:flex;gap:8px;"><span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px;flex-shrink:0;word-spacing:normal;">IN</span> <span style="color:#475569;">' + (row.inAddr !== '-' ? row.inAddr : '-') + '</span></div>';
+  h += '<div style="margin-bottom:14px;font-size:12px;line-height:1.7;word-spacing:0.12em;">';
+  if (row.departAddr && row.departLat) {
+    h += '<div style="display:flex;gap:8px;"><span style="background:#fef3c7;color:#b45309;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px;flex-shrink:0;word-spacing:normal;">DEP</span> <span style="color:#475569;">' + (row.departTime ? (row.departTime.split(':').slice(0,2).join(':') + ' · ') : '') + (row.departAddr || '-') + '</span></div>';
+  }
+  h += '<div style="display:flex;gap:8px;margin-top:4px;"><span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px;flex-shrink:0;word-spacing:normal;">IN</span> <span style="color:#475569;">' + (row.inAddr !== '-' ? row.inAddr : '-') + '</span></div>';
   h += '<div style="display:flex;gap:8px;margin-top:4px;"><span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px;flex-shrink:0;word-spacing:normal;">OUT</span> <span style="color:#475569;">' + (row.outAddr !== '-' ? row.outAddr : '-') + '</span></div>';
+  if (row.returnAddr && row.returnLat) {
+    h += '<div style="display:flex;gap:8px;margin-top:4px;"><span style="background:#ede9fe;color:#6d28d9;padding:2px 8px;border-radius:4px;font-weight:700;font-size:11px;flex-shrink:0;word-spacing:normal;">RET</span> <span style="color:#475569;">' + (row.returnTime ? (row.returnTime.split(':').slice(0,2).join(':') + ' · ') : '') + (row.returnAddr || '-') + '</span></div>';
+  }
   h += '</div>';
-  if (row.inLat && row.inLng && row.outLat && row.outLng) {
-    var pathParam = row._encodedPath
-      ? '&path=color:0x7c3aedCC%7Cweight:4%7Cenc:' + encodeURIComponent(row._encodedPath)
-      : '&path=color:0x7c3aedCC%7Cweight:4%7C' + row.inLat + ',' + row.inLng + '%7C' + row.outLat + ',' + row.outLng;
-    var mapUrl = 'https://maps.googleapis.com/maps/api/staticmap?size=700x350&scale=2&maptype=roadmap' +
-      '&markers=color:green%7Clabel:I%7C' + row.inLat + ',' + row.inLng +
-      '&markers=color:blue%7Clabel:O%7C' + row.outLat + ',' + row.outLng +
-      pathParam + '&key=' + (window.GMAPS_KEY || 'AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw');
+  // ── Static Map: 4 마커 + 2 경로 ──
+  var _hasAnyCoord = (row.inLat && row.inLng) || (row.outLat && row.outLng) || (row.departLat && row.departLng) || (row.returnLat && row.returnLng);
+  if (_hasAnyCoord) {
+    var mapParts = ['https://maps.googleapis.com/maps/api/staticmap?size=700x350&scale=2&maptype=roadmap'];
+    // 마커들
+    if (row.departLat && row.departLng) mapParts.push('markers=color:orange%7Clabel:D%7C' + row.departLat + ',' + row.departLng);
+    if (row.inLat && row.inLng)         mapParts.push('markers=color:green%7Clabel:I%7C' + row.inLat + ',' + row.inLng);
+    if (row.outLat && row.outLng)       mapParts.push('markers=color:blue%7Clabel:O%7C' + row.outLat + ',' + row.outLng);
+    if (row.returnLat && row.returnLng) mapParts.push('markers=color:purple%7Clabel:R%7C' + row.returnLat + ',' + row.returnLng);
+    // 경로들 (색상 다르게)
+    if (row._morning && row._morning.encoded) {
+      mapParts.push('path=color:0xf59e0bCC%7Cweight:4%7Cenc:' + encodeURIComponent(row._morning.encoded));
+    } else if (row.departLat && row.inLat) {
+      mapParts.push('path=color:0xf59e0bCC%7Cweight:4%7C' + row.departLat + ',' + row.departLng + '%7C' + row.inLat + ',' + row.inLng);
+    }
+    if (row._evening && row._evening.encoded) {
+      mapParts.push('path=color:0x8b5cf6CC%7Cweight:4%7Cenc:' + encodeURIComponent(row._evening.encoded));
+    } else if (row.outLat && row.returnLat) {
+      mapParts.push('path=color:0x8b5cf6CC%7Cweight:4%7C' + row.outLat + ',' + row.outLng + '%7C' + row.returnLat + ',' + row.returnLng);
+    }
+    if (row._direct && row._direct.encoded) {
+      mapParts.push('path=color:0x7c3aedCC%7Cweight:4%7Cenc:' + encodeURIComponent(row._direct.encoded));
+    }
+    mapParts.push('key=' + (window.GMAPS_KEY || 'AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw'));
+    var mapUrl = mapParts[0] + '&' + mapParts.slice(1).join('&');
     h += '<div style="border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;">';
     h += '<img src="' + mapUrl + '" style="width:100%;height:auto;display:block;" crossorigin="anonymous"></div>';
   }
@@ -1786,46 +2064,101 @@ async function exportAttendancePDF() {
 
   showToast(t('att_pdf_generating'));
 
-  // 데이터 수집
+  // 데이터 수집 (depart/return 포함)
   var allRows = [];
   checked.forEach(function(cb) {
-    var distCell = document.getElementById('asDist_' + cb.dataset.emp + '_' + cb.dataset.date.replace(/-/g,''));
-    var distRaw = distCell ? (distCell.querySelector('strong') ? distCell.querySelector('strong').textContent.trim() : distCell.textContent.trim()) : '-';
-    if (distRaw === '...' || distRaw === '') distRaw = '-';
     allRows.push({
       empName: cb.dataset.empname || '', empNick: cb.dataset.nickname || '', empId: cb.dataset.emp || '', dept: cb.dataset.dept || '',
       date: cb.dataset.date, clockIn: cb.dataset.in || '-', clockOut: cb.dataset.out || '-',
       hours: cb.dataset.hours || '-', inAddr: cb.dataset.inAddr || '-', outAddr: cb.dataset.outAddr || '-',
       inLat: cb.dataset.inLat, inLng: cb.dataset.inLng, outLat: cb.dataset.outLat, outLng: cb.dataset.outLng,
-      work: cb.dataset.work || '-', dist: distRaw
+      departLat: cb.dataset.departLat, departLng: cb.dataset.departLng, departAddr: cb.dataset.departAddr || '', departTime: cb.dataset.departTime || '',
+      returnLat: cb.dataset.returnLat, returnLng: cb.dataset.returnLng, returnAddr: cb.dataset.returnAddr || '', returnTime: cb.dataset.returnTime || '',
+      mHwy: cb.dataset.mHwy === '1', eHwy: cb.dataset.eHwy === '1',
+      work: cb.dataset.work || '-'
     });
   });
 
   _pdfPreviewFromVal = (document.getElementById('asSDateFrom') || {}).value || '';
   _pdfPreviewToVal = (document.getElementById('asSDateTo') || {}).value || '';
 
-  // Directions API로 실제 도로 경로 조회 (encoded polyline)
+  // Directions API — morning(depart→in) + evening(out→return) 2구간 계산
   if (window.google && google.maps && google.maps.DirectionsService) {
     var dirService = new google.maps.DirectionsService();
-    var routePromises = allRows.map(function(row) {
-      if (!row.inLat || !row.inLng || !row.outLat || !row.outLng) return Promise.resolve();
+
+    function _routeOne(row, oLat, oLng, dLat, dLng, useHwy) {
+      if (!oLat || !oLng || !dLat || !dLng) return Promise.resolve(null);
       return new Promise(function(resolve) {
         dirService.route({
-          origin: { lat: parseFloat(row.inLat), lng: parseFloat(row.inLng) },
-          destination: { lat: parseFloat(row.outLat), lng: parseFloat(row.outLng) },
-          travelMode: 'DRIVING'
+          origin: { lat: parseFloat(oLat), lng: parseFloat(oLng) },
+          destination: { lat: parseFloat(dLat), lng: parseFloat(dLng) },
+          travelMode: 'DRIVING',
+          avoidHighways: !useHwy // 사용자가 고속도로 이용 시 false, 아니면 true
         }, function(result, status) {
           if (status === 'OK' && result.routes && result.routes[0]) {
-            row._encodedPath = result.routes[0].overview_polyline;
-            // 거리·시간 업데이트
             var leg = result.routes[0].legs[0];
-            if (leg && leg.distance) row.dist = leg.distance.text;
-          }
-          resolve();
+            resolve({
+              encoded: result.routes[0].overview_polyline,
+              distText: leg && leg.distance ? leg.distance.text : '',
+              distVal: leg && leg.distance ? leg.distance.value : 0,
+              timeText: leg && leg.duration ? leg.duration.text : '',
+              timeVal: leg && leg.duration ? leg.duration.value : 0
+            });
+          } else resolve(null);
         });
+      });
+    }
+
+    function _fmtDistTotal(m) { return (m == null) ? '-' : (m/1000).toFixed(1) + ' km'; }
+    function _fmtTimeTotal(s) {
+      if (!s) return '';
+      s = Math.round(s);
+      var h = Math.floor(s/3600), mm = Math.round((s%3600)/60);
+      return h > 0 ? (h + '시간 ' + mm + '분') : (mm + '분');
+    }
+
+    var routePromises = allRows.map(function(row) {
+      var hasMorning = row.departLat && row.departLng && row.inLat && row.inLng;
+      var hasEvening = row.outLat && row.outLng && row.returnLat && row.returnLng;
+      var hasDirect  = !hasMorning && !hasEvening && row.inLat && row.inLng && row.outLat && row.outLng;
+
+      return Promise.all([
+        hasMorning ? _routeOne(row, row.departLat, row.departLng, row.inLat, row.inLng, !!row.mHwy) : Promise.resolve(null),
+        hasEvening ? _routeOne(row, row.outLat, row.outLng, row.returnLat, row.returnLng, !!row.eHwy) : Promise.resolve(null),
+        hasDirect  ? _routeOne(row, row.inLat,     row.inLng,     row.outLat,    row.outLng, !!(row.mHwy||row.eHwy)) : Promise.resolve(null)
+      ]).then(function(results) {
+        row._morning = results[0];
+        row._evening = results[1];
+        row._direct  = results[2];
+        // 합산 거리·시간
+        // 합계: 각 leg 를 먼저 1자리 소수점 km 단위로 반올림한 뒤 합산 → breakdown 합이 total 과 시각적으로 정확히 일치
+        var totKmRounded = 0, totTimeMin = 0, hasAny = false;
+        [results[0], results[1], results[2]].forEach(function(r) {
+          if (r) {
+            totKmRounded += parseFloat((r.distVal / 1000).toFixed(1));
+            totTimeMin += Math.round(r.timeVal / 60); // 분 단위 반올림
+            hasAny = true;
+          }
+        });
+        function _fmtTimeFromMin(mins) {
+          if (!mins) return '';
+          var hh = Math.floor(mins/60), mm = mins%60;
+          return hh > 0 ? (hh + '시간 ' + mm + '분') : (mm + '분');
+        }
+        row.distTotal = hasAny ? (totKmRounded.toFixed(1) + ' km') : '-';
+        row.timeTotal = hasAny ? _fmtTimeFromMin(totTimeMin) : '';
+        // 구간별 표시용 — 각 leg를 total 과 동일한 포매터로 표기 (시각적으로 합산이 맞도록)
+        var parts = [];
+        if (row._morning) parts.push('🚗 ' + _fmtDistTotal(row._morning.distVal) + ' · ' + _fmtTimeFromMin(Math.round(row._morning.timeVal/60)) + (row.mHwy ? ' 🛣️' : ''));
+        if (row._evening) parts.push('🏠 ' + _fmtDistTotal(row._evening.distVal) + ' · ' + _fmtTimeFromMin(Math.round(row._evening.timeVal/60)) + (row.eHwy ? ' 🛣️' : ''));
+        if (row._direct)  parts.push('🚗 ' + _fmtDistTotal(row._direct.distVal)  + ' · ' + _fmtTimeFromMin(Math.round(row._direct.timeVal/60)));
+        row.distBreakdown = parts.join(' | ');
+        row.dist = row.distTotal; // 기존 호환
       });
     });
     await Promise.all(routePromises);
+  } else {
+    allRows.forEach(function(r){ r.dist = '-'; r.distTotal = '-'; r.distBreakdown = ''; });
   }
 
   // 페이지별 html2canvas
@@ -2019,12 +2352,14 @@ async function _loadAttendEmpFilter(mode) {
       if (mode === 'team' && dept !== myDept) return;
       // subteam 모드: 같은 부서(sub_dept)만 표시
       if (mode === 'subteam' && (subDept !== mySubDept || dept !== myDept)) return;
-      window._asAccounts.push({ empid: _empid, name: a.name || _empid, dept: dept, sub_dept: subDept });
+      var _nick = a.nickname || '';
+      window._asAccounts.push({ empid: _empid, name: a.name || _empid, nickname: _nick, dept: dept, sub_dept: subDept });
       var opt = document.createElement('option');
       opt.value = _empid;
-      opt.textContent = _empid + ' (' + (a.name || '') + ')';
+      opt.textContent = _empid + ' (' + (a.name || '') + (_nick ? ' / ' + _nick : '') + ')';
       opt.dataset.dept = dept;
       opt.dataset.subDept = subDept;
+      opt.dataset.nickname = _nick;
       sel.appendChild(opt);
       if (dept && !depts[dept]) depts[dept] = true;
       if (subDept && !subDepts[subDept]) subDepts[subDept] = dept;
@@ -2050,14 +2385,14 @@ async function _loadAttendEmpFilter(mode) {
         }
       });
     }
-    // 부서(sub_dept) 필터 채우기
+    // 부서(sub_dept) 필터 채우기 — 현재 언어로 번역
     if (subDeptSel && mode !== 'team' && mode !== 'subteam') {
       subDeptSel.innerHTML = '<option value="">' + t('att_sum_all_dept') + '</option>';
       var _subDeptKeys = Object.keys(subDepts).sort();
       _subDeptKeys.forEach(function(sd) {
         var opt = document.createElement('option');
-        opt.value = sd;
-        opt.textContent = sd;
+        opt.value = sd;  // 내부 값은 한국어 원문 유지 (Firestore 매칭용)
+        opt.textContent = _attTranslateSubDept(sd);
         opt.dataset.dept = subDepts[sd];
         subDeptSel.appendChild(opt);
       });
@@ -2204,11 +2539,11 @@ async function loadAttendanceSummary() {
       html += '<table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">';
       var thS = 'padding:8px 6px;font-weight:600;border-bottom:1px solid #e5e7eb;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
       if (_isMob) {
-        // Mobile: Date | In | Out | Hours | Work | Dist | Map
-        html += '<colgroup><col style="width:28px"><col style="width:72px"><col style="width:44px"><col style="width:44px"><col style="width:44px"><col><col style="width:44px"><col style="width:32px"></colgroup>';
+        // Mobile: Date(MM-DD) | In | Out | Hours | Work | Dist | Map
+        html += '<colgroup><col style="width:26px"><col style="width:48px"><col style="width:44px"><col style="width:44px"><col style="width:62px"><col><col style="width:78px"><col style="width:30px"></colgroup>';
       } else {
         // Desktop: cb | Date | In | Out | Hours | Work | Depart | Return | Dist | Map
-        html += '<colgroup><col style="width:30px"><col style="width:80px"><col style="width:50px"><col style="width:50px"><col style="width:50px"><col style="width:14%"><col style="width:20%"><col style="width:20%"><col style="width:56px"><col style="width:36px"></colgroup>';
+        html += '<colgroup><col style="width:30px"><col style="width:80px"><col style="width:50px"><col style="width:50px"><col style="width:50px"><col style="width:14%"><col style="width:18%"><col style="width:18%"><col style="width:96px"><col style="width:36px"></colgroup>';
       }
       html += '<thead><tr style="background:#f9fafb;">';
       html += '<th style="' + thS + 'text-align:center;"><input type="checkbox" onchange="_asToggleAllCb(this,\'' + empid.replace(/'/g,"\\'") + '\')" style="width:15px;height:15px;cursor:pointer;accent-color:#2563eb;"></th>';
@@ -2230,11 +2565,12 @@ async function loadAttendanceSummary() {
         var dayWorkNote = '';
         var departTime = null, departAddr = '', returnTime = null, returnAddr = '';
         var departLat = null, departLng = null, returnLat = null, returnLng = null;
+        var inUsedHwy = false, returnUsedHwy = false; // 사용자가 clock in / return 시 선택한 고속도로 여부
         dayRecords.forEach(function(r) {
-          if (r.type === 'in' && (!firstIn || r.time < firstIn)) { firstIn = r.time; inAddr = r.address || ''; inLat = r.lat; inLng = r.lng; }
+          if (r.type === 'in' && (!firstIn || r.time < firstIn)) { firstIn = r.time; inAddr = r.address || ''; inLat = r.lat; inLng = r.lng; inUsedHwy = !!r.usedHighway; }
           if (r.type === 'out' && (!lastOut || r.time > lastOut)) { lastOut = r.time; outAddr = r.address || ''; outLat = r.lat; outLng = r.lng; if (r.workNote) dayWorkNote = r.workNote; }
           if (r.type === 'depart' && (!departTime || r.time > departTime)) { departTime = r.time; departAddr = r.address || ''; departLat = r.lat; departLng = r.lng; }
-          if (r.type === 'return' && (!returnTime || r.time > returnTime)) { returnTime = r.time; returnAddr = r.address || ''; returnLat = r.lat; returnLng = r.lng; }
+          if (r.type === 'return' && (!returnTime || r.time > returnTime)) { returnTime = r.time; returnAddr = r.address || ''; returnLat = r.lat; returnLng = r.lng; returnUsedHwy = !!r.usedHighway; }
         });
 
         var workHours = '-';
@@ -2243,6 +2579,10 @@ async function loadAttendanceSummary() {
           var inMin = parseInt(inParts[0])*60 + parseInt(inParts[1]);
           var outMin = parseInt(outParts[0])*60 + parseInt(outParts[1]);
           var diff = outMin - inMin;
+          // 점심시간(12:00-13:00) 공제
+          var lunchStart = 12*60, lunchEnd = 13*60;
+          var lunchOverlap = Math.max(0, Math.min(outMin, lunchEnd) - Math.max(inMin, lunchStart));
+          diff = diff - lunchOverlap;
           if (diff > 0) {
             var h = Math.floor(diff/60), m = diff%60;
             workHours = h + t('att_hours_h') + (m > 0 ? ' ' + m + t('att_hours_m') : '');
@@ -2260,6 +2600,11 @@ async function loadAttendanceSummary() {
         var hasRoute = inLat && inLng && outLat && outLng;
         // depart→return 경로도 체크
         var hasDRRoute = departLat && departLng && returnLat && returnLng;
+        // Morning 구간: depart → clock-in (둘 다 있어야 계산)
+        var hasMorning = departLat && departLng && inLat && inLng;
+        // Evening 구간: clock-out → return
+        var hasEvening = outLat && outLng && returnLat && returnLng;
+        // Map 버튼용 전체 경로 (기존 로직 유지)
         var mapLat1 = departLat || inLat, mapLng1 = departLng || inLng;
         var mapLat2 = returnLat || outLat, mapLng2 = returnLng || outLng;
         var hasAnyRoute = (mapLat1 && mapLng1 && mapLat2 && mapLng2);
@@ -2268,8 +2613,13 @@ async function loadAttendanceSummary() {
         html += '<tr style="border-bottom:1px solid #f3f4f6;">';
         html += '<td style="padding:4px 5px;text-align:center;vertical-align:middle;"><input type="checkbox" class="as-row-cb" data-emp="' + empid + '" data-empname="' + (emp.name||'').replace(/"/g,'&quot;') + '" data-nickname="' + (emp.nickname||'').replace(/"/g,'&quot;') + '" data-dept="' + (emp.dept||'').replace(/"/g,'&quot;') + '" data-date="' + date + '" data-in="' + (firstIn||'') + '" data-out="' + (lastOut||'') + '" data-hours="' + workHours + '" data-in-addr="' + (inAddr||'').replace(/"/g,'&quot;') + '" data-out-addr="' + (outAddr||'').replace(/"/g,'&quot;') + '"' +
           (hasRoute ? ' data-in-lat="' + inLat + '" data-in-lng="' + inLng + '" data-out-lat="' + outLat + '" data-out-lng="' + outLng + '"' : '') +
+          (departLat && departLng ? ' data-depart-lat="' + departLat + '" data-depart-lng="' + departLng + '" data-depart-addr="' + (departAddr||'').replace(/"/g,'&quot;') + '" data-depart-time="' + (departTime||'') + '"' : '') +
+          (returnLat && returnLng ? ' data-return-lat="' + returnLat + '" data-return-lng="' + returnLng + '" data-return-addr="' + (returnAddr||'').replace(/"/g,'&quot;') + '" data-return-time="' + (returnTime||'') + '"' : '') +
+          ' data-m-hwy="' + (inUsedHwy ? '1' : '0') + '" data-e-hwy="' + (returnUsedHwy ? '1' : '0') + '"' +
           ' data-work="' + (dayWorkNote||'').replace(/"/g,'&quot;') + '" style="width:15px;height:15px;cursor:pointer;accent-color:#2563eb;"></td>';
-        html += '<td style="' + tdS + 'font-weight:600;">' + date + '</td>';
+        // 모바일에선 연도 생략 (MM-DD)
+        var dateDisp = _isMob ? (date && date.length >= 10 ? date.substring(5) : date) : date;
+        html += '<td style="' + tdS + 'font-weight:600;">' + dateDisp + '</td>';
         var firstInHM = firstIn ? firstIn.split(':').slice(0,2).join(':') : '-';
         var lastOutHM = lastOut ? lastOut.split(':').slice(0,2).join(':') : '-';
         html += '<td style="' + tdS + 'text-align:center;color:#16a34a;font-weight:700;">' + firstInHM + '</td>';
@@ -2288,12 +2638,21 @@ async function loadAttendanceSummary() {
           else html += '<span style="color:#d1d5db;">-</span>';
           html += '</td>';
         }
-        html += '<td id="' + distId + '" style="' + tdS + 'text-align:center;color:#6b7280;"' +
-          (hasAnyRoute ? ' data-in-lat="' + (mapLat1) + '" data-in-lng="' + (mapLng1) + '" data-out-lat="' + (mapLat2) + '" data-out-lng="' + (mapLng2) + '"' : '') +
-          '>' + (hasAnyRoute ? '...' : '-') + '</td>';
+        // Morning (depart→in) 과 Evening (out→return) 각각의 좌표 data- 속성
+        var distAttrs = '';
+        if (hasMorning) distAttrs += ' data-m1-lat="' + departLat + '" data-m1-lng="' + departLng + '" data-m2-lat="' + inLat + '" data-m2-lng="' + inLng + '" data-m-hwy="' + (inUsedHwy ? '1' : '0') + '"';
+        if (hasEvening) distAttrs += ' data-e1-lat="' + outLat + '" data-e1-lng="' + outLng + '" data-e2-lat="' + returnLat + '" data-e2-lng="' + returnLng + '" data-e-hwy="' + (returnUsedHwy ? '1' : '0') + '"';
+        html += '<td id="' + distId + '" style="' + tdS.replace('white-space:nowrap;', '') + 'text-align:center;color:#6b7280;white-space:normal;line-height:1.2;"' + distAttrs + '>' +
+          ((hasMorning || hasEvening) ? '...' : '-') + '</td>';
         html += '<td style="padding:3px 2px;text-align:center;vertical-align:middle;">';
         if (hasAnyRoute) {
-          html += '<button onclick="openAttendMap(' + mapLat1 + ',' + mapLng1 + ',' + mapLat2 + ',' + mapLng2 + ',\'' + (emp.name||'').replace(/'/g,"\\'") + '\',\'' + date + '\')" style="background:none;border:none;font-size:12px;cursor:pointer;padding:2px;color:#2563eb;font-weight:600;" title="지도 보기">📍Map</button>';
+          var _args = '\'' + (emp.name||'').replace(/'/g,"\\'") + '\',\'' + date + '\',' +
+            (departLat||'null') + ',' + (departLng||'null') + ',' +
+            (inLat||'null') + ',' + (inLng||'null') + ',' +
+            (outLat||'null') + ',' + (outLng||'null') + ',' +
+            (returnLat||'null') + ',' + (returnLng||'null') + ',' +
+            (inUsedHwy?'true':'false') + ',' + (returnUsedHwy?'true':'false');
+          html += '<button onclick="openAttendMap(' + _args + ')" style="background:none;border:none;font-size:12px;cursor:pointer;padding:2px;color:#2563eb;font-weight:600;" title="지도 보기">📍Map</button>';
         } else {
           html += '<span style="color:#d1d5db;">-</span>';
         }

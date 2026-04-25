@@ -1603,6 +1603,95 @@ function _captchaChallenge() {
   });
 }
 
+// ── 매일 오후 12시 (정오) 자동 팝업 스케줄러 ─────────────────────────────
+var _noonPopupTimer = null;
+function _todayKeyStr() {
+  var n = new Date();
+  return n.getFullYear()+'-'+String(n.getMonth()+1).padStart(2,'0')+'-'+String(n.getDate()).padStart(2,'0');
+}
+function _scheduleNoonTargetPopup(user) {
+  if (!user || !user.empid) return;
+  if (_noonPopupTimer) { clearInterval(_noonPopupTimer); _noonPopupTimer = null; }
+  var flagKey = 'popup_noon_lastShown_' + user.empid;
+  var shownAtKey = 'popup_shownAt_' + user.empid;
+  function _noonCheck() {
+    try {
+      var now = new Date();
+      if (now.getHours() < 12) return; // 정오 이전이면 대기
+      if (localStorage.getItem(flagKey) === _todayKeyStr()) return; // 오늘 이미 트리거됨
+      // 로그인 상태 확인
+      var cu = (typeof getCurrentUser === 'function') ? getCurrentUser() : null;
+      if (!cu || cu.empid !== user.empid) {
+        if (_noonPopupTimer) { clearInterval(_noonPopupTimer); _noonPopupTimer = null; }
+        return;
+      }
+      // 최근 30분 내에 팝업을 이미 봤다면 (로그인 시점 등) 스킵하되 오늘은 마크
+      var lastShown = parseInt(localStorage.getItem(shownAtKey) || '0', 10);
+      if (lastShown && (Date.now() - lastShown) < 30 * 60 * 1000) {
+        localStorage.setItem(flagKey, _todayKeyStr());
+        console.log('[NoonPopup] skip: 최근 30분 내에 이미 표시됨');
+        return;
+      }
+      // 최신 데이터 재로드 후 팝업 결정/표시
+      try { if (typeof _targetDataLoaded !== 'undefined') _targetDataLoaded = false; } catch(_){}
+      try { if (typeof _dashboardTotalsLoaded !== 'undefined') _dashboardTotalsLoaded = false; } catch(_){}
+      var _loadTargetFirst = typeof _loadTargetData === 'function' ? _loadTargetData : function(cb){ if(cb) cb(); };
+      var _loadDashFirst = typeof _loadDashboardTotals === 'function' ? _loadDashboardTotals : function(cb){ if(cb) cb(); };
+      _loadTargetFirst(function(){
+      _loadDashFirst(function(){
+      _loadPopupConfigFromFirebase(function(){
+        if (!_popupConfig || !_popupConfig.enabled) { localStorage.setItem(flagKey, _todayKeyStr()); return; }
+        var _t = _popupConfig.target;
+        var _isAdmPopup = _isAdmin(user);
+        var _show = false, _personalName = null, _teamName = null, _reason = '';
+        if (_t === 'all') { _show = true; _reason = 'all'; }
+        else if (_t === 'admin' && _isAdmPopup) { _show = true; _reason = 'admin'; }
+        else if (_t === user.empid) { _show = true; _reason = 'empid match'; }
+        else if (_t && _t.indexOf('dept_') === 0 && user.dept === _t.replace('dept_','')) { _show = true; _reason = 'dept match'; }
+        else if (_t === 'personal_sales' && user.dept === 'Sales') {
+          _show = true; _reason = 'personal_sales';
+          var _isLeader = user.position === 'leader' || user.role === 'manager' || user.sub_dept === 'Group Leader';
+          if (_isLeader) {
+            _teamName = (typeof _resolveTeamFromSubDept === 'function') ? _resolveTeamFromSubDept(user.sub_dept) : '';
+          } else {
+            _personalName = user.nickname || user.name || '';
+          }
+        }
+        else if (_t === 'team_leader' && user.dept === 'Sales' && (user.position === 'leader' || user.role === 'manager' || user.sub_dept === 'Group Leader')) {
+          _show = true; _reason = 'team_leader';
+          _teamName = (typeof _resolveTeamFromSubDept === 'function') ? _resolveTeamFromSubDept(user.sub_dept) : '';
+        }
+        var _alreadyOwn = (_reason === 'personal_sales' || _reason === 'team_leader');
+        if (_show && !_alreadyOwn && user.dept === 'Sales' && !_isAdmPopup) {
+          var _autoLeader = user.position === 'leader' || user.role === 'manager' || user.sub_dept === 'Group Leader';
+          if (_autoLeader && !_teamName) {
+            _teamName = (typeof _resolveTeamFromSubDept === 'function') ? _resolveTeamFromSubDept(user.sub_dept) : '';
+            if (_teamName) _reason += '+auto_team('+_teamName+')';
+          } else if (!_autoLeader && !_personalName) {
+            _personalName = user.nickname || user.name || '';
+            if (_personalName) _reason += '+auto_person('+_personalName+')';
+          }
+        }
+        var _perms = _ensurePermArray(user.permissions);
+        var _ownDataMode = (_reason.indexOf('personal_sales') === 0 || _reason.indexOf('team_leader') === 0 || _reason.indexOf('auto_team') >= 0 || _reason.indexOf('auto_person') >= 0);
+        var _canTarget = _ownDataMode || _isAdmPopup || _perms.includes('target') || _perms.includes('target_approve');
+        console.log('[NoonPopup] target='+_t+' · user='+user.empid+' · show='+_show+' ('+_reason+') · canTarget='+_canTarget);
+        if (!_show || !_canTarget) { localStorage.setItem(flagKey, _todayKeyStr()); return; }
+        setTimeout(function(){
+          showTargetAlert(_personalName, _teamName);
+          try { localStorage.setItem(shownAtKey, String(Date.now())); } catch(_){}
+          localStorage.setItem(flagKey, _todayKeyStr());
+        }, 300);
+      });
+      });
+      });
+    } catch(e) { console.warn('[NoonPopup] error:', e); }
+  }
+  _noonCheck(); // 즉시 1회 체크 (로그인 시점이 이미 12시 이후라면 발동)
+  _noonPopupTimer = setInterval(_noonCheck, 60 * 1000); // 매분 체크
+  console.log('[NoonPopup] 스케줄러 시작 (user='+user.empid+')');
+}
+
 async function doLogin() {
   const id    = document.getElementById('li_empid').value.trim();
   const pw    = document.getElementById('li_pw').value;
@@ -1709,29 +1798,50 @@ async function doLogin() {
           // 팀장/매니저 → 팀 실적, 팀원 → 개인 실적
           var _isLeader = user.position === 'leader' || user.role === 'manager' || user.sub_dept === 'Group Leader';
           if (_isLeader) {
-            _teamName = (typeof _SUBDEPT_TEAM_MAP !== 'undefined' && _SUBDEPT_TEAM_MAP[user.sub_dept]) ? _SUBDEPT_TEAM_MAP[user.sub_dept] : '';
+            _teamName = (typeof _resolveTeamFromSubDept === 'function') ? _resolveTeamFromSubDept(user.sub_dept)
+              : ((typeof _SUBDEPT_TEAM_MAP !== 'undefined' && _SUBDEPT_TEAM_MAP[user.sub_dept]) ? _SUBDEPT_TEAM_MAP[user.sub_dept] : '');
           } else {
             _personalName = user.nickname || user.name || '';
           }
         }
         else if (_t === 'team_leader' && user.dept === 'Sales' && (user.position === 'leader' || user.role === 'manager' || user.sub_dept === 'Group Leader')) {
           _show = true; _reason = 'team_leader';
-          _teamName = (typeof _SUBDEPT_TEAM_MAP !== 'undefined' && _SUBDEPT_TEAM_MAP[user.sub_dept]) ? _SUBDEPT_TEAM_MAP[user.sub_dept] : '';
+          _teamName = (typeof _resolveTeamFromSubDept === 'function') ? _resolveTeamFromSubDept(user.sub_dept)
+            : ((typeof _SUBDEPT_TEAM_MAP !== 'undefined' && _SUBDEPT_TEAM_MAP[user.sub_dept]) ? _SUBDEPT_TEAM_MAP[user.sub_dept] : '');
+        }
+        // 🔥 자동 업그레이드: target='all'/'dept_*'/'admin' 등으로 팝업이 뜰 때도
+        // 영업 팀장/팀원에게는 팀/개인 실적 팝업을 보여준다 (일반 팝업 내용 덮어쓰기).
+        // 단, 관리자는 전체 수치 유지. personal_sales/team_leader 모드는 위에서 이미 처리됨.
+        var _alreadyOwn = (_reason === 'personal_sales' || _reason === 'team_leader');
+        if (_show && !_alreadyOwn && user.dept === 'Sales' && !_isAdmPopup) {
+          var _autoLeader = user.position === 'leader' || user.role === 'manager' || user.sub_dept === 'Group Leader';
+          if (_autoLeader && !_teamName) {
+            _teamName = (typeof _resolveTeamFromSubDept === 'function') ? _resolveTeamFromSubDept(user.sub_dept) : '';
+            if (_teamName) { _reason += '+auto_team('+_teamName+')'; }
+          } else if (!_autoLeader && !_personalName) {
+            _personalName = user.nickname || user.name || '';
+            if (_personalName) { _reason += '+auto_person('+_personalName+')'; }
+          }
         }
         // 관리자 override — target 설정을 존중한다. 관리자는 target='admin' 또는 'all'일 때만 팝업을 본다.
         // (personal_sales / team_leader 모드에서는 관리자 제외 — 테스트는 팝업 관리 패널의 "개인 미리보기" 사용)
         // 매출/수금 현황 권한 체크 — 단, personal_sales/team_leader 모드는 본인(팀) 데이터이므로 권한 무관
         var _perms = _ensurePermArray(user.permissions);
-        var _ownDataMode = (_reason === 'personal_sales' || _reason === 'team_leader');
+        var _ownDataMode = (_reason.indexOf('personal_sales') === 0 || _reason.indexOf('team_leader') === 0 || _reason.indexOf('auto_team') >= 0 || _reason.indexOf('auto_person') >= 0);
         var _canTarget = _ownDataMode || _isAdmPopup || _perms.includes('target') || _perms.includes('target_approve');
         console.log('[Popup] target='+_t+' · user='+user.empid+' · dept='+user.dept+' · sub_dept='+user.sub_dept+' · isAdmin='+_isAdmPopup+' · show='+_show+' ('+(_reason||'no match')+') · canTarget='+_canTarget+' · perms=['+_perms.join(',')+']');
         if (!_show) { console.log('[Popup] skip: 대상 불일치 (target='+_t+', user.empid='+user.empid+')'); return; }
         if (!_canTarget) { console.log('[Popup] skip: target 권한 없음 (대시보드 권한 필요)'); return; }
         console.log('[Popup] ✅ 표시 예정 (personalName='+_personalName+', teamName='+_teamName+')');
-        setTimeout(function() { showTargetAlert(_personalName, _teamName); }, 800);
+        setTimeout(function() {
+          showTargetAlert(_personalName, _teamName);
+          try { localStorage.setItem('popup_shownAt_'+user.empid, String(Date.now())); } catch(_){}
+        }, 800);
       });
       }); // _loadDashFirst
       }); // _loadTargetFirst
+      // 매일 오후 12시 자동 팝업 스케줄러 시작
+      if (typeof _scheduleNoonTargetPopup === 'function') _scheduleNoonTargetPopup(user);
     }
     // 로그인 후 잔존 inert/overflow 정리 (모달 포커스트랩 잔재 방지)
     document.querySelectorAll('[inert]').forEach(function(el){ el.removeAttribute('inert'); });

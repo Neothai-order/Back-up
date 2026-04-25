@@ -3047,23 +3047,54 @@ function renderCharts(d) {
   } catch(e){ perms = []; }
 
   // sub_dept → 팀명 매핑
+  // ⚠️ DB 에는 Korean 원본값이 저장됨 (core.js SUB_DEPT_OPTIONS 참조):
+  //    방콕/북부/북동부/동부/남부/CT/Group Leader
+  // 과거 버그로 '서부' 가 'East' 로 매핑되어 있었음 — '서부' 는 올바른 키가 아니며
+  // '동부' 가 East 의 공식 Korean 키이므로 추가. (Thai/영문 표기도 함께 관용 처리)
   var SUBDEPT_MAP = {
-    '방콕':'BKK','bangkok':'BKK','BKK':'BKK',
-    '북동부':'North East','northeast':'North East','North East':'North East',
-    '서부':'East','east':'East','East':'East',
-    '북부':'North','north':'North','North':'North',
-    '남부':'South','south':'South','South':'South'
+    '방콕':'BKK','bangkok':'BKK','BKK':'BKK','bkk':'BKK','กรุงเทพ':'BKK','กรุงเทพฯ':'BKK',
+    '북동부':'North East','northeast':'North East','north east':'North East','North East':'North East','NorthEast':'North East','ตะวันออกเฉียงเหนือ':'North East',
+    '동부':'East','east':'East','East':'East','EAST':'East','ตะวันออก':'East',
+    '서부':'East', // ← 레거시 호환 (과거 매핑 유지). 현재 SUB_DEPT_OPTIONS 에는 서부 없음
+    '북부':'North','north':'North','North':'North','NORTH':'North','เหนือ':'North',
+    '남부':'South','south':'South','South':'South','SOUTH':'South','ใต้':'South'
   };
+  function _mapSubDept(v){
+    if(!v) return '';
+    var s = ('' + v).trim();
+    if (SUBDEPT_MAP[s]) return SUBDEPT_MAP[s];
+    // 대소문자/공백 관용 조회
+    var lk = s.toLowerCase().replace(/\s+/g,'');
+    for (var k in SUBDEPT_MAP){
+      if (k.toLowerCase().replace(/\s+/g,'') === lk) return SUBDEPT_MAP[k];
+    }
+    return s;
+  }
 
   _loggedUserName = user.name || user.empid;
-  _loggedUserTeam = SUBDEPT_MAP[user.sub_dept] || user.sub_dept || '';
+  _loggedUserTeam = _mapSubDept(user.sub_dept);
 
-  // SALES_DATA에서 이름으로 팀 매칭 (sub_dept 매핑 실패 시 폴백)
-  if (!_loggedUserTeam) {
-    SALES_DATA.forEach(function(s) {
-      if (s.name === _loggedUserName) _loggedUserTeam = s.team;
-    });
+  // 유효한 팀 리스트 검증 — 매핑 결과가 실제 팀명이 아니면 무효화 후 이름 기반 폴백
+  var _VALID_TEAMS = ['BKK','North East','East','North','South'];
+  if (_loggedUserTeam && _VALID_TEAMS.indexOf(_loggedUserTeam) === -1) {
+    console.warn('[preview-target] sub_dept=' + user.sub_dept + ' 가 유효 팀에 매핑되지 않음 → 이름 기반 폴백');
+    _loggedUserTeam = '';
   }
+
+  // SALES_DATA/RECV_DATA 에서 nickname/이름으로 팀 매칭 (sub_dept 매핑 실패 시 폴백)
+  if (!_loggedUserTeam) {
+    var _lookupNames = [user.nickname, _loggedUserName, user.name, user.empid].filter(Boolean);
+    SALES_DATA.forEach(function(s) {
+      if (!_loggedUserTeam && _lookupNames.indexOf(s.name) >= 0) _loggedUserTeam = s.team;
+    });
+    if (!_loggedUserTeam) {
+      RECV_DATA.forEach(function(r) {
+        if (!_loggedUserTeam && _lookupNames.indexOf(r.name) >= 0) _loggedUserTeam = r.team;
+      });
+    }
+    if (_loggedUserTeam) console.log('[preview-target] 이름 기반 팀 폴백 적용:', _loggedUserTeam);
+  }
+  console.log('[preview-target] user.sub_dept=' + user.sub_dept + ' → _loggedUserTeam=' + _loggedUserTeam);
 
   // ── 직위 × 권한 조합 규칙 ──
   // 열람(target)만: 모든 직위 → 본인만 (member)

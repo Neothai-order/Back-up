@@ -14,6 +14,36 @@ var _TEAM_TARGET = {};
 var _SUBDEPT_TEAM_MAP = {};
 var _targetDataLoaded = false;
 
+// sub_dept → 팀코드 폴백 (Firestore subdeptMap 누락 대비 · 한/영/태 다국어)
+var _SUBDEPT_TEAM_FALLBACK = {
+  '방콕':'BKK','bangkok':'BKK','BKK':'BKK','bkk':'BKK','กรุงเทพ':'BKK','กรุงเทพฯ':'BKK',
+  '북동부':'North East','northeast':'North East','north east':'North East','North East':'North East','NorthEast':'North East','ตะวันออกเฉียงเหนือ':'North East',
+  '동부':'East','east':'East','East':'East','EAST':'East','ตะวันออก':'East',
+  '서부':'East', // 레거시 호환
+  '북부':'North','north':'North','North':'North','NORTH':'North','เหนือ':'North',
+  '남부':'South','south':'South','South':'South','SOUTH':'South','ใต้':'South'
+};
+
+// sub_dept 값을 팀 코드로 해석 (Firestore _SUBDEPT_TEAM_MAP 우선, 없으면 폴백맵)
+function _resolveTeamFromSubDept(subDept) {
+  if (!subDept) return '';
+  var s = ('' + subDept).trim();
+  if (_SUBDEPT_TEAM_MAP && _SUBDEPT_TEAM_MAP[s]) return _SUBDEPT_TEAM_MAP[s];
+  if (_SUBDEPT_TEAM_FALLBACK[s]) return _SUBDEPT_TEAM_FALLBACK[s];
+  // 대소문자/공백 무시 매칭
+  var lk = s.toLowerCase().replace(/\s+/g,'');
+  var k;
+  if (_SUBDEPT_TEAM_MAP) {
+    for (k in _SUBDEPT_TEAM_MAP) {
+      if (String(k).toLowerCase().replace(/\s+/g,'') === lk) return _SUBDEPT_TEAM_MAP[k];
+    }
+  }
+  for (k in _SUBDEPT_TEAM_FALLBACK) {
+    if (String(k).toLowerCase().replace(/\s+/g,'') === lk) return _SUBDEPT_TEAM_FALLBACK[k];
+  }
+  return '';
+}
+
 function _loadTargetData(cb) {
   if (_targetDataLoaded) { if (cb) cb(); return; }
   if (typeof _fbDb === 'undefined' || !_fbDb) { if (cb) cb(); return; }
@@ -454,15 +484,16 @@ function showTargetAlert(personalName, teamName) {
   if (!_popupConfig) _loadPopupConfig();
   if (!_popupConfig || !_popupConfig.enabled) { console.log('[Popup] showTargetAlert skip: config/enabled 없음'); return; }
   var cfg = _popupConfig;
-  // 팀장 맞춤형 모드 (team_leader 전용 또는 personal_sales에서 팀장 자동 분기)
-  if (teamName && (_popupConfig.target === 'team_leader' || _popupConfig.target === 'personal_sales')) {
+  // 팀장 맞춤형 모드 — teamName 이 제공되면 target 설정과 무관하게 팀 실적 팝업으로 업그레이드
+  // (core.js 에서 Sales 팀장에게는 target='all' 등에서도 _teamName 을 전달하도록 auto-upgrade 함)
+  if (teamName) {
     var teamCfg = _buildTeamLeaderConfig(_popupConfig, teamName);
     if (!teamCfg) {
       console.warn('[Popup] 팀 데이터 없음 ('+teamName+') → generic 팝업으로 fallback');
     } else { cfg = teamCfg; }
   }
-  // 개인 맞춤형 모드 (팀원)
-  else if (personalName && _popupConfig.target === 'personal_sales') {
+  // 개인 맞춤형 모드 (팀원) — personalName 이 제공되면 target 설정과 무관하게 개인 실적 팝업으로 업그레이드
+  else if (personalName) {
     var personal = _buildPersonalConfig(_popupConfig, personalName);
     if (!personal) {
       console.warn('[Popup] 개인 데이터 없음 ('+personalName+') → _PERSON_TARGET keys:', Object.keys(_PERSON_TARGET||{}), '_DASHBOARD_PER_PERSON keys:', Object.keys(_DASHBOARD_PER_PERSON||{}), '_DASHBOARD_SALES_RAW keys:', Object.keys(_DASHBOARD_SALES_RAW||{}));

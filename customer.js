@@ -2199,13 +2199,18 @@ function addDeliveryAddr() {
       '</div>' +
     '</div>';
   container.appendChild(block);
-  // Places Autocomplete 연결
-  _attachRegPlaces(document.getElementById(addrId), 'regDelMapContainer' + num, 'regDelMapDiv' + num, document.getElementById(zipId));
+  // Places Autocomplete 연결 (lazy focus 포함, 타이밍 문제 방어)
+  var _addrEl = document.getElementById(addrId);
+  var _zipEl = document.getElementById(zipId);
+  _attachRegPlaces(_addrEl, 'regDelMapContainer' + num, 'regDelMapDiv' + num, _zipEl);
   // 5개 도달 시 추가 버튼 비활성화
   if (container.querySelectorAll('.del-addr-block').length >= 5) {
     document.getElementById('btnAddDelAddr').disabled = true;
   }
-  block.querySelector('textarea').focus();
+  // 신규 블록의 주소 입력란에 포커스
+  if (_addrEl) {
+    setTimeout(function(){ try { _addrEl.focus(); } catch(_){} }, 50);
+  }
 }
 
 function removeDeliveryAddr(btn) {

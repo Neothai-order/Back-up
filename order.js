@@ -3354,9 +3354,10 @@ function submitQuoteRequest(confirmed) {
     if (!unregCust) return;
     quoteCustomer = unregCust;
   }
-  if (!quoteCustomer) { showToast(t('msg_select_cust')); return; }
+  // 검증 메시지는 neoAlert 로 (toast 는 짧아 놓침) — <dialog> Top Layer 라 항상 최상위 표시
+  if (!quoteCustomer) { neoAlert(t('msg_select_cust')); return; }
   var validItems = quoteItems.filter(function(it){ return it.name && it.name.trim(); });
-  if (!validItems.length) { showToast(t('msg_min_item')); return; }
+  if (!validItems.length) { neoAlert(t('msg_min_item')); return; }
   // 제출 전 최종 확인
   if (!confirmed) {
     var custLabel = quoteCustomer.name || quoteCustomer.erp || '';

@@ -6288,10 +6288,10 @@ function openPkgBuilder(node) {
     pkgOverlay.style.cssText = '';
     pkgOverlay.classList.add('open');
     pkgEl.classList.add('open');
-    // 데스크탑: 기본 풀스크린(pkg-fs) 으로 열기 — VW VH 100% (CSS 규칙 활용, body{zoom:0.9} 회피)
+    // 데스크탑: 기본 풀스크린(pkg-fs) 으로 열기 — VW/VH 100% (CSS 규칙 활용, body{zoom:0.9} 회피)
     pkgEl.classList.add('pkg-fs');
     var fsBtn = document.getElementById('pkgFsBtn');
-    if (fsBtn) fsBtn.textContent = '⛶';
+    if (fsBtn) { fsBtn.textContent = '❐'; fsBtn.title = t('pkg_restore') || '복원'; }
   }
   _bringToFront(pkgOverlay);
   _bringToFront(pkgEl);
@@ -6671,11 +6671,10 @@ function _renderPkgRight() {
     if (builderEl) builderEl.classList.remove('pkg-has-ov-1','pkg-has-ov-2');
     return;
   }
-  // 오버플로우 판정 (데스크탑 + 1100px 이상) — 한 패널당 13개 고정 (사용자 요청)
-  // 아이템 1개 = height 40px + margin 4px = 44px (CSS: .pkg-right-list .pkg-right-item)
-  var PKG_ROW_H = 44;
-  var PKG_COL_MAX = 13;
-  var canOverflow = (window.innerWidth >= 1100) &&
+  // 오버플로우 판정 (데스크탑 + 900px 이상)
+  // 패널당 최대 15칸 고정 — 16번째 아이템부터 다음 패널로 넘어감
+  var PKG_COL_MAX = 15;
+  var canOverflow = (window.innerWidth >= 900) &&
                     !document.documentElement.classList.contains('is-android');
   var total = _pkgOrderItems.length;
   var needOv1 = canOverflow && total > PKG_COL_MAX;

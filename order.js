@@ -6308,12 +6308,12 @@ function openPkgBuilder(node) {
   }
   _bringToFront(pkgOverlay);
   _bringToFront(pkgEl);
-  // 모바일: _bringToFront 가 inline z-index 를 ~10700 대로 설정 + !important 를 제거함.
-  // 안드로이드에서 order-overlay 도 _bringToFront 로 비슷한 값을 가지므로 stacking 충돌 발생.
-  // 따라서 _bringToFront 직후에 다시 setProperty(!important)로 매우 높은 값 강제.
+  // 모바일: 안드로이드에서 order-overlay 와 stacking 충돌 회피.
+  // 매직넘버(999998/999999) 대신 z-index 토큰 사용 — !important 로 _bringToFront inline 값 위에 덮어씀.
+  // CLAUDE.md z-index 가이드라인 (--z-modal-fullscreen=10000, --z-modal-fs-stack=10001) 준수.
   if (window.innerWidth <= 1024) {
-    pkgOverlay.style.setProperty('z-index', '999998', 'important');
-    pkgEl.style.setProperty('z-index', '999999', 'important');
+    pkgOverlay.style.setProperty('z-index', 'var(--z-modal-fullscreen)', 'important');
+    pkgEl.style.setProperty('z-index', 'var(--z-modal-fs-stack)', 'important');
   }
   // 안드로이드 모바일: 위저드 모드(순차 입력) 활성화
   _setupPkgWizard();

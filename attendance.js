@@ -2498,6 +2498,13 @@ async function loadAttendanceSummary() {
   var matchedEmpids = null;
   var searchEl = document.getElementById('asSEmpSearch');
   var searchQ = searchEl ? (searchEl.value || '').toLowerCase().trim() : '';
+  // _asAccounts 캐시가 비어있으면(첫 진입/race condition) 검색 매칭을 위해 먼저 로드
+  if (searchQ && (!Array.isArray(window._asAccounts) || !window._asAccounts.length)) {
+    try {
+      var _loadMode = level === 'team' ? 'team' : (level === 'subteam' ? 'subteam' : undefined);
+      await _loadAttendEmpFilter(_loadMode);
+    } catch(e) { console.warn('[AttSummary] _asAccounts 로드 실패', e); }
+  }
   if (searchQ && Array.isArray(window._asAccounts) && window._asAccounts.length) {
     matchedEmpids = window._asAccounts.filter(function(a) {
       var hay = ((a.empid || '') + ' ' + (a.name || '') + ' ' + (a.nickname || '')).toLowerCase();

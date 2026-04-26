@@ -518,22 +518,21 @@ function _bringToFront(el) {
     if (cur < _topZ) _bringToFront(el);
   }, true);
   // 모든 오버레이/모달이 열릴 때(open/show 클래스) 자동 최상단
+  // 성능: 대부분의 클래스 토글(active, expanded, focus 등)은 open/show 가 없으므로
+  // classList 검사를 가장 먼저 수행해서 빠르게 early-exit. for-loop 로 콜백 비용 절감.
   var observer = new MutationObserver(function(mutations) {
-    mutations.forEach(function(m) {
-      if (m.type !== 'attributes' || m.attributeName !== 'class') return;
+    for (var i = 0, len = mutations.length; i < len; i++) {
+      var m = mutations[i];
+      if (m.type !== 'attributes' || m.attributeName !== 'class') continue;
       var el = m.target;
+      if (!el.classList || (!el.classList.contains('open') && !el.classList.contains('show'))) continue;
       var cn = el.className || '';
-      // overlay 또는 modal 관련 요소가 open/show 클래스를 가지면 최상단
-      // 지도 관련 요소는 별도 z-index 관리이므로 제외
-      if (cn.indexOf('modal-map-slide') !== -1 || cn.indexOf('map-float') !== -1) return;
-      // pkg-overlay, cat-slide는 별도 관리
-      if (cn.indexOf('pkg-overlay') !== -1) return;
-      if (cn.indexOf('cat-slide') !== -1 || cn.indexOf('qt-confirm') !== -1) return;
-      if ((cn.indexOf('overlay') !== -1 || cn.indexOf('Overlay') !== -1 || cn.indexOf('modal') !== -1) &&
-          (el.classList.contains('open') || el.classList.contains('show'))) {
-        _bringToFront(el);
-      }
-    });
+      if (cn.indexOf('overlay') === -1 && cn.indexOf('Overlay') === -1 && cn.indexOf('modal') === -1) continue;
+      if (cn.indexOf('modal-map-slide') !== -1 || cn.indexOf('map-float') !== -1) continue;
+      if (cn.indexOf('pkg-overlay') !== -1) continue;
+      if (cn.indexOf('cat-slide') !== -1 || cn.indexOf('qt-confirm') !== -1) continue;
+      _bringToFront(el);
+    }
   });
   // document.body의 자식 전체를 감시 (subtree로 모든 요소 커버)
   observer.observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: true });

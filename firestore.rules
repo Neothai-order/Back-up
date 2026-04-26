@@ -348,6 +348,28 @@ service cloud.firestore {
     }
 
     // ══════════════════════════════════════════════════════════════════════
+    // Business Trip (출장 신청 — 가불/정산)
+    //  • read:   본인 신청 건 + Admin/Office (전체 조회 가능 — 결재 워크플로우)
+    //  • create: 본인 (applicant_email 강제 일치)
+    //  • update: 본인(상태 변경 등) + Admin/Office
+    //  • delete: Admin/Office + 본인
+    // ══════════════════════════════════════════════════════════════════════
+    match /businessTrips/{docId} {
+      allow read:   if signedIn() && (
+                      isAdmin() || isOffice() ||
+                      resource.data.applicant_email == request.auth.token.email
+                    );
+      allow create: if signedIn()
+                    && request.resource.data.applicant_email == request.auth.token.email;
+      allow update: if signedIn() && (
+                      isAdmin() || isOffice() ||
+                      resource.data.applicant_email == request.auth.token.email
+                    );
+      allow delete: if isAdmin() || isOffice() ||
+                      (signedIn() && resource.data.applicant_email == request.auth.token.email);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
     // 알림 — 수신자(to 필드 == empid)만 본인 것 읽기, 앱이 생성
     //   • update: 수신자 본인만, read/readAt 필드 외는 수정 불가
     //   • delete: 수신자 본인 또는 관리자

@@ -117,7 +117,9 @@ async function _btLoadUser() {
     if (empid) {
       var doc = await _fbDb.collection('accounts').doc(empid).get();
       if (doc.exists) {
-        _btMe = Object.assign({ empid: empid, _id: empid, email: fbUser.email }, doc.data());
+        // doc.data() 가 먼저 적용되고 마지막에 fbUser.email 로 강제 덮어씀
+        // (firestore.rules 의 applicant_email == token.email 비교 통과 보장)
+        _btMe = Object.assign({}, doc.data(), { empid: empid, _id: empid, email: fbUser.email });
         return _btMe;
       }
     }
@@ -125,7 +127,7 @@ async function _btLoadUser() {
     var snap = await _fbDb.collection('accounts').where('email','==', fbUser.email).limit(1).get();
     if (!snap.empty) {
       var d = snap.docs[0];
-      _btMe = Object.assign({ empid: d.id, _id: d.id, email: fbUser.email }, d.data());
+      _btMe = Object.assign({}, d.data(), { empid: d.id, _id: d.id, email: fbUser.email });
     } else {
       _btMe = { email: fbUser.email, name: fbUser.displayName || '', empid: empid, dept: '' };
     }

@@ -64,6 +64,11 @@
   .bt-status-advance { background:#fef3c7; color:#a16207; }
   .bt-status-settlement { background:#d1fae5; color:#047857; }
   .bt-empty { text-align:center; color:#94a3b8; padding:40px 20px; font-size:13px; }
+  .bt-btn-mini { padding:6px 12px; border:1.5px solid; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; background:#fff; transition:all .15s; }
+  .bt-btn-mini-excel { color:#047857; border-color:#10b981; }
+  .bt-btn-mini-excel:hover { background:#d1fae5; }
+  .bt-btn-mini-pdf { color:#b91c1c; border-color:#ef4444; }
+  .bt-btn-mini-pdf:hover { background:#fee2e2; }
   @media (max-width:480px) {
     .bt-body { padding:12px; }
     .bt-card { padding:14px; }
@@ -116,9 +121,17 @@
         <span class="bt-label" data-i18n="bt_trip_to">종료일</span>
         <input type="date" id="btTripTo" class="bt-input">
       </div>
-      <div class="bt-row bt-search-wrap">
-        <span class="bt-label" data-i18n="bt_visit_place">방문 장소</span>
-        <input type="text" id="btVisitPlace" class="bt-input" placeholder="가게명 또는 주소" data-i18n-placeholder="bt_visit_place_ph">
+      <div class="bt-row">
+        <span class="bt-label" data-i18n="bt_departure">출발지</span>
+        <input type="text" id="btDeparture" class="bt-input" placeholder="출발 주소 입력" data-i18n-placeholder="bt_departure_ph" autocomplete="off">
+      </div>
+      <div class="bt-row">
+        <span class="bt-label" data-i18n="bt_arrival">도착지</span>
+        <input type="text" id="btArrival" class="bt-input" placeholder="도착 주소 입력" data-i18n-placeholder="bt_arrival_ph" autocomplete="off">
+      </div>
+      <!-- 출발-도착 지도 미리보기 -->
+      <div id="btMapPreview" style="display:none; height:280px; border-radius:8px; overflow:hidden; margin-top:8px; border:1px solid #e5e7eb;">
+        <iframe id="btMapFrame" width="100%" height="100%" frameborder="0" style="border:0;" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
       </div>
       <div class="bt-row bt-search-wrap">
         <span class="bt-label" data-i18n="bt_customer">고객</span>
@@ -204,13 +217,18 @@
 <div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:99500;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
 
 <!-- Lang -->
-<script src="lang.min.js?v=175"></script>
+<script src="lang.min.js?v=176"></script>
 <!-- 페이지 헤더 -->
 <script src="page-header.js?v=2"></script>
 <!-- 공용 Firebase 초기화 (다른 페이지와 동일 config 적용) -->
 <script src="firebase-init.js?v=1"></script>
 <!-- Google Maps Places (자동완성) -->
 <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw&libraries=places&language=ko&region=TH" async defer></script>
+<!-- SheetJS (Excel 다운로드용) -->
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<!-- jsPDF + html2canvas (PDF 다운로드용) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
 <script>
 var _fbDb = firebase.firestore();
@@ -233,7 +251,7 @@ var _fbDb = firebase.firestore();
 </script>
 
 <!-- Business Trip 메인 로직 -->
-<script src="business_trip.min.js?v=2"></script>
+<script src="business_trip.min.js?v=3"></script>
 
 </body>
 </html>

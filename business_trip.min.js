@@ -237,14 +237,20 @@ function _btMakeLegRow() {
       '<span class="bt-leg-title">📍 <span data-i18n="bt_leg">일정</span> ' + idx + '</span>' +
       (_btLegs.length > 1 ? '<button type="button" class="bt-leg-remove" onclick="_btRemoveLeg(' + id + ')" title="삭제">×</button>' : '') +
     '</div>' +
-    '<div class="bt-row">' +
+    '<div class="bt-row bt-leg-search">' +
       '<span class="bt-label" data-i18n="bt_departure">출발지</span>' +
       '<input type="text" id="btDep_' + id + '" class="bt-input" placeholder="출발 주소 또는 상호명" data-i18n-placeholder="bt_departure_ph" autocomplete="off">' +
+      '<div class="bt-leg-search-list" id="btDepList_' + id + '"></div>' +
     '</div>' +
     '<div class="bt-row bt-leg-search">' +
       '<span class="bt-label" data-i18n="bt_arrival">도착지</span>' +
-      '<input type="text" id="btArr_' + id + '" class="bt-input" placeholder="고객명 / 주소 / 상호" data-i18n-placeholder="bt_arrival_ph" autocomplete="off">' +
+      '<input type="text" id="btArr_' + id + '" class="bt-input" placeholder="도착 주소 또는 상호명" data-i18n-placeholder="bt_arrival_ph" autocomplete="off">' +
       '<div class="bt-leg-search-list" id="btArrList_' + id + '"></div>' +
+    '</div>' +
+    '<div class="bt-row bt-leg-search">' +
+      '<span class="bt-label" data-i18n="bt_leg_customer">고객</span>' +
+      '<input type="text" id="btLegCust_' + id + '" class="bt-input" placeholder="ERP / 클리닉 검색 (선택 시 도착지 자동)" data-i18n-placeholder="bt_leg_cust_ph" autocomplete="off">' +
+      '<div class="bt-leg-search-list" id="btLegCustList_' + id + '"></div>' +
     '</div>' +
     '<div id="btLegDist_' + id + '" class="bt-leg-distance" style="display:none;">🚗 <span id="btLegDistVal_' + id + '">-</span></div>' +
     '<div id="btLegMap_' + id + '" class="bt-leg-map">' +
@@ -252,13 +258,19 @@ function _btMakeLegRow() {
     '</div>';
   document.getElementById('btLegsContainer').appendChild(card);
 
-  // 출발지: Google Places Autocomplete (주소/상호)
+  // 출발지/도착지 둘 다 우리 자체 dropdown (Places predictions 만)
   var depEl = document.getElementById('btDep_' + id);
-  _btAttachDepartureAutocomplete(depEl, leg);
+  var depList = document.getElementById('btDepList_' + id);
+  _btAttachLegPlaces(depEl, depList, leg, 'dep');
 
-  // 도착지: 우리 자체 dropdown (고객 + Places predictions 통합)
   var arrEl = document.getElementById('btArr_' + id);
-  _btAttachArrivalDropdown(arrEl, leg);
+  var arrList = document.getElementById('btArrList_' + id);
+  _btAttachLegPlaces(arrEl, arrList, leg, 'arr');
+
+  // 고객 검색 input (별도) — 선택 시 도착지에 등록주소 자동 채움
+  var custEl = document.getElementById('btLegCust_' + id);
+  var custList = document.getElementById('btLegCustList_' + id);
+  _btAttachLegCustomer(custEl, custList, leg);
 
   // i18n re-apply
   if (typeof applyLang === 'function') applyLang();
@@ -291,45 +303,86 @@ function _btRenumberLegs() {
   if (typeof applyLang === 'function') applyLang();
 }
 
-// ── 출발지 Autocomplete (Google Places) ────────────────────────────
-function _btAttachDepartureAutocomplete(input, leg) {
-  function tryAttach() {
-    if (!_btEnsureGmapsServices()) { setTimeout(tryAttach, 400); return; }
-    if (input._gPlacesAttached) return;
-    input._gPlacesAttached = true;
-    try {
-      var ac = new google.maps.places.Autocomplete(input, {
-        types: ['establishment', 'geocode'],
-        componentRestrictions: { country: 'th' },
-        fields: ['formatted_address', 'name', 'geometry']
-      });
-      ac.addListener('place_changed', function() {
-        var p = ac.getPlace();
-        if (!p) return;
-        var addr = p.formatted_address || '';
-        var name = p.name || '';
-        var full = addr;
-        if (name && addr && !addr.startsWith(name)) full = name + ', ' + addr;
-        else if (!addr && name) full = name;
-        input.value = full;
-        leg.departure = full;
-        leg.dep_loc = (p.geometry && p.geometry.location) ? { lat: p.geometry.location.lat(), lng: p.geometry.location.lng() } : null;
-        _btUpdateLegMapAndDistance(leg);
-      });
-      input.addEventListener('change', function(){ leg.departure = input.value; _btUpdateLegMapAndDistance(leg); });
-      input.addEventListener('blur', function(){ leg.departure = input.value; setTimeout(function(){ _btUpdateLegMapAndDistance(leg); }, 200); });
-    } catch(e) { console.warn('[BT] dep autocomplete failed:', e); }
-  }
-  tryAttach();
-}
-
-// ── 도착지 통합 dropdown (고객 + Places predictions) ────────────────
-function _btAttachArrivalDropdown(input, leg) {
-  var listEl = document.getElementById('btArrList_' + leg.id);
+// ── 출발/도착 자체 dropdown (Google Places predictions) ───────────
+function _btAttachLegPlaces(input, listEl, leg, slot /* 'dep'|'arr' */) {
+  var key = leg.id + '_' + slot;
   function onInput() {
     var q = input.value.trim();
-    if (_btLegSearchTimer[leg.id]) clearTimeout(_btLegSearchTimer[leg.id]);
-    _btLegSearchTimer[leg.id] = setTimeout(function(){ _btDoArrivalSearch(input, listEl, leg, q); }, 220);
+    if (_btLegSearchTimer[key]) clearTimeout(_btLegSearchTimer[key]);
+    _btLegSearchTimer[key] = setTimeout(function(){ _btDoLegPlacesSearch(input, listEl, leg, slot, q); }, 220);
+  }
+  input.addEventListener('input', onInput);
+  input.addEventListener('focus', function(){ if (input.value.trim()) onInput(); });
+  input.addEventListener('change', function(){
+    if (slot === 'dep') leg.departure = input.value; else leg.arrival = input.value;
+    _btUpdateLegMapAndDistance(leg);
+  });
+  input.addEventListener('blur', function(){
+    if (slot === 'dep') leg.departure = input.value; else leg.arrival = input.value;
+    setTimeout(function(){ _btUpdateLegMapAndDistance(leg); }, 200);
+  });
+  document.addEventListener('click', function(e) {
+    if (e.target !== input && !listEl.contains(e.target)) listEl.style.display = 'none';
+  });
+}
+
+async function _btDoLegPlacesSearch(input, listEl, leg, slot, q) {
+  if (!q) { listEl.style.display = 'none'; return; }
+  if (!_btEnsureGmapsServices()) { listEl.style.display = 'none'; return; }
+  var predictions = await new Promise(function(resolve){
+    _btAcService.getPlacePredictions({
+      input: q,
+      componentRestrictions: { country: 'th' }
+    }, function(p, status) {
+      if (status !== google.maps.places.PlacesServiceStatus.OK || !p) return resolve([]);
+      resolve(p.slice(0, 10));
+    });
+  });
+  if (!predictions.length) {
+    listEl.innerHTML = '<div class="bt-search-item" style="color:#94a3b8;cursor:default;">' + _btT('bt_no_results', '검색 결과 없음') + '</div>';
+    listEl.style.display = 'block'; return;
+  }
+  listEl.innerHTML = predictions.map(function(p){
+    return '<div class="bt-search-item" data-place-id="' + _btSafeHtml(p.place_id) + '" data-desc="' + _btSafeHtml(p.description) + '">' +
+      '<div style="font-size:13px;color:#1e293b;">📍 ' + _btSafeHtml(p.description) + '</div>' +
+    '</div>';
+  }).join('');
+  listEl.style.display = 'block';
+  listEl.querySelectorAll('.bt-search-item[data-place-id]').forEach(function(el){
+    el.addEventListener('click', function() {
+      var pid = el.getAttribute('data-place-id');
+      var desc = el.getAttribute('data-desc');
+      if (_btPlacesService && pid) {
+        _btPlacesService.getDetails({ placeId: pid, fields: ['formatted_address','name','geometry'] }, function(p, status) {
+          var full = desc, loc = null;
+          if (status === google.maps.places.PlacesServiceStatus.OK && p) {
+            var addr = p.formatted_address || desc;
+            var name = p.name || '';
+            full = (name && addr && !addr.startsWith(name)) ? (name + ', ' + addr) : (addr || name || desc);
+            loc = (p.geometry && p.geometry.location) ? { lat: p.geometry.location.lat(), lng: p.geometry.location.lng() } : null;
+          }
+          input.value = full;
+          if (slot === 'dep') { leg.departure = full; leg.dep_loc = loc; }
+          else { leg.arrival = full; leg.arr_loc = loc; }
+          _btUpdateLegMapAndDistance(leg);
+        });
+      } else {
+        input.value = desc;
+        if (slot === 'dep') leg.departure = desc; else leg.arrival = desc;
+        _btUpdateLegMapAndDistance(leg);
+      }
+      listEl.style.display = 'none';
+    });
+  });
+}
+
+// ── leg 별 고객 검색 (선택 시 도착지 자동 채움) ───────────────────
+function _btAttachLegCustomer(input, listEl, leg) {
+  var key = leg.id + '_cust';
+  function onInput() {
+    var q = input.value.trim();
+    if (_btLegSearchTimer[key]) clearTimeout(_btLegSearchTimer[key]);
+    _btLegSearchTimer[key] = setTimeout(function(){ _btDoLegCustSearch(input, listEl, leg, q); }, 220);
   }
   input.addEventListener('input', onInput);
   input.addEventListener('focus', function(){ if (input.value.trim()) onInput(); });
@@ -338,67 +391,41 @@ function _btAttachArrivalDropdown(input, leg) {
   });
 }
 
-async function _btDoArrivalSearch(input, listEl, leg, q) {
+async function _btDoLegCustSearch(input, listEl, leg, q) {
   if (!q) { listEl.style.display = 'none'; return; }
-  var lower = q.toLowerCase();
-  // 1) 고객 검색
   await _btLoadCustomers();
-  var custMatches = _btCustomers.filter(function(c){
+  var lower = q.toLowerCase();
+  var matches = _btCustomers.filter(function(c){
     var hay = ((c.erp||'') + ' ' + (c.clinic||'') + ' ' + (c.name_th||'') + ' ' + (c.name_en||'')).toLowerCase();
     return hay.indexOf(lower) !== -1;
-  }).slice(0, 8);
-  // 2) Google Places predictions
-  var placeMatches = [];
-  if (_btEnsureGmapsServices()) {
-    try {
-      placeMatches = await new Promise(function(resolve){
-        _btAcService.getPlacePredictions({
-          input: q,
-          componentRestrictions: { country: 'th' }
-        }, function(predictions, status) {
-          if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions) return resolve([]);
-          resolve(predictions.slice(0, 8));
-        });
-      });
-    } catch(e) { placeMatches = []; }
+  }).slice(0, 12);
+  if (!matches.length) {
+    listEl.innerHTML = '<div class="bt-search-item" style="color:#94a3b8;cursor:default;">' + _btT('bt_no_cust', '검색 결과 없음') + '</div>';
+    listEl.style.display = 'block'; return;
   }
-  if (!custMatches.length && !placeMatches.length) {
-    listEl.innerHTML = '<div class="bt-search-item" style="color:#94a3b8;cursor:default;">' + (_btT('bt_no_results', '검색 결과 없음')) + '</div>';
-    listEl.style.display = 'block';
-    return;
-  }
-  var html = '';
-  // 고객 그룹
-  custMatches.forEach(function(c){
-    html += '<div class="bt-search-item" data-type="cust" data-erp="' + _btSafeHtml(c.erp) + '">' +
-      '<div><span class="bt-cust-tag">' + (_btT('bt_tag_customer', '고객')) + '</span><strong style="color:#0f766e;">' + _btSafeHtml(c.erp) + '</strong></div>' +
+  listEl.innerHTML = matches.map(function(c){
+    return '<div class="bt-search-item" data-erp="' + _btSafeHtml(c.erp) + '">' +
+      '<div><span class="bt-cust-tag">' + _btT('bt_tag_customer', '고객') + '</span><strong style="color:#0f766e;">' + _btSafeHtml(c.erp) + '</strong></div>' +
       '<div style="font-size:12px;color:#475569;margin-top:2px;">' + _btSafeHtml(c.clinic || c.name_en || c.name_th) + '</div>' +
       (c.addr_reg ? '<div style="font-size:11px;color:#94a3b8;margin-top:1px;">📍 ' + _btSafeHtml(c.addr_reg) + '</div>' : '') +
     '</div>';
-  });
-  // 장소 그룹
-  placeMatches.forEach(function(p){
-    html += '<div class="bt-search-item" data-type="place" data-place-id="' + _btSafeHtml(p.place_id) + '" data-desc="' + _btSafeHtml(p.description) + '">' +
-      '<div><span class="bt-place-tag">' + (_btT('bt_tag_place', '장소')) + '</span></div>' +
-      '<div style="font-size:13px;color:#1e293b;margin-top:2px;">' + _btSafeHtml(p.description) + '</div>' +
-    '</div>';
-  });
-  listEl.innerHTML = html;
+  }).join('');
   listEl.style.display = 'block';
-  listEl.querySelectorAll('.bt-search-item[data-type]').forEach(function(el){
+  listEl.querySelectorAll('.bt-search-item[data-erp]').forEach(function(el){
     el.addEventListener('click', function() {
-      var type = el.getAttribute('data-type');
-      if (type === 'cust') {
-        var erp = el.getAttribute('data-erp');
-        var c = _btCustomers.find(function(x){ return x.erp === erp; });
-        if (!c) return;
-        var label = c.erp + ' · ' + (c.clinic || c.name_en || c.name_th);
-        input.value = label;
-        leg.arrival = c.addr_reg || label;
-        leg.customer_erp = c.erp;
-        leg.customer_name = c.clinic || c.name_en || c.name_th;
-        // 좌표 lookup 시도 (주소가 있으면 geocode)
-        if (c.addr_reg && _btEnsureGmapsServices()) {
+      var erp = el.getAttribute('data-erp');
+      var c = _btCustomers.find(function(x){ return x.erp === erp; });
+      if (!c) return;
+      var label = c.erp + ' · ' + (c.clinic || c.name_en || c.name_th);
+      input.value = label;
+      leg.customer_erp = c.erp;
+      leg.customer_name = c.clinic || c.name_en || c.name_th;
+      // 등록주소가 있으면 도착지에 자동 채움
+      if (c.addr_reg) {
+        var arrEl = document.getElementById('btArr_' + leg.id);
+        if (arrEl) arrEl.value = c.addr_reg;
+        leg.arrival = c.addr_reg;
+        if (_btEnsureGmapsServices()) {
           var geo = new google.maps.Geocoder();
           geo.geocode({ address: c.addr_reg, componentRestrictions: { country: 'th' } }, function(results, status) {
             if (status === 'OK' && results[0]) {
@@ -408,31 +435,6 @@ async function _btDoArrivalSearch(input, listEl, leg, q) {
             _btUpdateLegMapAndDistance(leg);
           });
         } else {
-          _btUpdateLegMapAndDistance(leg);
-        }
-      } else if (type === 'place') {
-        var pid = el.getAttribute('data-place-id');
-        var desc = el.getAttribute('data-desc');
-        if (_btPlacesService && pid) {
-          _btPlacesService.getDetails({ placeId: pid, fields: ['formatted_address','name','geometry'] }, function(p, status) {
-            if (status === google.maps.places.PlacesServiceStatus.OK && p) {
-              var addr = p.formatted_address || desc;
-              var name = p.name || '';
-              var full = (name && addr && !addr.startsWith(name)) ? (name + ', ' + addr) : (addr || name || desc);
-              input.value = full;
-              leg.arrival = full;
-              leg.customer_erp = '';
-              leg.customer_name = '';
-              leg.arr_loc = (p.geometry && p.geometry.location) ? { lat: p.geometry.location.lat(), lng: p.geometry.location.lng() } : null;
-            } else {
-              input.value = desc;
-              leg.arrival = desc;
-            }
-            _btUpdateLegMapAndDistance(leg);
-          });
-        } else {
-          input.value = desc;
-          leg.arrival = desc;
           _btUpdateLegMapAndDistance(leg);
         }
       }

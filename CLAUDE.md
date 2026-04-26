@@ -3,8 +3,10 @@
 ## 프로젝트 개요
 Thai 치과 공급 영업 관리 앱. Firebase Hosting + Firestore 백엔드. React 없는 바닐라 JS SPA.
 
-- **배포:** `firebase deploy --only hosting`
+- **배포:** `bash deploy.sh` — Firebase Hosting 배포 + Git add/commit/push 자동화
+  - hosting만 (Git 백업 없이): `firebase deploy --only hosting`
 - **프로덕션 URL:** https://neothai-order.web.app
+- **GitHub 백업:** [Neothai-order/Back-up](https://github.com/Neothai-order/Back-up.git) (`origin`)
 - **주요 파일:** `index.html`, `core.js`, `order.js`, `attendance.js`, `customer.js`, `lang.js`, `style.css`
 - **미니파이 파일:** 각 `*.min.js`, `style.min.css` — 소스 파일 수정 시 미니파이 파일도 같이 패치 필요
 - **캐시 버스팅:** `index.html`의 `?v=N` 쿼리 파라미터 bump

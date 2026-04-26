@@ -105,8 +105,8 @@ body{font-family:'Segoe UI','Noto Sans KR','Noto Sans Thai',sans-serif;backgroun
 .list-group-date{font-size:13px;font-weight:700;color:#0891b2;padding:8px 0 4px;border-bottom:1px solid #e2e8f0;margin-top:12px}
 .list-group-date:first-child{margin-top:0}
 
-/* Modal */
-.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:200;justify-content:center;align-items:flex-start;padding:20px;overflow-y:auto}
+/* Modal — page-header(z-index:99000) 위로 올림 */
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:99500;justify-content:center;align-items:flex-start;padding:20px;overflow-y:auto}
 .modal-overlay.show{display:flex}
 .modal{background:#fff;border-radius:14px;width:100%;max-width:500px;margin:20px auto;box-shadow:0 20px 60px rgba(0,0,0,.2)}
 .modal-header{padding:14px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center}
@@ -122,9 +122,9 @@ body{font-family:'Segoe UI','Noto Sans KR','Noto Sans Thai',sans-serif;backgroun
 .modal-footer{padding:12px 16px;border-top:1px solid #e2e8f0;display:flex;justify-content:flex-end;gap:8px}
 
 /* Postpone mini modal */
-.postpone-modal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:14px;padding:20px;z-index:300;box-shadow:0 20px 60px rgba(0,0,0,.3);width:280px}
+.postpone-modal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:14px;padding:20px;z-index:99600;box-shadow:0 20px 60px rgba(0,0,0,.3);width:280px}
 .postpone-modal.show{display:block}
-.postpone-backdrop{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:250}
+.postpone-backdrop{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:99550}
 .postpone-backdrop.show{display:block}
 
 /* Toast */

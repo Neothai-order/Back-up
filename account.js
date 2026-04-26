@@ -2766,47 +2766,77 @@ var _placesReady = false;
 function _initGooglePlaces() { _placesReady = true; console.log('[GooglePlaces] API READY, _placesReady=true'); _checkGmapsAvailable(); }
 
 // pac-container(자동완성 드롭다운)를 입력 필드 바로 아래에 강제 고정
-// 🔧 body{zoom:0.9} 보정: pac-container 를 document.documentElement 로 이동시켜 zoom 영향 제거
-var _pacFixInterval = null;
-function _fixPacPosition(inputEl) {
-  function _forcePacBelow() {
-    var pacs = document.querySelectorAll('.pac-container');
-    if (!pacs.length) return;
-    var rect = inputEl.getBoundingClientRect();
-    // body 의 zoom 값을 읽어 보정 (Chrome: body{zoom:0.9} → 자식 좌표가 0.9배로 렌더됨)
-    var bodyZoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
-    pacs.forEach(function(pac) {
-      if (pac.style.display === 'none' || !pac.childElementCount) return;
-      // 1) pac-container 를 <html> 루트로 옮겨 body zoom 영향 벗어나게 함
-      if (pac.parentNode !== document.documentElement) {
-        document.documentElement.appendChild(pac);
-      }
-      // 2) viewport 좌표 기준으로 바로 아래 배치 (html 은 zoom 없음 → rect 값 그대로 사용)
-      pac.style.setProperty('position', 'fixed', 'important');
-      pac.style.setProperty('top', rect.bottom + 'px', 'important');
-      pac.style.setProperty('left', rect.left + 'px', 'important');
-      pac.style.setProperty('width', rect.width + 'px', 'important');
-      pac.style.setProperty('zoom', '1', 'important'); // 혹시 모를 상속 차단
-      pac.style.setProperty('transform', 'none', 'important');
+// MutationObserver 로 Google 의 위치 덮어쓰기를 즉시 가로채서 항상 입력창 아래에 표시
+var _pacFixActiveInput = null;
+var _pacBodyObserverAttached = false;
+function _forcePacBelowInput(inputEl) {
+  if (!inputEl) return;
+  var pacs = document.querySelectorAll('.pac-container');
+  if (!pacs.length) return;
+  // .addr-wrap 같은 컨테이너가 있으면 그 하단을 기준으로 → 입력창 시각 영역 바깥에 드롭다운 표시
+  var anchor = inputEl.closest('.addr-wrap') || inputEl.closest('.ord-addr-block') || inputEl;
+  var aRect = anchor.getBoundingClientRect();
+  var iRect = inputEl.getBoundingClientRect();
+  // body { zoom: 0.9 } 등의 스케일 보정 — getBoundingClientRect 는 zoom 적용 후 좌표,
+  // pac.style.left 는 CSS 값이라 zoom 으로 다시 스케일됨 → 1/zoom 으로 나눠 보정
+  var zoom = parseFloat(getComputedStyle(document.body).zoom) || 1;
+  var topVal = (aRect.bottom / zoom) + 'px';
+  var leftVal = (iRect.left / zoom) + 'px';
+  var widthVal = (iRect.width / zoom) + 'px';
+  pacs.forEach(function(pac) {
+    if (pac.style.display === 'none' || !pac.childElementCount) return;
+    if (pac.style.top === topVal && pac.style.left === leftVal && pac.style.width === widthVal && pac.style.position === 'fixed') return;
+    pac.style.setProperty('position', 'fixed', 'important');
+    pac.style.setProperty('top', topVal, 'important');
+    pac.style.setProperty('left', leftVal, 'important');
+    pac.style.setProperty('width', widthVal, 'important');
+  });
+}
+function _attachPacStyleObserver(pac) {
+  if (pac._pacStyleObserved) return;
+  pac._pacStyleObserved = true;
+  var obs = new MutationObserver(function() {
+    if (_pacFixActiveInput) _forcePacBelowInput(_pacFixActiveInput);
+  });
+  obs.observe(pac, { attributes: true, attributeFilter: ['style'], childList: true });
+}
+function _ensurePacBodyObserver() {
+  if (_pacBodyObserverAttached) return;
+  _pacBodyObserverAttached = true;
+  document.querySelectorAll('.pac-container').forEach(_attachPacStyleObserver);
+  new MutationObserver(function(muts) {
+    var found = false;
+    muts.forEach(function(m) {
+      m.addedNodes.forEach(function(n) {
+        if (n.nodeType === 1 && n.classList && n.classList.contains('pac-container')) {
+          _attachPacStyleObserver(n);
+          found = true;
+        }
+      });
     });
-  }
+    if (found && _pacFixActiveInput) _forcePacBelowInput(_pacFixActiveInput);
+  }).observe(document.body, { childList: true });
+}
+function _fixPacPosition(inputEl) {
+  _ensurePacBodyObserver();
+  function reposition() { _forcePacBelowInput(inputEl); }
   inputEl.addEventListener('focus', function() {
     document.body.classList.add('places-input-active');
-    // 즉시 1회 보정 + 이후 짧은 간격으로 재보정 (Google 이 위치를 덮어쓰기 때문)
-    _forcePacBelow();
-    requestAnimationFrame(_forcePacBelow);
-    setTimeout(_forcePacBelow, 50);
-    setTimeout(_forcePacBelow, 150);
-    if (_pacFixInterval) clearInterval(_pacFixInterval);
-    _pacFixInterval = setInterval(_forcePacBelow, 100);
+    _pacFixActiveInput = inputEl;
+    reposition();
+    requestAnimationFrame(reposition);
+    setTimeout(reposition, 50);
+    setTimeout(reposition, 150);
   });
-  inputEl.addEventListener('input', function(){ _forcePacBelow(); });
+  inputEl.addEventListener('input', reposition);
   inputEl.addEventListener('blur', function() {
     setTimeout(function() {
-      if (_pacFixInterval) { clearInterval(_pacFixInterval); _pacFixInterval = null; }
+      if (_pacFixActiveInput === inputEl) _pacFixActiveInput = null;
       document.body.classList.remove('places-input-active');
     }, 400);
   });
+  window.addEventListener('resize', reposition);
+  window.addEventListener('scroll', reposition, true);
 }
 
 // ── 고객 등록 폼용 Places Autocomplete + 지도 ──

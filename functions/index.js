@@ -1817,3 +1817,11 @@ exports.stopBilling = functions.pubsub.topic("billing-alerts").onPublish(async (
     throw e;
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// 고객 마스터 단방향 동기화 (Sheet → Firestore)
+// 모듈로 분리: functions/customer_sync.js
+// ═══════════════════════════════════════════════════════════════════
+const customerSync = require("./customer_sync");
+exports.scheduledCustomerSync = customerSync.scheduledCustomerSync;
+exports.triggerCustomerSync = customerSync.triggerCustomerSync;

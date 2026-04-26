@@ -86,6 +86,30 @@ function loadJsPDF()       { return loadScript('https://cdnjs.cloudflare.com/aja
   /* 드래그 가능 커서 */
   .attend-top-bar.floating { cursor:grab; }
   .attend-top-bar.floating:active { cursor:grabbing; }
+  /* attend.html 은 메인 앱 bottom nav 가 없으므로 padding-bottom 제거.
+     style.css 의 body{zoom:0.9} 때문에 100vh 사용 시 하단 10% 갭 발생 →
+     body 높이를 calc(100vh/0.9) 로 보상해서 zoom 후 정확히 viewport 만큼 차게 함. */
+  body { padding-bottom:0 !important; }
+  /* ── 출퇴근 집계 검색바 틀고정 (데스크탑 전용) ──
+     body가 min-height:100vh 라서 결과가 많으면 페이지 전체가 스크롤되며 검색바가 같이 밀려 올라감.
+     body 를 viewport 에 묶고 #attendSummaryBody 만 스크롤되게 해서 검색바를 고정. */
+  @media (min-width:701px) {
+    body.summary-active {
+      height:calc(100vh / 0.9);
+      min-height:calc(100vh / 0.9);
+      overflow:hidden;
+    }
+    body.summary-active .attend-summary-area,
+    body.summary-active .attend-summary-area .attend-overlay,
+    body.summary-active .attend-summary-area .attend-overlay .attend-modal {
+      min-height:0;
+    }
+    body.summary-active #attendSummaryBody {
+      min-height:0;
+      overflow-y:auto !important;
+      -webkit-overflow-scrolling:touch;
+    }
+  }
   @media (max-width:700px) {
     body { padding-top:50px; }
     .bar-ctrl { display:none !important; }
@@ -459,6 +483,8 @@ async function apiGetAccounts() {
 
   if (mode === 'summary') {
     document.getElementById('attendSummaryPage').style.display = 'flex';
+    // 데스크탑에서 검색바 틀고정용: body 를 viewport 에 묶어 페이지 스크롤 방지.
+    document.body.classList.add('summary-active');
     var isMobile = window.innerWidth <= 700;
     if (!isMobile) {
       document.getElementById('barCtrlBtns').style.display = 'flex';

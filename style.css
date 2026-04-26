@@ -2185,7 +2185,7 @@
 .quote-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:var(--z-overlay-page);align-items:center;justify-content:center;padding:16px;pointer-events:none;}
 .quote-overlay > *{pointer-events:auto;}
 .quote-overlay.open{display:flex;}
-.quote-modal{background:#fff;border-radius:16px;width:100%;max-width:850px;max-height:96vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;animation:modalPopIn 0.32s cubic-bezier(0.34,1.26,0.64,1) forwards;}
+.quote-modal{background:#fff;border-radius:16px;width:100%;max-width:1140px;height:98vh;max-height:98vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;animation:modalPopIn 0.32s cubic-bezier(0.34,1.26,0.64,1) forwards;}
 .quote-overlay.closing .quote-modal{animation:modalPopOut 0.2s ease forwards;}
 .quote-hdr{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 14px;border-bottom:1px solid #e5e7eb;}
 .quote-hdr h2{font-size:18px;font-weight:700;margin:0;}

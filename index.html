@@ -84,7 +84,7 @@ if ('serviceWorker' in navigator) {
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Neo Sales App">
-<link rel="stylesheet" href="style.min.css?v=243">
+<link rel="stylesheet" href="style.min.css?v=244">
 <!-- XLSX (xlsx-js-style — 스타일 지원 통합본, xlsx.full.min.js 대체) -->
 <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <!-- Google Maps Places -->
@@ -1323,7 +1323,7 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
 <!-- ══ Separated JS Modules ══ -->
 <script src="lang.min.js?v=172"></script>
 <script src="customer.min.js?v=175"></script>
-<script src="order.min.js?v=182"></script>
+<script src="order.min.js?v=183"></script>
 <script src="delivery.min.js?v=167"></script>
 <script src="extra.min.js?v=159"></script>
 <script src="account.min.js?v=189"></script>
@@ -3599,10 +3599,12 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
 .vs-sched-card .sc-purpose{font-size:12px;color:#475569;margin-bottom:6px;}
 .vs-sched-card .sc-actions{display:flex;gap:6px;flex-wrap:wrap;}
 .vs-sched-card .sc-emp{font-size:11px;color:#0891b2;font-weight:600;}
-.vs-modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:99990;justify-content:center;align-items:flex-start;padding:20px;overflow-y:auto;}
+.vs-modal-overlay{display:none;position:fixed;top:var(--header-h, 0px);left:0;right:0;bottom:0;background:rgba(0,0,0,.5);z-index:99990;justify-content:center;align-items:flex-start;padding:20px;overflow-y:auto;}
+@media(max-width:1024px){.vs-modal-overlay{top:var(--mob-bar-h, 0px);}}
 .vs-modal-overlay.show{display:flex;}
 .vs-modal{background:#fff;border-radius:14px;width:100%;max-width:500px;margin:20px auto;box-shadow:0 20px 60px rgba(0,0,0,.2);}
-.vs-modal-header{padding:14px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;}
+.vs-modal-header{padding:14px 16px;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;cursor:grab;user-select:none;}
+.vs-modal-header:active{cursor:grabbing;}
 .vs-modal-header h3{font-size:15px;color:#1e293b;}
 .vs-modal-header .close-btn{background:none;border:none;font-size:20px;cursor:pointer;color:#94a3b8;padding:4px;}
 .vs-modal-body{padding:16px;max-height:65vh;overflow-y:auto;}
@@ -3736,7 +3738,7 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
   <div class="vs-toast" id="vsToast"></div>
 </div><!-- /vs-scroll-body -->
 </div><!-- /vs-overlay -->
-<script src="schedule.js?v=5"></script>
+<script src="schedule.js?v=6"></script>
 
 <!-- ═══════════════════════════════════════════════════════════════
      일일 업무 보고 (Daily Report) Overlay

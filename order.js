@@ -58,7 +58,9 @@ function openOrderForm() {
   showOrderStep(1);
   var _oOv = document.getElementById('orderOverlay');
   _oOv.classList.add('open');
-  _mobFullScreen(_oOv, _oOv.querySelector('.order-modal'));
+  var _oModal = _oOv.querySelector('.order-modal');
+  _mobFullScreen(_oOv, _oModal);
+  _autoFullScreenOnDesktop(_oModal);
   _bringToFront(_oOv);
   // 모바일 하단 네비 숨기기 (화면 짤림 방지)
   var mobNav = document.getElementById('mobileBottomNav');
@@ -1949,7 +1951,9 @@ function openQuoteForm() {
   _qtUpdateItemsLock();
   var _qOv = document.getElementById('quoteOverlay');
   _qOv.classList.add('open');
-  _mobFullScreen(_qOv, _qOv.querySelector('.quote-modal'));
+  var _qModal = _qOv.querySelector('.quote-modal');
+  _mobFullScreen(_qOv, _qModal);
+  _autoFullScreenOnDesktop(_qModal);
   _bringToFront(_qOv);
   // 모달 내부 스크롤을 최상단으로 리셋
   var _qBody = document.querySelector('#quoteModal .quote-body');
@@ -5813,9 +5817,8 @@ function _isMobileView() {
 /* ── 모바일 전체화면 모달 (인라인 스타일 강제 적용) ── */
 function _mobFullScreen(ovEl, mEl) {
   if (!ovEl || !mEl) return;
-  // 견적/주문 모달은 데스크탑에서도 기본 풀스크린 (사용자 요청)
-  var _alwaysFS = ovEl.id === 'orderOverlay' || ovEl.id === 'quoteOverlay';
-  if (!_alwaysFS && window.innerWidth > 1024) return;
+  // 모바일/태블릿에서만 인라인 풀스크린 강제. 데스크탑은 .fullscreen 클래스로 별도 처리.
+  if (window.innerWidth > 1024) return;
   ovEl.style.cssText += ';padding:0!important;align-items:stretch!important;overflow:hidden!important;';
   // 중간 래퍼(slide-wrap 등)도 전체화면 처리
   var wrap = mEl.parentElement;
@@ -5823,6 +5826,16 @@ function _mobFullScreen(ovEl, mEl) {
     wrap.style.cssText += ';max-width:100%!important;width:100%!important;height:100%!important;max-height:100%!important;margin:0!important;';
   }
   mEl.style.cssText += ';max-width:100%!important;width:100%!important;height:100%!important;max-height:100%!important;border-radius:0!important;margin:0!important;animation:none!important;box-shadow:none!important;';
+}
+
+/* ── 데스크탑 자동 풀스크린 (견적/주문 모달 기본 최대화) ── */
+function _autoFullScreenOnDesktop(modalEl) {
+  if (!modalEl) return;
+  if (window.innerWidth <= 1024) return; // 모바일은 _mobFullScreen 가 처리
+  if (modalEl.classList.contains('fullscreen')) return; // 이미 풀스크린
+  if (typeof toggleModalFullscreen !== 'function') return;
+  var fsBtn = modalEl.querySelector('.modal-btn-fs');
+  toggleModalFullscreen(modalEl, fsBtn);
 }
 
 // ── 모바일 아이템 슬라이드 오버레이 (견적/주문 공용) ──

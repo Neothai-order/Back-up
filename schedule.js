@@ -558,8 +558,24 @@ function toggleAllEmployees() {
   _vsLoadData();
 }
 
+// ── vs-modal 드래그 일회성 셋업 (core.js _makeDraggable 사용) ──
+var _vsModalDraggableInit = false;
+function _vsSetupModalDrag() {
+  if (_vsModalDraggableInit) return;
+  if (typeof _makeDraggable !== 'function') return;
+  _makeDraggable({
+    headerSel: '.vs-modal-header',
+    modalSel: '.vs-modal',
+    bounce: 'minVisible',
+    minVisible: 80,
+    touch: true
+  });
+  _vsModalDraggableInit = true;
+}
+
 // ── Form modal ──────────────────────────────────────────────────────────────
 function openNewModal() {
+  _vsSetupModalDrag();
   document.getElementById('editDocId').value = '';
   document.getElementById('vsFormTitle').textContent = _vst('vs_new');
   document.getElementById('fDate').value = _vsSelectedDate || _vsFormatDate(new Date());
@@ -580,11 +596,29 @@ function openNewModal() {
 
 function closeFormModal() {
   document.getElementById('vsFormModal').classList.remove('show');
+  // 드래그로 변경된 inline style 리셋 (다음 오픈 시 원위치 복귀)
+  var modal = document.querySelector('#vsFormModal .vs-modal');
+  if (modal) {
+    modal.style.left = '';
+    modal.style.top = '';
+    modal.style.right = '';
+    modal.style.bottom = '';
+    modal.style.width = '';
+    modal.style.height = '';
+    modal.style.maxWidth = '';
+    modal.style.maxHeight = '';
+    modal.style.margin = '';
+    modal.style.position = '';
+    modal.style.transform = '';
+    modal.style.animation = '';
+    modal.style.transition = '';
+  }
 }
 
 function editSchedule(docId) {
   var s = _vsAllSchedules.find(function(x) { return x._id === docId; });
   if (!s) return;
+  _vsSetupModalDrag();
   document.getElementById('editDocId').value = docId;
   document.getElementById('vsFormTitle').textContent = _vst('vs_edit');
   document.getElementById('fDate').value = s.date || '';

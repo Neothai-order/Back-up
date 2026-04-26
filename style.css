@@ -2598,11 +2598,11 @@
 .qt-confirm-footer .qtc-submit{flex:2;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(124,58,237,.3);}
 .qt-confirm-footer .qtc-submit:active{background:linear-gradient(135deg,#6d28d9,#5b21b6);}
 /* ── 패키지 빌더 ── */
-.pkg-builder{display:none;position:fixed;top:0;left:0;right:0;bottom:0;transform:none;width:100vw;max-width:100vw;height:100vh;max-height:100vh;border:none;border-radius:0;background:#faf5ff;padding:0;z-index:9910;box-shadow:0 12px 40px rgba(124,58,237,.18);overflow:hidden;transition:width .28s ease;}
+.pkg-builder{display:none;position:fixed;top:var(--header-h, 0px);left:0;right:0;bottom:0;transform:none;width:100vw;max-width:100vw;height:calc(100vh - var(--header-h, 0px));max-height:calc(100vh - var(--header-h, 0px));border:none;border-radius:0;background:#faf5ff;padding:0;z-index:9910;box-shadow:0 12px 40px rgba(124,58,237,.18);overflow:hidden;transition:width .28s ease;}
 .pkg-builder.open{display:flex;flex-direction:column;}
 /* 최대화 상태: 다른 규칙(.pkg-has-ov-N 등)과 specificity 같아서 !important 필요 */
-/* 전체화면: 100vw/100vh 사용 — 헤더 위까지 덮어 최대 작업 공간 확보 */
-.pkg-builder.pkg-fs{top:0!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;width:100vw!important;max-width:100vw!important;height:100vh!important;max-height:100vh!important;border-radius:0!important;margin:0!important;border:none!important;}
+/* 전체화면: 헤더 아래에서 시작 — 페이지 헤더(z-index:99000)에 가려지지 않도록 (dr-overlay 와 동일 패턴) */
+.pkg-builder.pkg-fs{top:var(--header-h, 0px)!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;width:100vw!important;max-width:100vw!important;height:calc(100vh - var(--header-h, 0px))!important;max-height:calc(100vh - var(--header-h, 0px))!important;border-radius:0!important;margin:0!important;border:none!important;}
 /* 최대화 + 오버플로우 공존 시에도 모달 전체 100vw 유지 */
 .pkg-builder.pkg-fs.pkg-has-ov-1,
 .pkg-builder.pkg-fs.pkg-has-ov-2{width:100%!important;max-width:100%!important;}
@@ -2613,8 +2613,9 @@
 /* 최대화 + 확장컬럼 1칸: pkg-left는 남는 공간 모두, pkg-right는 좁힌 폭 유지 */
 .pkg-builder.pkg-fs.pkg-has-ov-1 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:320px!important;}
 .pkg-builder.pkg-fs.pkg-has-ov-2 .pkg-left{flex:1 1 auto!important;max-width:none!important;min-width:280px!important;}
-body.force-mobile .pkg-builder.open{top:0;left:0;transform:none;width:100vw;max-width:100vw;height:100vh;max-height:100vh;border-radius:0;border:none;}
-.pkg-builder.open{width:100vw!important;max-width:100vw!important;height:100vh!important;max-height:100vh!important;top:0!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;border-radius:0!important;border:none!important;}
+body.force-mobile .pkg-builder.open{top:var(--mob-bar-h, 0px);left:0;transform:none;width:100vw;max-width:100vw;height:calc(100vh - var(--mob-bar-h, 0px));max-height:calc(100vh - var(--mob-bar-h, 0px));border-radius:0;border:none;}
+.pkg-builder.open{width:100vw!important;max-width:100vw!important;height:calc(100vh - var(--header-h, 0px))!important;max-height:calc(100vh - var(--header-h, 0px))!important;top:var(--header-h, 0px)!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;border-radius:0!important;border:none!important;}
+@media(max-width:1024px){.pkg-builder.open,.pkg-builder.pkg-fs{top:var(--mob-bar-h, 0px)!important;height:calc(100vh - var(--mob-bar-h, 0px))!important;max-height:calc(100vh - var(--mob-bar-h, 0px))!important;}}
 .pkg-builder-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #ede9fe;background:linear-gradient(135deg,#f5f3ff,#ede9fe);cursor:grab;user-select:none;}
 .pkg-builder-hdr:active{cursor:grabbing;}
 .pkg-builder-hdr .pkg-drag-grip{display:inline-block;font-size:14px;color:#a78bfa;margin-right:8px;letter-spacing:-2px;vertical-align:middle;cursor:grab;user-select:none;}

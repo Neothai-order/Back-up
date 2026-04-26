@@ -1206,7 +1206,7 @@ function openMapSlide(addr) {
   panel.removeAttribute('inert');
   if (floatBar) floatBar.removeAttribute('inert');
   panel.classList.add('open');
-  setTimeout(function() { panel.style.zIndex = '99999'; }, 0);
+  setTimeout(function() { panel.style.zIndex = 'var(--z-alert)'; }, 0);
   if (floatBar) floatBar.classList.add('show');
   var overlay = document.getElementById('modalOverlay');
   if (overlay) overlay.classList.add('map-open');
@@ -5209,7 +5209,7 @@ function _smartRefresh() {
     if (_ptrIndicator) return;
     var el = document.createElement('div');
     el.id = 'ptrIndicator';
-    el.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-50px);z-index:999999;background:#1a1a1a;color:#fff;padding:8px 20px;border-radius:0 0 12px 12px;font-size:13px;font-weight:600;transition:transform .2s;pointer-events:none;display:flex;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(0,0,0,.3);';
+    el.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%) translateY(-50px);z-index:var(--z-alert);background:#1a1a1a;color:#fff;padding:8px 20px;border-radius:0 0 12px 12px;font-size:13px;font-weight:600;transition:transform .2s;pointer-events:none;display:flex;align-items:center;gap:6px;box-shadow:0 4px 12px rgba(0,0,0,.3);';
     el.innerHTML = '<span id="ptrArrow" style="display:inline-block;transition:transform .2s;">↓</span> <span id="ptrText">당겨서 새로고침</span>';
     document.body.appendChild(el);
     _ptrIndicator = el;

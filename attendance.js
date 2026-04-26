@@ -1575,7 +1575,7 @@ function openAttendMap(empName, date, dLat, dLng, iLat, iLng, oLat, oLng, rLat, 
   if (!ov) { console.error('[AttendMap] overlay not found'); return; }
 
   ov.style.display = 'flex';
-  ov.style.zIndex = '999999';
+  ov.style.zIndex = 'var(--z-alert)';
 
   var titleEl = document.getElementById('attendMapTitle');
   if (titleEl) titleEl.textContent = '📍 ' + empName + ' — ' + date;

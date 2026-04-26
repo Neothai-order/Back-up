@@ -6256,7 +6256,7 @@ function openPkgBuilder(node) {
     os.setProperty('left', '0', 'important');
     os.setProperty('right', '0', 'important');
     os.setProperty('bottom', '0', 'important');
-    os.setProperty('z-index', '999998', 'important');
+    os.setProperty('z-index', 'var(--z-modal-fullscreen)', 'important');
     os.setProperty('background', 'rgba(0,0,0,.25)', 'important');
     // pkg-builder 강제 풀스크린 (100% 사용 - 모바일 주소창 문제 방지)
     var s = pkgEl.style;
@@ -6276,7 +6276,7 @@ function openPkgBuilder(node) {
     s.setProperty('border', 'none', 'important');
     s.setProperty('margin', '0', 'important');
     s.setProperty('padding', '0', 'important');
-    s.setProperty('z-index', '999999', 'important');
+    s.setProperty('z-index', 'var(--z-modal-fs-stack)', 'important');
     s.setProperty('background', '#faf5ff', 'important');
     s.setProperty('overflow', 'hidden', 'important');
     s.setProperty('box-shadow', 'none', 'important');

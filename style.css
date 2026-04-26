@@ -159,7 +159,7 @@
     border: 1px solid #e2e8f0;
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-    z-index: 1000;
+    z-index: var(--z-mobile-nav);
     max-height: 560px;
     overflow-y: auto;
     display: none;
@@ -448,7 +448,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.5);
-    z-index: 2000;
+    z-index: var(--z-overlay-base);
     align-items: center;
     justify-content: center;
     padding: 20px;
@@ -727,7 +727,7 @@
   /* 지도 플로팅 바 — 패널 바깥 독립 요소 */
   .map-float-bar {
     display:none;position:fixed;top:0;right:0;
-    z-index:999999;
+    z-index:var(--z-alert);
     background:rgba(255,255,255,.97);backdrop-filter:blur(8px);
     padding:10px 16px;gap:8px;align-items:center;
     box-shadow:0 2px 12px rgba(0,0,0,.15);border-radius:0 0 0 12px;
@@ -1290,7 +1290,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.45);
-    z-index: 1000;
+    z-index: var(--z-mobile-nav);
     align-items: flex-start;
     justify-content: center;
     padding: 24px 16px 40px;
@@ -1720,7 +1720,7 @@
   .reg-attach-file .rm-btn { background: none; border: none; color: #ef4444; cursor: pointer; font-size: 14px; padding: 0 6px; flex-shrink: 0; }
   .reg-attach-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; cursor: pointer; margin-right: 8px; flex-shrink: 0; transition: opacity .15s; }
   .reg-attach-thumb:hover { opacity: .75; }
-  .reg-attach-preview-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.85); z-index: 999999; align-items: center; justify-content: center; cursor: pointer; }
+  .reg-attach-preview-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,.85); z-index: var(--z-alert); align-items: center; justify-content: center; cursor: pointer; }
   .reg-attach-preview-img { max-width: 90vw; max-height: 90vh; border-radius: 8px; box-shadow: 0 8px 32px rgba(0,0,0,.5); }
 
   /* ── 대기 고객 승인 패널 ── */
@@ -2226,7 +2226,7 @@
 .quote-body > .quote-section:first-child:has(.quote-sel-card.show){margin-bottom:12px!important;}
 .quote-cust-wrap input{width:100%;padding:10px 12px;border:1.5px solid #d1d5db;border-radius:10px;font-size:14px;outline:none;box-sizing:border-box;}
 .quote-cust-wrap input:focus{border-color:#7c3aed;}
-.quote-ac-list{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e5e7eb;border-radius:10px;max-height:200px;overflow-y:auto;z-index:100;display:none;box-shadow:0 4px 16px rgba(0,0,0,.12);}
+.quote-ac-list{position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid #e5e7eb;border-radius:10px;max-height:200px;overflow-y:auto;z-index:var(--z-dropdown-ac);display:none;box-shadow:0 4px 16px rgba(0,0,0,.12);}
 .quote-ac-list.open{display:block;}
 .quote-ac-item{padding:10px 14px;cursor:pointer;font-size:13px;border-bottom:1px solid #f3f4f6;}
 .quote-ac-item:last-child{border-bottom:none;}
@@ -3396,7 +3396,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
 .dd-photo-thumb img { width:100%;height:100%;object-fit:cover; }
 .dd-photo-thumb .dd-photo-rm { position:absolute;top:1px;right:1px;width:18px;height:18px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:1; }
 .dd-photo-preview-area { display:flex;gap:6px;flex-wrap:wrap;margin-top:6px; }
-.dd-photo-lightbox { position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;display:flex;align-items:center;justify-content:center;cursor:zoom-out; }
+.dd-photo-lightbox { position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:var(--z-alert);display:flex;align-items:center;justify-content:center;cursor:zoom-out; }
 .dd-photo-lightbox img { max-width:92vw;max-height:92vh;object-fit:contain;border-radius:8px;box-shadow:0 8px 32px rgba(0,0,0,.5); }
 .dd-photo-lightbox-close { position:absolute;top:16px;right:20px;background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center; }
 .dd-photo-lightbox-close:hover { background:rgba(255,255,255,.3); }
@@ -3416,7 +3416,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover{opacity:1;}
 .ship-type-btn.selected { background:#2563eb;border-color:#2563eb;color:#fff; }
 .ship-type-dd { position:relative;flex:1;min-width:80px; }
 .ship-type-dd .ship-type-btn { width:100%; }
-.ship-type-dd-menu { display:none;position:absolute;top:100%;left:0;min-width:200px;padding-top:4px;background:transparent;z-index:100; }
+.ship-type-dd-menu { display:none;position:absolute;top:100%;left:0;min-width:200px;padding-top:4px;background:transparent;z-index:var(--z-dropdown-ac); }
 .ship-type-dd-menu-inner { background:#fff;border:1.5px solid #d1d5db;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);overflow:hidden; }
 .ship-type-dd-menu.open { display:block; }
 .ship-type-dd-item { padding:10px 14px;font-size:13px;font-weight:600;color:#374151;cursor:pointer;transition:background .12s,transform .15s;white-space:nowrap; }
@@ -5264,11 +5264,11 @@ body.force-tablet .cards-grid { grid-template-columns: 1fr 1fr !important; gap: 
 .chat-date-sep{text-align:center;font-size:10px;color:#9ca3af;padding:8px 0;font-weight:600;}
 .chat-msg img.chat-img{max-width:100%;max-height:200px;border-radius:8px;cursor:pointer;display:block;margin:2px 0;}
 .chat-msg img.chat-img:hover{opacity:.85;}
-.chat-img-viewer{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;align-items:center;justify-content:center;cursor:zoom-out;}
+.chat-img-viewer{display:none;position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:var(--z-alert);align-items:center;justify-content:center;cursor:zoom-out;}
 .chat-img-viewer.open{display:flex;}
 .chat-img-viewer img{max-width:92vw;max-height:90vh;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.5);object-fit:contain;}
 /* ── 채팅 우클릭 컨텍스트 메뉴 ── */
-.chat-ctx-menu{display:none;position:fixed;z-index:99998;background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.22);min-width:160px;overflow:hidden;animation:chatCtxIn .15s ease-out;}
+.chat-ctx-menu{display:none;position:fixed;z-index:var(--z-alert);background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.22);min-width:160px;overflow:hidden;animation:chatCtxIn .15s ease-out;}
 .chat-ctx-menu.open{display:block;}
 @keyframes chatCtxIn{from{opacity:0;transform:scale(.92);}to{opacity:1;transform:scale(1);}}
 .chat-ctx-item{display:flex;align-items:center;gap:10px;padding:11px 16px;font-size:13px;color:#1f2937;cursor:pointer;transition:background .12s;}
@@ -5276,7 +5276,7 @@ body.force-tablet .cards-grid { grid-template-columns: 1fr 1fr !important; gap: 
 .chat-ctx-item .ctx-icon{font-size:15px;width:20px;text-align:center;flex-shrink:0;}
 .chat-ctx-sep{height:1px;background:#e5e7eb;margin:2px 0;}
 /* ── 메시지 전달 패널 ── */
-.chat-forward-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:99998;align-items:center;justify-content:center;}
+.chat-forward-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:var(--z-alert);align-items:center;justify-content:center;}
 .chat-forward-overlay.open{display:flex;}
 .chat-forward-panel{background:#fff;border-radius:14px;width:300px;max-height:420px;box-shadow:0 12px 40px rgba(0,0,0,.25);overflow:hidden;display:flex;flex-direction:column;animation:chatCtxIn .2s ease-out;}
 .chat-forward-hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;font-weight:700;font-size:14px;}
@@ -5353,7 +5353,7 @@ body.force-tablet .cards-grid { grid-template-columns: 1fr 1fr !important; gap: 
 /* ── 모바일 메신저 전체화면 ── */
 @media(max-width:1024px){
   /* 채팅 리스트: 하단 네비 높이만큼 여백 */
-  .chat-list-panel{top:0;bottom:0;left:0;right:0;width:100%!important;max-height:none!important;height:100%!important;border-radius:0;z-index:9700;transform:translateY(100%);transition:transform .35s cubic-bezier(.4,0,.2,1);}
+  .chat-list-panel{top:0;bottom:0;left:0;right:0;width:100%!important;max-height:none!important;height:100%!important;border-radius:0;z-index:var(--z-popover);transform:translateY(100%);transition:transform .35s cubic-bezier(.4,0,.2,1);}
   .chat-list-panel.open{transform:translateY(0);pointer-events:auto;visibility:visible;}
   .chat-list-panel.closing{pointer-events:auto;visibility:visible;transform:translateY(100%);}
   .chat-list-resize{display:none!important;}
@@ -5437,7 +5437,7 @@ body.force-tablet .cards-grid { grid-template-columns: 1fr 1fr !important; gap: 
 .bc-btn-send:disabled{background:#93c5fd;cursor:not-allowed;}
 
 /* 브로드캐스트 토스트 */
-.bc-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-120%);background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;padding:14px 24px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:9999;font-size:14px;max-width:420px;text-align:center;transition:transform .4s cubic-bezier(0.34,1.26,0.64,1);pointer-events:none;}
+.bc-toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-120%);background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;padding:14px 24px;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:var(--z-toast);font-size:14px;max-width:420px;text-align:center;transition:transform .4s cubic-bezier(0.34,1.26,0.64,1);pointer-events:none;}
 .bc-toast.show{transform:translateX(-50%) translateY(0);}
 
 /* 공지사항 아이템 */
@@ -5575,7 +5575,7 @@ body.is-android.has-open-modal > .header {
 /* 오버레이 z-index 추가 보강 (헤더보다 높게) */
 body.is-android [class*="-overlay"].show,
 body.is-android [class*="-overlay"].open {
-  z-index: 99500 !important;
+  z-index: var(--z-toast) !important;
 }
 /* 모바일 고객 검색(mob-search-overlay) 위에 뜨는 고객 상세 모달(#modalOverlay)은 더 높게 —
    동일 z-index 일 경우 DOM 뒤쪽에 있는 mob-search-overlay 가 덮어써서 카드 탭 시 상세 모달이 가려짐 */
@@ -5584,7 +5584,7 @@ body.is-android #modalOverlay.show {
 }
 /* settlePickerWrap(위탁 출고 현황) 도 헤더 위로 — 클래스가 아닌 inline style 기반 */
 body.is-android #settlePickerWrap:not([style*="display:none"]):not([style*="display: none"]) {
-  z-index: 99500 !important;
+  z-index: var(--z-toast) !important;
 }
 /* 모달 열림 시 모바일 하단 네비게이션 숨김 — 하단 짤림 방지 */
 body.is-android.has-open-modal .mobile-bottom-nav {
@@ -5668,7 +5668,7 @@ body.is-ios #modalOverlay.open {
   padding: 0 !important;
   align-items: stretch !important;
   overflow: hidden !important;
-  z-index: 99500 !important;
+  z-index: var(--z-toast) !important;
 }
 /* iOS: 모달 풀스크린 (100% width/height) — 상단만 safe-area 패딩 적용 (시계·노치 회피)
    하단은 홈 인디케이터 무시하고 화면 끝까지 꽉 채움 (요청사항)

@@ -191,10 +191,7 @@ function loadJsPDF()       { return loadScript('https://cdnjs.cloudflare.com/aja
           <select id="asSSubDeptFilter" style="padding:10px 8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;height:40px;">
             <option value="" data-i18n="att_sum_all_dept">전체 부서</option>
           </select>
-          <input type="search" id="asSEmpSearch" oninput="_attFilterEmpOptions(this.value)" placeholder="이름·닉네임·사번 검색" data-i18n-placeholder="att_emp_search_ph" style="padding:10px 10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;height:40px;width:160px;" />
-          <select id="asSEmpFilter" style="padding:10px 8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;height:40px;min-width:0;">
-            <option value="" data-i18n="att_sum_all_emp">전체 직원</option>
-          </select>
+          <input type="search" id="asSEmpSearch" onkeydown="if(event.key==='Enter')loadAttendanceSummary()" placeholder="이름·닉네임·사번 검색" data-i18n-placeholder="att_emp_search_ph" style="padding:10px 10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:13px;height:40px;width:200px;" />
           <button onclick="loadAttendanceSummary()" style="padding:10px 16px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;height:40px;" data-i18n="att_sum_search">조회</button>
           <div style="flex:1;"></div>
           <button id="btnDeleteAttend" onclick="deleteAttendanceRows()" style="display:none;padding:10px 16px;background:#6b7280;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;height:40px;">🗑️ <span data-i18n="att_btn_delete">삭제</span></button>
@@ -472,7 +469,7 @@ async function apiGetAccounts() {
 }
 </script>
 <!-- attendance.js -->
-<script src="attendance.min.js?v=202"></script>
+<script src="attendance.min.js?v=203"></script>
 <script>
 (function() {
   var params = new URLSearchParams(location.search);

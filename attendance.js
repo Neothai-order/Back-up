@@ -2365,14 +2365,17 @@ async function pdfPreviewEmail() {
 }
 
 async function _loadAttendEmpFilter(mode) {
-  var sel = document.getElementById('asSEmpFilter');
+  // asSEmpFilter dropdown 은 제거됨 (검색 input 만 사용). 그래도 _asAccounts 캐시는 dept/sub_dept 필터링 + 검색 매칭 + 헤더 sub_dept 표시에 사용.
+  var sel = document.getElementById('asSEmpFilter');  // null 가능 — 제거된 경우
   var deptSel = document.getElementById('asSDeptFilter');
   var subDeptSel = document.getElementById('asSSubDeptFilter');
-  if (!sel) return;
-  // mode가 바뀌면 리셋
-  if (sel._loadedMode === mode && sel.options.length > 1) return;
-  sel.innerHTML = '<option value="">' + t('att_sum_all_emp') + '</option>';
-  sel._loadedMode = mode;
+  // 이미 같은 mode 로 캐시되어 있으면 스킵 (sel 없을 땐 캐시만 체크)
+  if (window._asAccountsLoadedMode === mode && Array.isArray(window._asAccounts) && window._asAccounts.length) return;
+  if (sel) {
+    if (sel._loadedMode === mode && sel.options.length > 1) return;
+    sel.innerHTML = '<option value="">' + t('att_sum_all_emp') + '</option>';
+    sel._loadedMode = mode;
+  }
   try {
     // apiGetAccounts 5분 캐시 사용 (동일 탭/페이지에서 반복 호출 시 0 reads)
     var _accRes = await apiGetAccounts();
@@ -2395,16 +2398,19 @@ async function _loadAttendEmpFilter(mode) {
       if (mode === 'subteam' && (subDept !== mySubDept || dept !== myDept)) return;
       var _nick = a.nickname || '';
       window._asAccounts.push({ empid: _empid, name: a.name || _empid, nickname: _nick, dept: dept, sub_dept: subDept });
-      var opt = document.createElement('option');
-      opt.value = _empid;
-      opt.textContent = _empid + ' (' + (a.name || '') + (_nick ? ' / ' + _nick : '') + ')';
-      opt.dataset.dept = dept;
-      opt.dataset.subDept = subDept;
-      opt.dataset.nickname = _nick;
-      sel.appendChild(opt);
+      if (sel) {
+        var opt = document.createElement('option');
+        opt.value = _empid;
+        opt.textContent = _empid + ' (' + (a.name || '') + (_nick ? ' / ' + _nick : '') + ')';
+        opt.dataset.dept = dept;
+        opt.dataset.subDept = subDept;
+        opt.dataset.nickname = _nick;
+        sel.appendChild(opt);
+      }
       if (dept && !depts[dept]) depts[dept] = true;
       if (subDept && !subDepts[subDept]) subDepts[subDept] = dept;
     });
+    window._asAccountsLoadedMode = mode;
     // 그룹 필터 채우기 (all 모드만)
     if (deptSel && mode !== 'team' && mode !== 'subteam') {
       deptSel.innerHTML = '<option value="">' + (t('att_sum_all_group') || '전체 그룹') + '</option>';
@@ -2488,25 +2494,37 @@ async function loadAttendanceSummary() {
   var empFilter = '';
   var deptFilter = '';
   var subDeptFilter = '';
+  // 검색어로 직원 매칭 (이름/닉네임/사번 contains, case-insensitive). 매치된 empid 배열을 클라이언트 필터로 사용.
+  var matchedEmpids = null;
+  var searchEl = document.getElementById('asSEmpSearch');
+  var searchQ = searchEl ? (searchEl.value || '').toLowerCase().trim() : '';
+  if (searchQ && Array.isArray(window._asAccounts) && window._asAccounts.length) {
+    matchedEmpids = window._asAccounts.filter(function(a) {
+      var hay = ((a.empid || '') + ' ' + (a.name || '') + ' ' + (a.nickname || '')).toLowerCase();
+      return hay.indexOf(searchQ) !== -1;
+    }).map(function(a) { return a.empid; });
+  }
   if (level === 'all') {
-    // 관리자/인사 팀장: 선택된 필터 사용
-    empFilter = (document.getElementById('asSEmpFilter') || {}).value || '';
+    // 관리자/인사 팀장: 그룹/부서 필터만 사용 (직원은 검색 input)
     deptFilter = (document.getElementById('asSDeptFilter') || {}).value || '';
     subDeptFilter = (document.getElementById('asSSubDeptFilter') || {}).value || '';
   } else if (level === 'team') {
-    // 그룹장/승인자: 직원 필터 사용 (같은 그룹만 로드되어 있음)
-    empFilter = (document.getElementById('asSEmpFilter') || {}).value || '';
-    if (!empFilter) deptFilter = me ? (me.dept || '') : '';
+    // 그룹장/승인자: 같은 그룹 자동
+    if (!matchedEmpids) deptFilter = me ? (me.dept || '') : '';
   } else if (level === 'subteam') {
-    // 부서 팀장: 직원 필터 사용 (같은 부서 sub_dept만 로드되어 있음)
-    empFilter = (document.getElementById('asSEmpFilter') || {}).value || '';
-    if (!empFilter) {
+    // 부서 팀장: 같은 부서 sub_dept 자동
+    if (!matchedEmpids) {
       deptFilter = me ? (me.dept || '') : '';
       subDeptFilter = me ? (me.sub_dept || '') : '';
     }
   } else {
     // 일반: 본인만
     if (me && me.empid) empFilter = me.empid;
+  }
+  // 검색 매치가 정확히 1개면 Firestore where 으로 단일 empid 필터 (read 절감)
+  if (matchedEmpids && matchedEmpids.length === 1) {
+    empFilter = matchedEmpids[0];
+    matchedEmpids = null;
   }
   var body = document.getElementById('attendSummaryBody');
   if (!body) return;
@@ -2534,6 +2552,20 @@ async function loadAttendanceSummary() {
       return;
     }
 
+    // 검색어 매치 (multi-empid) 클라이언트 필터
+    if (matchedEmpids && matchedEmpids.length) {
+      var _matchSet = {};
+      matchedEmpids.forEach(function(e) { _matchSet[e] = true; });
+      records = records.filter(function(r) { return _matchSet[r.empid]; });
+      if (records.length === 0) {
+        body.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:40px;">' + t('att_sum_no_record') + '</div>';
+        return;
+      }
+    } else if (searchQ && (!matchedEmpids || !matchedEmpids.length)) {
+      // 검색어 입력했지만 _asAccounts 매치 0건 — 검색 결과 없음
+      body.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:40px;">' + t('att_sum_no_record') + '</div>';
+      return;
+    }
     // 그룹 필터 적용
     if (deptFilter) {
       records = records.filter(function(r) { return r.dept === deptFilter; });
@@ -2553,11 +2585,15 @@ async function loadAttendanceSummary() {
       }
     }
 
-    // 직원별 + 날짜별 그룹핑
+    // 직원별 + 날짜별 그룹핑 (sub_dept 는 _asAccounts 캐시에서 lookup)
+    var _accBySub = {};
+    if (Array.isArray(window._asAccounts)) {
+      window._asAccounts.forEach(function(a) { _accBySub[a.empid] = a.sub_dept || ''; });
+    }
     var byEmp = {};
     records.forEach(function(r) {
       var key = r.empid || 'unknown';
-      if (!byEmp[key]) byEmp[key] = { name: r.name || key, nickname: r.nickname || '', dept: r.dept || '', days: {} };
+      if (!byEmp[key]) byEmp[key] = { name: r.name || key, nickname: r.nickname || '', dept: r.dept || '', sub_dept: _accBySub[key] || '', days: {} };
       if (r.nickname && !byEmp[key].nickname) byEmp[key].nickname = r.nickname;
       if (!byEmp[key].days[r.date]) byEmp[key].days[r.date] = [];
       byEmp[key].days[r.date].push(r);
@@ -2572,7 +2608,8 @@ async function loadAttendanceSummary() {
 
       html += '<div style="margin-bottom:12px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">';
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#f8fafc;border-bottom:1px solid #e5e7eb;">';
-      html += '<div><strong style="font-size:14px;">' + empid + '</strong><span style="color:#6b7280;font-size:12px;margin-left:8px;">' + (emp.dept || '') + ' · ' + emp.name + (emp.nickname ? ' · ' + emp.nickname : '') + '</span></div>';
+      var _deptLabel = (emp.dept || '') + (emp.sub_dept ? ' · ' + _attTranslateSubDept(emp.sub_dept) : '');
+      html += '<div><strong style="font-size:14px;">' + empid + '</strong><span style="color:#6b7280;font-size:12px;margin-left:8px;">' + _deptLabel + ' · ' + emp.name + (emp.nickname ? ' · ' + emp.nickname : '') + '</span></div>';
       html += '<span style="background:#dbeafe;color:#2563eb;font-size:12px;font-weight:700;padding:4px 10px;border-radius:12px;">' + totalDays + t('att_sum_days') + '</span>';
       html += '</div>';
 

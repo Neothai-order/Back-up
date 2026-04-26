@@ -2230,7 +2230,8 @@ const SUB_DEPT_OPTIONS = {
     { value:'물류',    i18n:'sub_dept_logistics' },
     { value:'인사',    i18n:'sub_dept_hr'        },
     { value:'기획',    i18n:'sub_dept_planning'  },
-    { value:'장비',    i18n:'sub_dept_equipment' }
+    { value:'장비',    i18n:'sub_dept_equipment' },
+    { value:'디지털',  i18n:'sub_dept_digital'   }
   ]
 };
 

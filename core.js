@@ -2550,7 +2550,8 @@ var MENU_CONFIG_ITEMS = [
     { key: 'attend.visit_log', icon: '📝', i18n: 'menu_visit_log' },
     { key: 'attend.visit_schedule', icon: '📅', i18n: 'menu_visit_schedule' },
     { key: 'attend.nearby_dentists', icon: '🦷', i18n: 'menu_nearby_dentists' },
-    { key: 'attend.fuel', icon: '⛽', i18n: 'fuel_menu' }
+    { key: 'attend.fuel', icon: '⛽', i18n: 'fuel_menu' },
+    { key: 'attend.business_trip', icon: '🧳', i18n: 'bt_menu' }
   ]},
   { key: 'expense', icon: '💰', i18n: 'expense_menu', children: [
     { key: 'expense.receipt', icon: '🧾', i18n: 'expense_receipt' }
@@ -2629,6 +2630,7 @@ function _applyMenuConfig() {
     'attend.visit_log':     { desktop: '#ddVisitLog', mobile: '#mobCardVisitLog' },
     'attend.visit_schedule':{ desktop: '#ddVisitSchedule', mobile: '#mobCardVisitSchedule' },
     'attend.nearby_dentists':{ desktop: '#ddNearbyDentists', mobile: '#mobCardNearbyDentists' },
+    'attend.business_trip': { desktop: '#ddBusinessTrip', mobile: '#mobCardBusinessTrip' },
     'results.daily_report': { desktop: '#ddDailyReport', mobile: '#mobCardDailyReport' },
     'results.dashboard':    { desktop: '#ddSalesDashboard', mobile: '#mobCardSalesDashboard' },
     'results.combined_report': { desktop: '#ddCombinedReport', mobile: '#mobCardCombinedReport' },

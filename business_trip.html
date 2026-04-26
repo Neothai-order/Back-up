@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Business Trip — Neo Sales App</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0d9488">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="stylesheet" href="style.min.css?v=257">
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://maps.googleapis.com" crossorigin>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+<style>
+  body { margin:0; background:#f9fafb; min-height:100vh; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; color:#1e293b; }
+  .bt-tabs { display:flex; border-bottom:2px solid #e5e7eb; background:#fff; position:sticky; top:calc(54px + env(safe-area-inset-top)); z-index:9; }
+  .bt-tab { flex:1; padding:12px; font-size:14px; font-weight:700; border:none; cursor:pointer; background:#fff; color:#6b7280; border-bottom:3px solid transparent; transition:all .15s; }
+  .bt-tab.active { color:#0d9488; border-bottom-color:#0d9488; }
+  .bt-body { padding:16px; max-width:760px; margin:0 auto; }
+  .bt-card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:18px; box-shadow:0 1px 3px rgba(0,0,0,.04); margin-bottom:14px; }
+  .bt-row { display:flex; gap:10px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+  .bt-label { font-size:12px; font-weight:700; color:#475569; min-width:96px; flex-shrink:0; }
+  .bt-input, .bt-select, .bt-textarea {
+    flex:1; min-width:160px; padding:9px 12px; border:1.5px solid #d1d5db; border-radius:8px; font-size:13px; outline:none;
+    font-family:inherit; box-sizing:border-box; transition:border-color .15s;
+  }
+  .bt-input:focus, .bt-select:focus, .bt-textarea:focus { border-color:#0d9488; }
+  .bt-input[readonly] { background:#f1f5f9; color:#475569; }
+  .bt-textarea { min-height:64px; resize:vertical; }
+  .bt-mode-radios { display:flex; gap:14px; }
+  .bt-mode-radios label { display:flex; align-items:center; gap:6px; font-size:13px; cursor:pointer; padding:6px 12px; border:1.5px solid #d1d5db; border-radius:8px; }
+  .bt-mode-radios label:has(input:checked) { border-color:#0d9488; background:#ccfbf1; color:#0f766e; font-weight:700; }
+  .bt-amounts { display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:10px; }
+  .bt-amount-item { background:#f8fafc; border:1px solid #e5e7eb; border-radius:8px; padding:10px; }
+  .bt-amount-item label { display:block; font-size:11px; font-weight:700; color:#64748b; margin-bottom:4px; }
+  .bt-amount-item input { width:100%; padding:6px 8px; border:1.5px solid #d1d5db; border-radius:6px; font-size:13px; outline:none; box-sizing:border-box; text-align:right; }
+  .bt-amount-item input:focus { border-color:#0d9488; }
+  .bt-total-bar { display:flex; justify-content:space-between; align-items:center; padding:14px 18px; background:linear-gradient(135deg,#0d9488,#0f766e); color:#fff; border-radius:12px; margin-bottom:14px; }
+  .bt-total-bar .lbl { font-size:13px; font-weight:600; opacity:.9; }
+  .bt-total-bar .val { font-size:22px; font-weight:800; }
+  .bt-actions { display:flex; gap:10px; justify-content:flex-end; }
+  .bt-btn { padding:11px 22px; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; transition:all .15s; }
+  .bt-btn-primary { background:#0d9488; color:#fff; }
+  .bt-btn-primary:hover { background:#0f766e; }
+  .bt-btn-ghost { background:#f1f5f9; color:#475569; }
+  .bt-btn-ghost:hover { background:#e2e8f0; }
+  .bt-section-title { font-size:13px; font-weight:700; color:#0f766e; margin-bottom:10px; display:flex; align-items:center; gap:6px; padding-bottom:6px; border-bottom:1px solid #e5e7eb; }
+  .bt-search-wrap { position:relative; }
+  .bt-search-list { position:absolute; top:100%; left:0; right:0; background:#fff; border:1.5px solid #d1d5db; border-radius:8px; max-height:240px; overflow-y:auto; box-shadow:0 6px 20px rgba(0,0,0,.12); z-index:20; display:none; margin-top:4px; }
+  .bt-search-item { padding:10px 12px; cursor:pointer; border-bottom:1px solid #f1f5f9; font-size:13px; }
+  .bt-search-item:hover { background:#f0fdfa; }
+  .bt-search-item:last-child { border-bottom:none; }
+  .bt-list-item { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:14px 16px; margin-bottom:10px; }
+  .bt-list-item:hover { border-color:#0d9488; box-shadow:0 2px 8px rgba(13,148,136,.12); }
+  .bt-list-row { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; }
+  .bt-list-meta { font-size:11px; color:#94a3b8; }
+  .bt-list-amount { font-size:16px; font-weight:800; color:#0d9488; }
+  .bt-status-badge { display:inline-block; padding:3px 9px; border-radius:10px; font-size:10px; font-weight:700; text-transform:uppercase; }
+  .bt-status-advance { background:#fef3c7; color:#a16207; }
+  .bt-status-settlement { background:#d1fae5; color:#047857; }
+  .bt-empty { text-align:center; color:#94a3b8; padding:40px 20px; font-size:13px; }
+  @media (max-width:480px) {
+    .bt-body { padding:12px; }
+    .bt-card { padding:14px; }
+    .bt-label { min-width:80px; font-size:11px; }
+    .bt-row { gap:8px; }
+  }
+</style>
+</head>
+<body oncontextmenu="event.preventDefault();">
+
+<div id="pageTopBar"></div>
+
+<!-- 탭 -->
+<div class="bt-tabs">
+  <button class="bt-tab active" id="btTabForm" onclick="_btSwitchTab('form')" data-i18n="bt_tab_form">신청</button>
+  <button class="bt-tab" id="btTabList" onclick="_btSwitchTab('list')" data-i18n="bt_tab_list">내 신청 내역</button>
+</div>
+
+<div class="bt-body">
+
+  <!-- ─── 신청 폼 ─── -->
+  <div id="btFormPanel">
+    <!-- 모드 + 메타 -->
+    <div class="bt-card">
+      <div class="bt-row">
+        <span class="bt-label" data-i18n="bt_mode">구분</span>
+        <div class="bt-mode-radios">
+          <label><input type="radio" name="bt_mode" value="advance" checked> <span data-i18n="bt_mode_advance">가불 (Advance)</span></label>
+          <label><input type="radio" name="bt_mode" value="settlement"> <span data-i18n="bt_mode_settlement">정산 (Settlement)</span></label>
+        </div>
+      </div>
+      <div class="bt-row">
+        <span class="bt-label" data-i18n="bt_applicant">신청자</span>
+        <input type="text" id="btApplicant" class="bt-input" readonly>
+      </div>
+      <div class="bt-row">
+        <span class="bt-label" data-i18n="bt_doc_no">문서번호</span>
+        <input type="text" id="btDocNo" class="bt-input" readonly>
+        <span class="bt-label" data-i18n="bt_doc_date">작성일</span>
+        <input type="date" id="btDocDate" class="bt-input">
+      </div>
+    </div>
+
+    <!-- 출장 정보 -->
+    <div class="bt-card">
+      <div class="bt-section-title">📅 <span data-i18n="bt_section_trip">출장 정보</span></div>
+      <div class="bt-row">
+        <span class="bt-label" data-i18n="bt_trip_from">시작일</span>
+        <input type="date" id="btTripFrom" class="bt-input">
+        <span class="bt-label" data-i18n="bt_trip_to">종료일</span>
+        <input type="date" id="btTripTo" class="bt-input">
+      </div>
+      <div class="bt-row bt-search-wrap">
+        <span class="bt-label" data-i18n="bt_visit_place">방문 장소</span>
+        <input type="text" id="btVisitPlace" class="bt-input" placeholder="가게명 또는 주소" data-i18n-placeholder="bt_visit_place_ph">
+      </div>
+      <div class="bt-row bt-search-wrap">
+        <span class="bt-label" data-i18n="bt_customer">고객</span>
+        <input type="text" id="btCustomerSearch" class="bt-input" placeholder="ERP / 클리닉 / 의사 검색" data-i18n-placeholder="bt_customer_ph" autocomplete="off">
+        <div class="bt-search-list" id="btCustList"></div>
+      </div>
+      <div class="bt-row">
+        <span class="bt-label" data-i18n="bt_attendees">참석자</span>
+        <input type="text" id="btAttendees" class="bt-input" placeholder="홍길동, 김철수, ..." data-i18n-placeholder="bt_attendees_ph">
+      </div>
+      <div class="bt-row">
+        <span class="bt-label" data-i18n="bt_purpose">목적</span>
+        <textarea id="btPurpose" class="bt-textarea" data-i18n-placeholder="bt_purpose_ph" placeholder="고객 미팅, 제품 소개 등"></textarea>
+      </div>
+    </div>
+
+    <!-- 비용 -->
+    <div class="bt-card">
+      <div class="bt-section-title">💰 <span data-i18n="bt_section_amounts">비용</span></div>
+      <div class="bt-amounts">
+        <div class="bt-amount-item">
+          <label data-i18n="bt_amt_hotel">🏨 숙박비</label>
+          <input type="number" id="btAmtHotel" min="0" step="1" value="0" oninput="_btCalcTotal()">
+        </div>
+        <div class="bt-amount-item">
+          <label data-i18n="bt_amt_service">🤝 서비스</label>
+          <input type="number" id="btAmtService" min="0" step="1" value="0" oninput="_btCalcTotal()">
+        </div>
+        <div class="bt-amount-item">
+          <label data-i18n="bt_amt_airfare">✈️ 항공권</label>
+          <input type="number" id="btAmtAirfare" min="0" step="1" value="0" oninput="_btCalcTotal()">
+        </div>
+        <div class="bt-amount-item">
+          <label data-i18n="bt_amt_gasoline">⛽ 휘발유</label>
+          <input type="number" id="btAmtGasoline" min="0" step="1" value="0" oninput="_btCalcTotal()">
+        </div>
+        <div class="bt-amount-item">
+          <label data-i18n="bt_amt_allowance">📋 출장수당</label>
+          <input type="number" id="btAmtAllowance" min="0" step="1" value="0" oninput="_btCalcTotal()">
+        </div>
+        <div class="bt-amount-item">
+          <label data-i18n="bt_amt_others">📦 기타</label>
+          <input type="number" id="btAmtOthers" min="0" step="1" value="0" oninput="_btCalcTotal()">
+        </div>
+      </div>
+    </div>
+
+    <!-- 합계 -->
+    <div class="bt-total-bar">
+      <span class="lbl" data-i18n="bt_total">총액 (Baht)</span>
+      <span class="val" id="btTotal">0</span>
+    </div>
+
+    <!-- 비고 -->
+    <div class="bt-card">
+      <div class="bt-section-title">📝 <span data-i18n="bt_section_remark">비고</span></div>
+      <textarea id="btRemark" class="bt-textarea" data-i18n-placeholder="bt_remark_ph" placeholder="추가 메모"></textarea>
+    </div>
+
+    <!-- 버튼 -->
+    <div class="bt-actions">
+      <button class="bt-btn bt-btn-ghost" onclick="_btResetForm()" data-i18n="bt_btn_reset">초기화</button>
+      <button class="bt-btn bt-btn-primary" onclick="_btSubmit()" data-i18n="bt_btn_submit">💾 제출</button>
+    </div>
+  </div>
+
+  <!-- ─── 목록 ─── -->
+  <div id="btListPanel" style="display:none;">
+    <div id="btListBody">
+      <div class="bt-empty" data-i18n="bt_loading">로딩 중...</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- neoAlert / showToast -->
+<div id="neoAlertOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px 20px;max-width:340px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+    <div id="neoAlertMsg" style="font-size:15px;color:#1e293b;white-space:pre-line;line-height:1.6;"></div>
+    <button onclick="document.getElementById('neoAlertOverlay').style.display='none'" style="margin-top:18px;padding:10px 32px;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;" data-i18n="bt_ok">확인</button>
+  </div>
+</div>
+<div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:99500;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
+
+<!-- Lang -->
+<script src="lang.min.js?v=174"></script>
+<!-- 페이지 헤더 -->
+<script src="page-header.js?v=2"></script>
+<!-- Google Maps Places (자동완성) -->
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAEnnFx2ID7Wdpe7-ANG0qq8Yx2b7OEJJg&libraries=places&language=ko&region=TH" async defer></script>
+
+<script>
+// Firebase init (다른 페이지와 동일 config — index.html 참조)
+var firebaseConfig = {
+  apiKey: "AIzaSyB-OQEoKvQYZqf52tmONLW9NZbSUbDbL_8",
+  authDomain: "neothai-order.firebaseapp.com",
+  projectId: "neothai-order",
+  storageBucket: "neothai-order.firebasestorage.app",
+  messagingSenderId: "843770487497",
+  appId: "1:843770487497:web:7e4fa4ca8d9a09a7c89b35"
+};
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+var _fbDb = firebase.firestore();
+
+// 헤더 조립
+(function() {
+  var bar = document.getElementById('pageTopBar');
+  if (!bar) return;
+  var L = (typeof currentLang !== 'undefined') ? currentLang : 'ko';
+  var t = (typeof window.t === 'function') ? window.t : function(k){ return k; };
+  bar.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;background:linear-gradient(135deg,#0d9488,#0f766e);color:#fff;position:sticky;top:0;z-index:10;';
+  bar.innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;">' +
+      '<button onclick="history.back()" style="background:none;border:none;color:#fff;font-size:18px;cursor:pointer;padding:6px 10px;border-radius:6px;">←</button>' +
+      '<h2 style="margin:0;font-size:16px;font-weight:700;">🧳 <span data-i18n="bt_title">출장 신청 (Business Trip)</span></h2>' +
+    '</div>' +
+    '<button onclick="window.close();setTimeout(function(){history.back();},80);" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:14px;">×</button>';
+  if (typeof applyLang === 'function') applyLang();
+})();
+</script>
+
+<!-- Business Trip 메인 로직 -->
+<script src="business_trip.min.js?v=1"></script>
+
+</body>
+</html>

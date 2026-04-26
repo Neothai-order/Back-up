@@ -2182,9 +2182,13 @@ function _isOfficeDept(u) {
 /** 본인 데이터만 봐야 하는 사용자 (관리자/Office 제외 = Sales 및 미지정 포함) */
 function _isScopedUser(u) {
   if (!u) return false;
-  // 영업(Sales) 부서: role(Admin/Manager 등) 과 무관하게 항상 본인 스코프로 제한
-  // — 배지/리스트에서 다른 영업이 신청한 건이 보이지 않도록
-  if (u.dept === 'Sales') return true;
+  // 영업(Sales) 부서: role 무관 항상 본인 스코프로 제한 (배지/리스트 노이즈 방지)
+  // 단, 팀장(leader) / 그룹장(group_leader / sub_dept='Group Leader') 은 팀·그룹 전체 보기 권한
+  if (u.dept === 'Sales') {
+    var pos = u.position || '';
+    if (pos === 'leader' || pos === 'group_leader' || u.sub_dept === 'Group Leader') return false;
+    return true;
+  }
   if (_isAdmin(u)) return false;
   if (_isOfficeDept(u)) return false;
   return true; // dept 미지정: 본인 스코프로 제한

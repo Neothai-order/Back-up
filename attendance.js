@@ -1284,7 +1284,8 @@ var _ATT_SUB_DEPT_I18N = {
   '물류':       'sub_dept_logistics',
   '인사':       'sub_dept_hr',
   '기획':       'sub_dept_planning',
-  '장비':       'sub_dept_equipment'
+  '장비':       'sub_dept_equipment',
+  '디지털':     'sub_dept_digital'
 };
 function _attTranslateSubDept(val) {
   if (!val) return '';

@@ -77,6 +77,8 @@
   .bt-leg-remove:hover { background:#fee2e2; }
   .bt-leg-search { position:relative; }
   .bt-leg-search-list { position:absolute; top:100%; left:0; right:0; background:#fff; border:1.5px solid #d1d5db; border-radius:8px; max-height:280px; overflow-y:auto; box-shadow:0 6px 20px rgba(0,0,0,.12); z-index:20; display:none; margin-top:4px; }
+  .bt-search-item.kb-active { background:#0d9488 !important; color:#fff; }
+  .bt-search-item.kb-active div, .bt-search-item.kb-active strong, .bt-search-item.kb-active span { color:#fff !important; }
   .bt-leg-distance { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; background:#0f766e; color:#fff; border-radius:14px; font-size:12px; font-weight:700; margin-top:6px; }
   .bt-leg-map { display:none; height:240px; border-radius:8px; overflow:hidden; margin-top:8px; border:1px solid #e5e7eb; }
   .bt-cust-tag { display:inline-block; padding:2px 6px; background:#ccfbf1; color:#0f766e; border-radius:4px; font-size:10px; font-weight:700; margin-left:6px; }
@@ -251,7 +253,7 @@ var _fbDb = firebase.firestore();
 </script>
 
 <!-- Business Trip 메인 로직 -->
-<script src="business_trip.min.js?v=7"></script>
+<script src="business_trip.min.js?v=8"></script>
 
 </body>
 </html>

@@ -237,20 +237,23 @@ function _btMakeLegRow() {
       '<span class="bt-leg-title">📍 <span data-i18n="bt_leg">일정</span> ' + idx + '</span>' +
       (_btLegs.length > 1 ? '<button type="button" class="bt-leg-remove" onclick="_btRemoveLeg(' + id + ')" title="삭제">×</button>' : '') +
     '</div>' +
+    // 1) 고객 검색 (먼저) — 선택 시 도착지 자동 채움
+    '<div class="bt-row bt-leg-search">' +
+      '<span class="bt-label" data-i18n="bt_leg_customer">고객</span>' +
+      '<input type="text" id="btLegCust_' + id + '" class="bt-input" placeholder="ERP / 클리닉 검색 (선택 시 도착지 자동)" data-i18n-placeholder="bt_leg_cust_ph" autocomplete="off">' +
+      '<div class="bt-leg-search-list" id="btLegCustList_' + id + '"></div>' +
+    '</div>' +
+    // 2) 출발지
     '<div class="bt-row bt-leg-search">' +
       '<span class="bt-label" data-i18n="bt_departure">출발지</span>' +
       '<input type="text" id="btDep_' + id + '" class="bt-input" placeholder="출발 주소 또는 상호명" data-i18n-placeholder="bt_departure_ph" autocomplete="off">' +
       '<div class="bt-leg-search-list" id="btDepList_' + id + '"></div>' +
     '</div>' +
+    // 3) 도착지
     '<div class="bt-row bt-leg-search">' +
       '<span class="bt-label" data-i18n="bt_arrival">도착지</span>' +
       '<input type="text" id="btArr_' + id + '" class="bt-input" placeholder="도착 주소 또는 상호명" data-i18n-placeholder="bt_arrival_ph" autocomplete="off">' +
       '<div class="bt-leg-search-list" id="btArrList_' + id + '"></div>' +
-    '</div>' +
-    '<div class="bt-row bt-leg-search">' +
-      '<span class="bt-label" data-i18n="bt_leg_customer">고객</span>' +
-      '<input type="text" id="btLegCust_' + id + '" class="bt-input" placeholder="ERP / 클리닉 검색 (선택 시 도착지 자동)" data-i18n-placeholder="bt_leg_cust_ph" autocomplete="off">' +
-      '<div class="bt-leg-search-list" id="btLegCustList_' + id + '"></div>' +
     '</div>' +
     '<div id="btLegDist_' + id + '" class="bt-leg-distance" style="display:none;">🚗 <span id="btLegDistVal_' + id + '">-</span></div>' +
     '<div id="btLegMap_' + id + '" class="bt-leg-map">' +
@@ -303,6 +306,40 @@ function _btRenumberLegs() {
   if (typeof applyLang === 'function') applyLang();
 }
 
+// ── 키보드 네비게이션 헬퍼 (↑↓ Enter Esc) ────────────────────────
+function _btBindKbNav(input, listEl) {
+  if (input._kbBound) return;
+  input._kbBound = true;
+  input.addEventListener('keydown', function(e) {
+    if (listEl.style.display === 'none') return;
+    var items = Array.prototype.slice.call(listEl.querySelectorAll('.bt-search-item'))
+      .filter(function(el){ return el.style.cursor !== 'default'; }); // 'no results' 항목 제외
+    if (!items.length) return;
+    var active = listEl.querySelector('.bt-search-item.kb-active');
+    var idx = items.indexOf(active);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      idx = (idx + 1) % items.length;
+      _btKbHighlight(items, idx);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      idx = (idx - 1 + items.length) % items.length;
+      _btKbHighlight(items, idx);
+    } else if (e.key === 'Enter') {
+      if (idx === -1) idx = 0; // 첫 항목 자동 선택
+      e.preventDefault();
+      items[idx].click();
+    } else if (e.key === 'Escape') {
+      listEl.style.display = 'none';
+    }
+  });
+}
+
+function _btKbHighlight(items, idx) {
+  items.forEach(function(el, i) { el.classList.toggle('kb-active', i === idx); });
+  if (items[idx]) items[idx].scrollIntoView({ block: 'nearest' });
+}
+
 // ── 출발/도착 자체 dropdown (Google Places predictions) ───────────
 function _btAttachLegPlaces(input, listEl, leg, slot /* 'dep'|'arr' */) {
   var key = leg.id + '_' + slot;
@@ -313,6 +350,7 @@ function _btAttachLegPlaces(input, listEl, leg, slot /* 'dep'|'arr' */) {
   }
   input.addEventListener('input', onInput);
   input.addEventListener('focus', function(){ if (input.value.trim()) onInput(); });
+  _btBindKbNav(input, listEl);
   input.addEventListener('change', function(){
     if (slot === 'dep') leg.departure = input.value; else leg.arrival = input.value;
     _btUpdateLegMapAndDistance(leg);
@@ -386,6 +424,7 @@ function _btAttachLegCustomer(input, listEl, leg) {
   }
   input.addEventListener('input', onInput);
   input.addEventListener('focus', function(){ if (input.value.trim()) onInput(); });
+  _btBindKbNav(input, listEl);
   document.addEventListener('click', function(e) {
     if (e.target !== input && !listEl.contains(e.target)) listEl.style.display = 'none';
   });

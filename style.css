@@ -2613,22 +2613,21 @@
 .qt-confirm-footer .qtc-submit{flex:2;padding:12px;border:none;border-radius:10px;background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;font-size:14px;font-weight:700;cursor:pointer;box-shadow:0 2px 8px rgba(124,58,237,.3);}
 .qt-confirm-footer .qtc-submit:active{background:linear-gradient(135deg,#6d28d9,#5b21b6);}
 /* ── 패키지 빌더 ── */
-.pkg-builder{display:none;position:fixed;top:var(--header-h, 0px);left:0;right:0;bottom:0;transform:none;width:100vw;max-width:100vw;height:calc(100vh - var(--header-h, 0px));max-height:calc(100vh - var(--header-h, 0px));border:none;border-radius:0;background:#faf5ff;padding:0;z-index:9910;box-shadow:0 12px 40px rgba(124,58,237,.18);overflow:hidden;transition:width .28s ease;}
+.pkg-builder{display:none;position:fixed;top:0;left:0;right:0;bottom:0;transform:none;width:100vw;max-width:100vw;height:100vh;max-height:100vh;border:none;border-radius:0;background:#faf5ff;padding:0;z-index:9910;box-shadow:0 12px 40px rgba(124,58,237,.18);overflow:hidden;transition:width .28s ease;}
 .pkg-builder.open{display:flex;flex-direction:column;}
 /* 최대화 상태: 다른 규칙(.pkg-has-ov-N 등)과 specificity 같아서 !important 필요 */
-/* 전체화면: 헤더 아래에서 시작 — 페이지 헤더(z-index:99000)에 가려지지 않도록 (dr-overlay 와 동일 패턴) */
-.pkg-builder.pkg-fs{top:var(--header-h, 0px)!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;width:100vw!important;max-width:100vw!important;height:calc(100vh - var(--header-h, 0px))!important;max-height:calc(100vh - var(--header-h, 0px))!important;border-radius:0!important;margin:0!important;border:none!important;}
+/* 전체화면: 100vw/100vh — 페이지 헤더 위까지 덮어 최대 작업 공간 확보 (사용자 요청 — 상품 주문 모달 .fullscreen 과 동일 동작) */
+.pkg-builder.pkg-fs{top:0!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;width:100vw!important;max-width:100vw!important;height:100vh!important;max-height:100vh!important;border-radius:0!important;margin:0!important;border:none!important;}
 /* 최대화 + 오버플로우 공존 시에도 모달 전체 100vw 유지 */
 .pkg-builder.pkg-fs.pkg-has-ov-1,
 .pkg-builder.pkg-fs.pkg-has-ov-2{width:100%!important;max-width:100%!important;}
-/* pkg-left: 폼 컨텐츠에 맞춰 자동 폭 — 추가 버튼 직후에 주문 리스트가 붙도록 (사용자 요청).
-   ov 상태 무관하게 동일 폭 유지 → ov 열려도 주문 리스트 위치 고정. */
+/* pkg-left: 폼 컨텐츠에 맞춰 자동 폭 — 추가 버튼 직후에 주문 리스트가 붙도록 (사용자 요청). */
 .pkg-builder.pkg-fs .pkg-left{flex:0 0 auto!important;width:auto!important;max-width:none!important;min-width:540px!important;}
-/* pkg-right: ov 상태 무관하게 항상 260px 고정 → ov 열림/닫힘 시 위치/폭 변화 없음. */
-.pkg-builder.pkg-fs .pkg-right#pkgRightDesktop{flex:0 0 auto!important;width:260px!important;min-width:260px!important;max-width:260px!important;}
-body.force-mobile .pkg-builder.open{top:var(--mob-bar-h, 0px);left:0;transform:none;width:100vw;max-width:100vw;height:calc(100vh - var(--mob-bar-h, 0px));max-height:calc(100vh - var(--mob-bar-h, 0px));border-radius:0;border:none;}
-.pkg-builder.open{width:100vw!important;max-width:100vw!important;height:calc(100vh - var(--header-h, 0px))!important;max-height:calc(100vh - var(--header-h, 0px))!important;top:var(--header-h, 0px)!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;border-radius:0!important;border:none!important;}
-@media(max-width:1024px){.pkg-builder.open,.pkg-builder.pkg-fs{top:var(--mob-bar-h, 0px)!important;height:calc(100vh - var(--mob-bar-h, 0px))!important;max-height:calc(100vh - var(--mob-bar-h, 0px))!important;}}
+/* pkg-right + ov panels: flex:1 1 0 으로 가용 공간 균등 분배 → 1개 / 2개 / 3개 패널 상황 모두 폭 자동 확장.
+   3개 패널이 모두 열렸을 때도 우측 여백 최소화. */
+.pkg-builder.pkg-fs .pkg-right#pkgRightDesktop{flex:1 1 0!important;width:auto!important;min-width:280px!important;max-width:none!important;}
+body.force-mobile .pkg-builder.open{top:0;left:0;transform:none;width:100vw;max-width:100vw;height:100vh;max-height:100vh;border-radius:0;border:none;}
+.pkg-builder.open{width:100vw!important;max-width:100vw!important;height:100vh!important;max-height:100vh!important;top:0!important;left:0!important;right:0!important;bottom:0!important;transform:none!important;border-radius:0!important;border:none!important;}
 .pkg-builder-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #ede9fe;background:linear-gradient(135deg,#f5f3ff,#ede9fe);cursor:grab;user-select:none;}
 .pkg-builder-hdr:active{cursor:grabbing;}
 .pkg-builder-hdr .pkg-drag-grip{display:inline-block;font-size:14px;color:#a78bfa;margin-right:8px;letter-spacing:-2px;vertical-align:middle;cursor:grab;user-select:none;}
@@ -2642,22 +2641,23 @@ body.force-mobile .pkg-builder.open{top:var(--mob-bar-h, 0px);left:0;transform:n
 .pkg-right{flex:1;min-width:240px;display:flex;flex-direction:column;background:#fff;}
 .pkg-right-hdr{padding:10px 12px;font-size:13px;font-weight:700;color:#1e293b;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;justify-content:space-between;}
 .pkg-right-hdr .pkg-remain{font-size:12px;font-weight:600;color:#7c3aed;background:#f5f3ff;padding:2px 10px;border-radius:10px;}
-/* 데이터 cap 은 _renderPkgRight() 의 slice(0,15) 가 처리. CSS 는 ghost 라인이 패널 끝까지 채워지도록 flex:1 사용. */
-.pkg-right-list{flex:1;overflow-y:auto;overflow-x:hidden;padding:4px;display:flex;flex-direction:column;gap:2px;}
-/* 아이템 아래 빈 공간을 고스트 행 패턴(32px + 2px gap)으로 패널 끝까지 채움 */
-.pkg-right-list::after{content:"";flex:1 1 auto;min-height:32px;background-image:repeating-linear-gradient(to bottom,#f3f4f6 0,#f3f4f6 32px,transparent 32px,transparent 34px);background-repeat:repeat;pointer-events:none;}
+/* 패널 max-height = 15 행 (item 48px + gap 2px) × 15 - 2 + padding 8 = 16 + 720 + 28 = 756 px.
+   slice(0,15) 데이터 cap + 시각 cap 일치 → 15 행 다 차야 ov1 로 spill, 그 전엔 ghost 가 채워서 항상 15 행 표시. */
+.pkg-right-list{flex:0 0 auto;overflow-y:auto;overflow-x:hidden;padding:4px;display:flex;flex-direction:column;gap:2px;max-height:756px;}
+/* 아이템 아래 빈 공간을 고스트 행 패턴(48px + 2px gap)으로 max-height 까지 채움 */
+.pkg-right-list::after{content:"";flex:1 1 auto;min-height:48px;background-image:repeating-linear-gradient(to bottom,#f3f4f6 0,#f3f4f6 48px,transparent 48px,transparent 50px);background-repeat:repeat;pointer-events:none;}
 .pkg-right-empty{text-align:center;color:#9ca3af;font-size:12px;padding:30px 10px;flex:1;display:flex;align-items:center;justify-content:center;}
-.pkg-right-item{display:flex;align-items:center;gap:4px;padding:6px 6px;border-radius:6px;background:#f9fafb;margin-bottom:4px;font-size:11px;border:1px solid #f1f5f9;}
-/* 아이템 32px 고정 — 더 많은 항목이 한 화면에 맞도록 컴팩트화 */
-.pkg-right-list .pkg-right-item{flex:0 0 auto;height:32px;min-height:32px;max-height:32px;margin-bottom:0;padding:2px 6px;overflow:hidden;}
-.pkg-right-item .pri-cat{font-size:8.5px;font-weight:700;color:#7c3aed;background:#f5f3ff;padding:1px 4px;border-radius:3px;flex-shrink:0;max-width:78px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4;}
-.pkg-right-item .pri-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:0;line-height:1.2;}
-.pkg-right-item .pri-model{font-weight:600;color:#1e293b;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.2;}
-.pkg-right-item .pri-detail{display:flex;gap:4px;font-size:9px;color:#6b7280;white-space:nowrap;overflow:hidden;line-height:1.2;}
-.pkg-right-item .pri-no{background:#f3f4f6;padding:0 3px;border-radius:3px;color:#9ca3af;flex-shrink:0;font-size:9px;}
+.pkg-right-item{display:flex;align-items:center;gap:6px;padding:8px 10px;border-radius:8px;background:#f9fafb;margin-bottom:4px;font-size:12px;border:1px solid #f1f5f9;}
+/* 아이템 48px 고정 — 폰트/패딩 키워서 가독성 향상, 패널당 정확히 15개 fit */
+.pkg-right-list .pkg-right-item{flex:0 0 auto;height:48px;min-height:48px;max-height:48px;margin-bottom:0;padding:4px 8px;overflow:hidden;}
+.pkg-right-item .pri-cat{font-size:10px;font-weight:700;color:#7c3aed;background:#f5f3ff;padding:2px 6px;border-radius:4px;flex-shrink:0;max-width:96px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3;}
+.pkg-right-item .pri-info{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;line-height:1.2;}
+.pkg-right-item .pri-model{font-weight:600;color:#1e293b;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25;}
+.pkg-right-item .pri-detail{display:flex;gap:6px;font-size:11px;color:#6b7280;white-space:nowrap;overflow:hidden;line-height:1.2;}
+.pkg-right-item .pri-no{background:#f3f4f6;padding:1px 5px;border-radius:3px;color:#9ca3af;flex-shrink:0;font-size:10px;}
 .pkg-right-item .pri-spec{color:#6b7280;overflow:hidden;text-overflow:ellipsis;}
-.pkg-right-item .pri-qty{font-weight:700;color:#5b21b6;flex-shrink:0;font-size:10px;min-width:16px;text-align:right;}
-.pkg-right-item .pri-del{background:none;border:none;color:#d1d5db;cursor:pointer;font-size:11px;padding:0 2px;flex-shrink:0;}
+.pkg-right-item .pri-qty{font-weight:700;color:#5b21b6;flex-shrink:0;font-size:12px;min-width:22px;text-align:right;}
+.pkg-right-item .pri-del{background:none;border:none;color:#d1d5db;cursor:pointer;font-size:13px;padding:0 4px;flex-shrink:0;}
 .pkg-right-item .pri-del:hover{color:#ef4444;}
 .pkg-footer{display:flex;justify-content:flex-end;gap:8px;padding:12px 18px;border-top:1px solid #ede9fe;background:#faf5ff;}
 .pkg-footer-mobile{display:none;}
@@ -2679,7 +2679,7 @@ body.force-mobile .pkg-builder.open{top:var(--mob-bar-h, 0px);left:0;transform:n
 .pkg-builder.pkg-has-ov-1:not(.pkg-has-ov-2) #pkgRightOv2{width:0!important;min-width:0!important;max-width:0!important;}
 .pkg-builder.pkg-has-ov-1 #pkgRightOv1,
 .pkg-builder.pkg-has-ov-2 #pkgRightOv1,
-.pkg-builder.pkg-has-ov-2 #pkgRightOv2{width:260px;min-width:260px;max-width:260px;opacity:1;border-left-width:1px;}
+.pkg-builder.pkg-has-ov-2 #pkgRightOv2{flex:1 1 0;width:auto;min-width:280px;max-width:none;opacity:1;border-left-width:1px;}
 /* (Phase 2D — 2026-04-26) 위 .pkg-builder.pkg-fs .pkg-right#pkgRightDesktop 가 항상 260px 강제하므로 별도 ov 분기 불필요 */
 /* 풀스크린이 기본이므로 빌더 자체는 100vw 고정 — pkg-has-ov-N 에서도 폭 변경 없음 */
 .pkg-builder.pkg-has-ov-1,
@@ -5406,7 +5406,8 @@ body.force-tablet .cards-grid { grid-template-columns: 1fr 1fr !important; gap: 
 /* HTML5 <dialog> 우선 사용 (Top Layer, z-index 무관). 미지원 브라우저는 아래 .neo-alert-overlay fallback. */
 .neo-dialog{padding:0;border:none;background:transparent;max-width:none;max-height:none;overflow:visible;}
 .neo-dialog::backdrop{background:rgba(0,0,0,.4);}
-.neo-dialog[open]{display:flex;align-items:center;justify-content:center;}
+/* body{zoom:0.9} 환경에서 native <dialog> 의 자동 센터링이 어긋나는 케이스 회피 — 명시적 fixed 100vw/100vh */
+.neo-dialog[open]{position:fixed;top:0;left:0;right:0;bottom:0;width:100vw;height:100vh;margin:0;display:flex;align-items:center;justify-content:center;}
 /* fallback: <dialog> 미지원 시 — z-index 는 토큰 사용 (--z-alert) */
 .neo-alert-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:var(--z-alert,99999);align-items:center;justify-content:center;}
 .neo-alert-overlay.open{display:flex;}

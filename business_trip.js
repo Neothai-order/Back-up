@@ -1,18 +1,22 @@
 // ─── Business Trip ────────────────────────────────────────────────
-// 출장 신청 (가불 / 정산) — Firestore: businessTrips 컬렉션
-// 작성: 2026-04-27 / v3 — 출발/도착지 + 지도 + Excel/PDF
+// 출장 신청 (가불/정산) — Firestore: businessTrips
+// v4 (2026-04-27) — 다중 leg + 거리 + 도착지 통합 자동완성
 
 var GMAPS_KEY = 'AIzaSyBDU8EH41NWBx74v7uMKmFpEfvCyLN19zw';
-
 var _btMe = null;
 var _btCustomers = [];
 var _btCustomersLoaded = false;
-var _btSelectedCustomer = null;
 var _btTab = 'form';
 var _btCustSearchTimer = null;
-var _btDepAuto = null, _btArrAuto = null;
+var _btLegSearchTimer = {};   // legId → timer
+var _btLegs = [];              // [{ id, departure, arrival, customer_erp, customer_name, distance_km, dep_loc, arr_loc }]
+var _btLegSeq = 0;
+var _btAcService = null;       // Google AutocompleteService
+var _btPlacesService = null;   // PlacesService (getDetails 용)
+var _btDirService = null;      // DirectionsService
+var _btSelectedCustomer = null;
 
-// ── 인증 대기 ──────────────────────────────────────────────────────
+// ── 인증 ──────────────────────────────────────────────────────────
 function _btWaitAuth(timeoutMs) {
   return new Promise(function(resolve) {
     try {
@@ -77,7 +81,6 @@ function neoAlert(msg) {
   if (ov) ov.style.display = 'flex';
 }
 
-// ── Document No 생성 ──────────────────────────────────────────────
 function _btGenDocNo(mode) {
   var d = new Date();
   var yy = String(d.getFullYear()).slice(2);
@@ -98,21 +101,6 @@ function _btCalcTotal() {
   document.getElementById('btTotal').textContent = total.toLocaleString();
 }
 
-function _btResetForm() {
-  ['btAmtHotel','btAmtService','btAmtAirfare','btAmtGasoline','btAmtAllowance','btAmtOthers'].forEach(function(id){
-    var el = document.getElementById(id); if (el) el.value = 0;
-  });
-  ['btDeparture','btArrival','btCustomerSearch','btAttendees','btPurpose','btRemark'].forEach(function(id){
-    var el = document.getElementById(id); if (el) el.value = '';
-  });
-  _btSelectedCustomer = null;
-  document.querySelector('input[name=bt_mode][value=advance]').checked = true;
-  document.getElementById('btDocNo').value = _btGenDocNo('advance');
-  _btSetDefaultDates();
-  _btCalcTotal();
-  _btUpdateMapPreview();
-}
-
 function _btSetDefaultDates() {
   var t = new Date();
   var iso = t.getFullYear() + '-' + String(t.getMonth()+1).padStart(2,'0') + '-' + String(t.getDate()).padStart(2,'0');
@@ -129,7 +117,7 @@ function _btBindModeChange() {
   });
 }
 
-// ── 고객 검색 ──────────────────────────────────────────────────────
+// ── 고객 데이터 lazy load ─────────────────────────────────────────
 async function _btLoadCustomers() {
   if (_btCustomersLoaded) return _btCustomers;
   try {
@@ -150,6 +138,9 @@ async function _btLoadCustomers() {
   return _btCustomers;
 }
 
+function _btSafeHtml(s) { return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// ── 고객 검색 (별도 customer 필드용 — 기존 동작 유지) ────────────
 function _btBindCustomerSearch() {
   var input = document.getElementById('btCustomerSearch');
   var list = document.getElementById('btCustList');
@@ -182,11 +173,10 @@ async function _btDoCustSearch(q) {
     return;
   }
   list.innerHTML = matches.map(function(c){
-    var safe = function(s){ return (s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); };
-    return '<div class="bt-search-item" data-erp="' + safe(c.erp) + '">' +
-      '<div style="font-weight:700;color:#0f766e;">' + safe(c.erp) + '</div>' +
-      '<div style="font-size:12px;color:#475569;">' + safe(c.clinic || c.name_en || c.name_th) + '</div>' +
-      (c.province ? '<div style="font-size:11px;color:#94a3b8;">📍 ' + safe(c.province) + '</div>' : '') +
+    return '<div class="bt-search-item" data-erp="' + _btSafeHtml(c.erp) + '">' +
+      '<div style="font-weight:700;color:#0f766e;">' + _btSafeHtml(c.erp) + '</div>' +
+      '<div style="font-size:12px;color:#475569;">' + _btSafeHtml(c.clinic || c.name_en || c.name_th) + '</div>' +
+      (c.province ? '<div style="font-size:11px;color:#94a3b8;">📍 ' + _btSafeHtml(c.province) + '</div>' : '') +
     '</div>';
   }).join('');
   list.style.display = 'block';
@@ -202,13 +192,98 @@ async function _btDoCustSearch(q) {
   });
 }
 
-// ── Google Places (출발/도착) + 지도 미리보기 ──────────────────────
-function _btAttachPlaces() {
-  if (!window.google || !google.maps || !google.maps.places) return setTimeout(_btAttachPlaces, 500);
-  var dep = document.getElementById('btDeparture');
-  var arr = document.getElementById('btArrival');
-  function attach(input, slot) {
-    if (!input || input._gPlacesAttached) return;
+// ── Google Maps 서비스 lazy init ──────────────────────────────────
+function _btEnsureGmapsServices() {
+  if (!window.google || !google.maps || !google.maps.places) return false;
+  if (!_btAcService) _btAcService = new google.maps.places.AutocompleteService();
+  if (!_btPlacesService) {
+    var div = document.createElement('div');
+    _btPlacesService = new google.maps.places.PlacesService(div);
+  }
+  if (!_btDirService) _btDirService = new google.maps.DirectionsService();
+  return true;
+}
+
+// ── Leg 추가/제거 ─────────────────────────────────────────────────
+function _btMakeLegRow() {
+  var id = ++_btLegSeq;
+  var leg = {
+    id: id,
+    departure: '', arrival: '',
+    customer_erp: '', customer_name: '',
+    distance_km: 0,
+    dep_loc: null, arr_loc: null
+  };
+  _btLegs.push(leg);
+
+  var card = document.createElement('div');
+  card.className = 'bt-leg-card' + (_btLegs.length === 1 ? ' first' : '');
+  card.dataset.legId = id;
+  var idx = _btLegs.length;
+  card.innerHTML =
+    '<div class="bt-leg-hdr">' +
+      '<span class="bt-leg-title">📍 <span data-i18n="bt_leg">일정</span> ' + idx + '</span>' +
+      (_btLegs.length > 1 ? '<button type="button" class="bt-leg-remove" onclick="_btRemoveLeg(' + id + ')" title="삭제">×</button>' : '') +
+    '</div>' +
+    '<div class="bt-row">' +
+      '<span class="bt-label" data-i18n="bt_departure">출발지</span>' +
+      '<input type="text" id="btDep_' + id + '" class="bt-input" placeholder="출발 주소 또는 상호명" data-i18n-placeholder="bt_departure_ph" autocomplete="off">' +
+    '</div>' +
+    '<div class="bt-row bt-leg-search">' +
+      '<span class="bt-label" data-i18n="bt_arrival">도착지</span>' +
+      '<input type="text" id="btArr_' + id + '" class="bt-input" placeholder="고객명 / 주소 / 상호" data-i18n-placeholder="bt_arrival_ph" autocomplete="off">' +
+      '<div class="bt-leg-search-list" id="btArrList_' + id + '"></div>' +
+    '</div>' +
+    '<div id="btLegDist_' + id + '" class="bt-leg-distance" style="display:none;">🚗 <span id="btLegDistVal_' + id + '">-</span></div>' +
+    '<div id="btLegMap_' + id + '" class="bt-leg-map">' +
+      '<iframe id="btLegMapFrame_' + id + '" width="100%" height="100%" frameborder="0" style="border:0;" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>' +
+    '</div>';
+  document.getElementById('btLegsContainer').appendChild(card);
+
+  // 출발지: Google Places Autocomplete (주소/상호)
+  var depEl = document.getElementById('btDep_' + id);
+  _btAttachDepartureAutocomplete(depEl, leg);
+
+  // 도착지: 우리 자체 dropdown (고객 + Places predictions 통합)
+  var arrEl = document.getElementById('btArr_' + id);
+  _btAttachArrivalDropdown(arrEl, leg);
+
+  // i18n re-apply
+  if (typeof applyLang === 'function') applyLang();
+  return id;
+}
+
+function _btAddLeg() {
+  _btMakeLegRow();
+  // 카드 헤더 인덱스 재계산 (1, 2, 3...)
+  _btRenumberLegs();
+}
+
+function _btRemoveLeg(id) {
+  var idx = _btLegs.findIndex(function(l){ return l.id === id; });
+  if (idx === -1) return;
+  if (_btLegs.length <= 1) { showToast(_btT('bt_leg_min') || '최소 1개의 일정이 필요합니다.'); return; }
+  _btLegs.splice(idx, 1);
+  var card = document.querySelector('.bt-leg-card[data-leg-id="' + id + '"]');
+  if (card) card.remove();
+  _btRenumberLegs();
+}
+
+function _btRenumberLegs() {
+  var cards = document.querySelectorAll('#btLegsContainer .bt-leg-card');
+  cards.forEach(function(c, i) {
+    var lblSpan = c.querySelector('.bt-leg-title');
+    if (lblSpan) lblSpan.innerHTML = '📍 <span data-i18n="bt_leg">일정</span> ' + (i + 1);
+    c.classList.toggle('first', i === 0);
+  });
+  if (typeof applyLang === 'function') applyLang();
+}
+
+// ── 출발지 Autocomplete (Google Places) ────────────────────────────
+function _btAttachDepartureAutocomplete(input, leg) {
+  function tryAttach() {
+    if (!_btEnsureGmapsServices()) { setTimeout(tryAttach, 400); return; }
+    if (input._gPlacesAttached) return;
     input._gPlacesAttached = true;
     try {
       var ac = new google.maps.places.Autocomplete(input, {
@@ -225,43 +300,185 @@ function _btAttachPlaces() {
         if (name && addr && !addr.startsWith(name)) full = name + ', ' + addr;
         else if (!addr && name) full = name;
         input.value = full;
-        if (slot === 'dep') _btDepAuto = ac; else _btArrAuto = ac;
-        _btUpdateMapPreview();
+        leg.departure = full;
+        leg.dep_loc = (p.geometry && p.geometry.location) ? { lat: p.geometry.location.lat(), lng: p.geometry.location.lng() } : null;
+        _btUpdateLegMapAndDistance(leg);
       });
-      // input 변경(타이핑 후 blur 등)에도 미리보기 갱신
-      input.addEventListener('change', _btUpdateMapPreview);
-      input.addEventListener('blur', function(){ setTimeout(_btUpdateMapPreview, 200); });
-    } catch(e) { console.warn('[BT] places attach failed:', e); }
+      input.addEventListener('change', function(){ leg.departure = input.value; _btUpdateLegMapAndDistance(leg); });
+      input.addEventListener('blur', function(){ leg.departure = input.value; setTimeout(function(){ _btUpdateLegMapAndDistance(leg); }, 200); });
+    } catch(e) { console.warn('[BT] dep autocomplete failed:', e); }
   }
-  attach(dep, 'dep');
-  attach(arr, 'arr');
+  tryAttach();
 }
 
-function _btUpdateMapPreview() {
-  var dep = (document.getElementById('btDeparture') || {}).value || '';
-  var arr = (document.getElementById('btArrival') || {}).value || '';
-  var wrap = document.getElementById('btMapPreview');
-  var iframe = document.getElementById('btMapFrame');
-  if (!wrap || !iframe) return;
+// ── 도착지 통합 dropdown (고객 + Places predictions) ────────────────
+function _btAttachArrivalDropdown(input, leg) {
+  var listEl = document.getElementById('btArrList_' + leg.id);
+  function onInput() {
+    var q = input.value.trim();
+    if (_btLegSearchTimer[leg.id]) clearTimeout(_btLegSearchTimer[leg.id]);
+    _btLegSearchTimer[leg.id] = setTimeout(function(){ _btDoArrivalSearch(input, listEl, leg, q); }, 220);
+  }
+  input.addEventListener('input', onInput);
+  input.addEventListener('focus', function(){ if (input.value.trim()) onInput(); });
+  document.addEventListener('click', function(e) {
+    if (e.target !== input && !listEl.contains(e.target)) listEl.style.display = 'none';
+  });
+}
+
+async function _btDoArrivalSearch(input, listEl, leg, q) {
+  if (!q) { listEl.style.display = 'none'; return; }
+  var lower = q.toLowerCase();
+  // 1) 고객 검색
+  await _btLoadCustomers();
+  var custMatches = _btCustomers.filter(function(c){
+    var hay = ((c.erp||'') + ' ' + (c.clinic||'') + ' ' + (c.name_th||'') + ' ' + (c.name_en||'')).toLowerCase();
+    return hay.indexOf(lower) !== -1;
+  }).slice(0, 8);
+  // 2) Google Places predictions
+  var placeMatches = [];
+  if (_btEnsureGmapsServices()) {
+    try {
+      placeMatches = await new Promise(function(resolve){
+        _btAcService.getPlacePredictions({
+          input: q,
+          componentRestrictions: { country: 'th' }
+        }, function(predictions, status) {
+          if (status !== google.maps.places.PlacesServiceStatus.OK || !predictions) return resolve([]);
+          resolve(predictions.slice(0, 8));
+        });
+      });
+    } catch(e) { placeMatches = []; }
+  }
+  if (!custMatches.length && !placeMatches.length) {
+    listEl.innerHTML = '<div class="bt-search-item" style="color:#94a3b8;cursor:default;">' + (_btT('bt_no_results') || '검색 결과 없음') + '</div>';
+    listEl.style.display = 'block';
+    return;
+  }
+  var html = '';
+  // 고객 그룹
+  custMatches.forEach(function(c){
+    html += '<div class="bt-search-item" data-type="cust" data-erp="' + _btSafeHtml(c.erp) + '">' +
+      '<div><span class="bt-cust-tag">' + (_btT('bt_tag_customer') || '고객') + '</span><strong style="color:#0f766e;">' + _btSafeHtml(c.erp) + '</strong></div>' +
+      '<div style="font-size:12px;color:#475569;margin-top:2px;">' + _btSafeHtml(c.clinic || c.name_en || c.name_th) + '</div>' +
+      (c.addr_reg ? '<div style="font-size:11px;color:#94a3b8;margin-top:1px;">📍 ' + _btSafeHtml(c.addr_reg) + '</div>' : '') +
+    '</div>';
+  });
+  // 장소 그룹
+  placeMatches.forEach(function(p){
+    html += '<div class="bt-search-item" data-type="place" data-place-id="' + _btSafeHtml(p.place_id) + '" data-desc="' + _btSafeHtml(p.description) + '">' +
+      '<div><span class="bt-place-tag">' + (_btT('bt_tag_place') || '장소') + '</span></div>' +
+      '<div style="font-size:13px;color:#1e293b;margin-top:2px;">' + _btSafeHtml(p.description) + '</div>' +
+    '</div>';
+  });
+  listEl.innerHTML = html;
+  listEl.style.display = 'block';
+  listEl.querySelectorAll('.bt-search-item[data-type]').forEach(function(el){
+    el.addEventListener('click', function() {
+      var type = el.getAttribute('data-type');
+      if (type === 'cust') {
+        var erp = el.getAttribute('data-erp');
+        var c = _btCustomers.find(function(x){ return x.erp === erp; });
+        if (!c) return;
+        var label = c.erp + ' · ' + (c.clinic || c.name_en || c.name_th);
+        input.value = label;
+        leg.arrival = c.addr_reg || label;
+        leg.customer_erp = c.erp;
+        leg.customer_name = c.clinic || c.name_en || c.name_th;
+        // 좌표 lookup 시도 (주소가 있으면 geocode)
+        if (c.addr_reg && _btEnsureGmapsServices()) {
+          var geo = new google.maps.Geocoder();
+          geo.geocode({ address: c.addr_reg, componentRestrictions: { country: 'th' } }, function(results, status) {
+            if (status === 'OK' && results[0]) {
+              var loc = results[0].geometry.location;
+              leg.arr_loc = { lat: loc.lat(), lng: loc.lng() };
+            }
+            _btUpdateLegMapAndDistance(leg);
+          });
+        } else {
+          _btUpdateLegMapAndDistance(leg);
+        }
+      } else if (type === 'place') {
+        var pid = el.getAttribute('data-place-id');
+        var desc = el.getAttribute('data-desc');
+        if (_btPlacesService && pid) {
+          _btPlacesService.getDetails({ placeId: pid, fields: ['formatted_address','name','geometry'] }, function(p, status) {
+            if (status === google.maps.places.PlacesServiceStatus.OK && p) {
+              var addr = p.formatted_address || desc;
+              var name = p.name || '';
+              var full = (name && addr && !addr.startsWith(name)) ? (name + ', ' + addr) : (addr || name || desc);
+              input.value = full;
+              leg.arrival = full;
+              leg.customer_erp = '';
+              leg.customer_name = '';
+              leg.arr_loc = (p.geometry && p.geometry.location) ? { lat: p.geometry.location.lat(), lng: p.geometry.location.lng() } : null;
+            } else {
+              input.value = desc;
+              leg.arrival = desc;
+            }
+            _btUpdateLegMapAndDistance(leg);
+          });
+        } else {
+          input.value = desc;
+          leg.arrival = desc;
+          _btUpdateLegMapAndDistance(leg);
+        }
+      }
+      listEl.style.display = 'none';
+    });
+  });
+}
+
+// ── 지도 + 거리 업데이트 ─────────────────────────────────────────
+function _btUpdateLegMapAndDistance(leg) {
+  var dep = leg.departure || (document.getElementById('btDep_' + leg.id) || {}).value || '';
+  var arr = leg.arrival || (document.getElementById('btArr_' + leg.id) || {}).value || '';
+  leg.departure = dep;
+  leg.arrival = arr;
+  var mapWrap = document.getElementById('btLegMap_' + leg.id);
+  var iframe = document.getElementById('btLegMapFrame_' + leg.id);
+  var distWrap = document.getElementById('btLegDist_' + leg.id);
+  var distVal = document.getElementById('btLegDistVal_' + leg.id);
+  if (!mapWrap || !iframe) return;
   if (dep && arr) {
     var url = 'https://www.google.com/maps/embed/v1/directions?key=' + GMAPS_KEY +
               '&origin=' + encodeURIComponent(dep) +
               '&destination=' + encodeURIComponent(arr) +
               '&mode=driving&region=TH';
     if (iframe.src !== url) iframe.src = url;
-    wrap.style.display = '';
+    mapWrap.style.display = '';
+    // 거리 계산 (Directions API)
+    if (_btEnsureGmapsServices()) {
+      _btDirService.route({
+        origin: dep, destination: arr, travelMode: google.maps.TravelMode.DRIVING,
+        region: 'TH'
+      }, function(result, status) {
+        if (status === 'OK' && result.routes[0] && result.routes[0].legs[0]) {
+          var legR = result.routes[0].legs[0];
+          var km = (legR.distance.value / 1000);
+          leg.distance_km = km;
+          if (distVal) distVal.textContent = km.toFixed(1) + ' km · ' + Math.round(legR.duration.value / 60) + ' min';
+          if (distWrap) distWrap.style.display = '';
+        } else {
+          leg.distance_km = 0;
+          if (distWrap) distWrap.style.display = 'none';
+        }
+      });
+    }
   } else if (dep || arr) {
     var url2 = 'https://www.google.com/maps/embed/v1/place?key=' + GMAPS_KEY +
                '&q=' + encodeURIComponent(dep || arr) + '&zoom=14';
     if (iframe.src !== url2) iframe.src = url2;
-    wrap.style.display = '';
+    mapWrap.style.display = '';
+    if (distWrap) distWrap.style.display = 'none';
   } else {
-    wrap.style.display = 'none';
+    mapWrap.style.display = 'none';
     iframe.src = 'about:blank';
+    if (distWrap) distWrap.style.display = 'none';
   }
 }
 
-// ── 폼 → record 변환 ──────────────────────────────────────────────
+// ── 폼 → record ───────────────────────────────────────────────────
 function _btCollectRecord() {
   var mode = (document.querySelector('input[name=bt_mode]:checked') || {}).value || 'advance';
   var amounts = {
@@ -274,6 +491,18 @@ function _btCollectRecord() {
   };
   var total = Object.values(amounts).reduce(function(a,b){ return a+b; }, 0);
   var docNo = document.getElementById('btDocNo').value || _btGenDocNo(mode);
+  // legs from state (input value 도 sync)
+  var legs = _btLegs.map(function(l) {
+    return {
+      departure: ((document.getElementById('btDep_' + l.id) || {}).value || l.departure || '').trim(),
+      arrival:   ((document.getElementById('btArr_' + l.id) || {}).value || l.arrival || '').trim(),
+      customer_erp: l.customer_erp || '',
+      customer_name: l.customer_name || '',
+      distance_km: Number(l.distance_km || 0)
+    };
+  });
+  var totalKm = legs.reduce(function(s, l){ return s + (Number(l.distance_km) || 0); }, 0);
+  var firstLeg = legs[0] || { departure: '', arrival: '', customer_erp: '', customer_name: '' };
   return {
     doc_no: docNo,
     mode: mode,
@@ -285,10 +514,12 @@ function _btCollectRecord() {
     doc_date: document.getElementById('btDocDate').value || null,
     trip_from: document.getElementById('btTripFrom').value,
     trip_to: document.getElementById('btTripTo').value,
-    departure: document.getElementById('btDeparture').value.trim(),
-    arrival: document.getElementById('btArrival').value.trim(),
-    customer_erp: _btSelectedCustomer ? _btSelectedCustomer.erp : '',
-    customer_name: _btSelectedCustomer ? (_btSelectedCustomer.clinic || _btSelectedCustomer.name_en || _btSelectedCustomer.name_th) : '',
+    legs: legs,
+    total_distance_km: Number(totalKm.toFixed(2)),
+    departure: firstLeg.departure,
+    arrival: firstLeg.arrival,
+    customer_erp: firstLeg.customer_erp || (_btSelectedCustomer ? _btSelectedCustomer.erp : ''),
+    customer_name: firstLeg.customer_name || (_btSelectedCustomer ? (_btSelectedCustomer.clinic || _btSelectedCustomer.name_en || _btSelectedCustomer.name_th) : ''),
     attendees: document.getElementById('btAttendees').value.trim(),
     purpose: document.getElementById('btPurpose').value.trim(),
     remark: document.getElementById('btRemark').value.trim(),
@@ -297,20 +528,18 @@ function _btCollectRecord() {
   };
 }
 
-// ── 폼 제출 ──────────────────────────────────────────────────────
 async function _btSubmit() {
   if (!_btMe) { neoAlert(_btT('bt_auth_required') || '로그인이 필요합니다.'); return; }
   var rec = _btCollectRecord();
   if (!rec.trip_from || !rec.trip_to) { neoAlert(_btT('bt_err_dates') || '출장 기간을 입력해주세요.'); return; }
-  if (!rec.departure || !rec.arrival) { neoAlert(_btT('bt_err_place') || '출발지와 도착지를 입력해주세요.'); return; }
+  var validLegs = (rec.legs || []).filter(function(l){ return l.departure && l.arrival; });
+  if (!validLegs.length) { neoAlert(_btT('bt_err_place') || '최소 1개 일정의 출발지·도착지를 입력해주세요.'); return; }
   if (!rec.purpose) { neoAlert(_btT('bt_err_purpose') || '목적을 입력해주세요.'); return; }
-
   rec.status = 'submitted';
   rec.created_at = firebase.firestore.FieldValue.serverTimestamp();
   rec.updated_at = firebase.firestore.FieldValue.serverTimestamp();
-
   try {
-    var ref = await _fbDb.collection('businessTrips').add(rec);
+    await _fbDb.collection('businessTrips').add(rec);
     showToast('✅ ' + (_btT('bt_submitted') || '제출되었습니다.') + ' (' + rec.doc_no + ')');
     _btResetForm();
     setTimeout(function(){ _btSwitchTab('list'); }, 600);
@@ -318,6 +547,24 @@ async function _btSubmit() {
     console.error('[BT] submit failed:', e);
     neoAlert((_btT('bt_submit_fail') || '제출 실패') + ': ' + (e.message || e));
   }
+}
+
+function _btResetForm() {
+  ['btAmtHotel','btAmtService','btAmtAirfare','btAmtGasoline','btAmtAllowance','btAmtOthers'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.value = 0;
+  });
+  ['btCustomerSearch','btAttendees','btPurpose','btRemark'].forEach(function(id){
+    var el = document.getElementById(id); if (el) el.value = '';
+  });
+  _btSelectedCustomer = null;
+  document.querySelector('input[name=bt_mode][value=advance]').checked = true;
+  document.getElementById('btDocNo').value = _btGenDocNo('advance');
+  // legs 초기화
+  _btLegs = [];
+  document.getElementById('btLegsContainer').innerHTML = '';
+  _btMakeLegRow();
+  _btSetDefaultDates();
+  _btCalcTotal();
 }
 
 function _btSwitchTab(tab) {
@@ -329,7 +576,7 @@ function _btSwitchTab(tab) {
   if (tab === 'list') _btLoadList();
 }
 
-// ── 목록 조회 ────────────────────────────────────────────────────
+// ── 목록 ──────────────────────────────────────────────────────────
 var _btListCache = [];
 async function _btLoadList() {
   var body = document.getElementById('btListBody');
@@ -357,8 +604,14 @@ async function _btLoadList() {
       var modeClass = d.mode === 'settlement' ? 'bt-status-settlement' : 'bt-status-advance';
       var totalStr = (d.total != null ? d.total : 0).toLocaleString() + ' Baht';
       var dateStr = (d.trip_from || '') + ' ~ ' + (d.trip_to || '');
-      var route = (d.departure || '') + (d.arrival ? ' → ' + d.arrival : '');
-      var cust = d.customer_name || '';
+      var legs = (d.legs && d.legs.length) ? d.legs : [{ departure: d.departure || '', arrival: d.arrival || '', distance_km: 0 }];
+      var legsHtml = legs.map(function(l, j){
+        var route = (l.departure || '') + ' → ' + (l.arrival || '');
+        var km = l.distance_km ? ' · 🚗 ' + Number(l.distance_km).toFixed(1) + ' km' : '';
+        return '<div style="font-size:12px;color:#475569;margin-top:' + (j === 0 ? '8px' : '3px') + ';">' +
+               (legs.length > 1 ? '<strong>#' + (j+1) + '</strong> ' : '') + _btSafeHtml(route) + km + '</div>';
+      }).join('');
+      var totalKm = (d.total_distance_km != null) ? d.total_distance_km : null;
       return '<div class="bt-list-item">' +
         '<div class="bt-list-row">' +
           '<div>' +
@@ -367,8 +620,9 @@ async function _btLoadList() {
           '</div>' +
           '<span class="bt-list-amount">' + totalStr + '</span>' +
         '</div>' +
-        '<div style="margin-top:8px;font-size:13px;color:#1e293b;">📍 ' + (route || '-') + (cust ? ' · 🏥 ' + cust : '') + '</div>' +
-        '<div style="margin-top:4px;font-size:12px;color:#64748b;">📅 ' + dateStr + (d.purpose ? ' · ' + d.purpose : '') + '</div>' +
+        legsHtml +
+        '<div style="margin-top:4px;font-size:12px;color:#64748b;">📅 ' + _btSafeHtml(dateStr) + (d.purpose ? ' · ' + _btSafeHtml(d.purpose) : '') +
+          (totalKm ? ' · 총 ' + Number(totalKm).toFixed(1) + ' km' : '') + '</div>' +
         '<div style="margin-top:10px;display:flex;gap:8px;justify-content:flex-end;">' +
           '<button class="bt-btn-mini bt-btn-mini-excel" onclick="_btDownloadExcel(' + i + ')">📊 Excel</button>' +
           '<button class="bt-btn-mini bt-btn-mini-pdf" onclick="_btDownloadPDF(' + i + ')">📄 PDF</button>' +
@@ -381,7 +635,7 @@ async function _btLoadList() {
   }
 }
 
-// ── Excel 다운로드 ────────────────────────────────────────────────
+// ── Excel 다운로드 (legs 포함) ────────────────────────────────────
 async function _btDownloadExcel(idx) {
   var rec = _btListCache[idx];
   if (!rec) { showToast('Record not found'); return; }
@@ -393,54 +647,52 @@ async function _btDownloadExcel(idx) {
     var wb = XLSX.read(ab, { type: 'array', cellStyles: true });
     var sn = wb.SheetNames[0];
     var ws = wb.Sheets[sn];
-    // 셀 값 채우기 (양식 분석 기준)
     function setCell(addr, val) {
       if (!ws[addr]) ws[addr] = { t: 's', v: '' };
       ws[addr].v = val == null ? '' : val;
       ws[addr].t = (typeof val === 'number') ? 'n' : 's';
-      delete ws[addr].w;  // formatted text 제거
-      delete ws[addr].f;  // formula 제거
+      delete ws[addr].w; delete ws[addr].f;
     }
-    var modeLabel = rec.mode === 'settlement' ? '정산 (Settlement)' : '가불 (Advance)';
-    setCell('C6', (rec.applicant_id || '') + ' - ' + (rec.applicant_name || ''));  // 신청자
-    setCell('N5', rec.doc_no || '');                                                // Document No
-    setCell('N6', rec.doc_date || '');                                              // Date
-    setCell('A10', rec.attendees || rec.applicant_name || '');                       // 참석자
-    setCell('B10', rec.trip_from || '');                                             // From
-    setCell('C10', rec.trip_to || '');                                               // To
-    setCell('D10', rec.customer_erp || '');                                          // Customer code
-    setCell('E10', rec.customer_name || '');                                         // Customer name
-    setCell('I10', rec.purpose || '');                                               // Purpose
-    // 비용 (Row 19 = first row of business tripper detail)
-    setCell('A20', rec.applicant_name || '');
-    setCell('B20', rec.departure || '');
-    setCell('C20', rec.arrival || '');
+    var legs = rec.legs && rec.legs.length ? rec.legs : [{ departure: rec.departure || '', arrival: rec.arrival || '', distance_km: 0 }];
+    var firstLeg = legs[0];
+    setCell('C6', (rec.applicant_id || '') + ' - ' + (rec.applicant_name || ''));
+    setCell('N5', rec.doc_no || '');
+    setCell('N6', rec.doc_date || '');
+    setCell('A10', rec.attendees || rec.applicant_name || '');
+    setCell('B10', rec.trip_from || '');
+    setCell('C10', rec.trip_to || '');
+    setCell('D10', firstLeg.customer_erp || rec.customer_erp || '');
+    setCell('E10', firstLeg.customer_name || rec.customer_name || '');
+    setCell('I10', rec.purpose || '');
+    // Business tripper detail rows (Row 19-24, 최대 6개 leg 매핑 — A19부터)
+    legs.slice(0, 6).forEach(function(l, i) {
+      var row = 19 + i;
+      setCell('A' + row, rec.applicant_name || '');
+      setCell('B' + row, l.departure || '');
+      setCell('C' + row, l.arrival || '');
+      setCell('D' + row, Number(l.distance_km || 0));
+    });
     var amt = rec.amounts || {};
-    setCell('F20', Number(amt.gasoline || 0));   // Gasoline Amount
-    setCell('I20', Number(amt.hotel || 0));      // Hotel Amount
-    setCell('L20', Number(amt.allowance || 0));  // Allowance Amount
-    setCell('M20', Number(amt.service || 0));    // Service Amount
-    setCell('N20', Number(amt.airfare || 0));    // Airfare
-    setCell('O20', Number(amt.others || 0));     // Others
-    setCell('P20', Number(rec.total || 0));      // Row total
-    // Actual Amount (Row 26)
+    setCell('F19', Number(amt.gasoline || 0));
+    setCell('I19', Number(amt.hotel || 0));
+    setCell('L19', Number(amt.allowance || 0));
+    setCell('M19', Number(amt.service || 0));
+    setCell('N19', Number(amt.airfare || 0));
+    setCell('O19', Number(amt.others || 0));
+    setCell('P19', Number(rec.total || 0));
     setCell('F26', Number(amt.gasoline || 0));
     setCell('I26', Number(amt.hotel || 0));
     setCell('L26', Number(amt.allowance || 0));
     setCell('O26', Number(amt.others || 0));
     setCell('P26', Number(rec.total || 0));
-    // 모드 체크박스 (정산 vs 가불)
     setCell('B3', rec.mode === 'advance');
     setCell('B4', rec.mode === 'settlement');
-    // 비고 (있다면 P28 또는 K28)
     if (rec.remark) setCell('K34', rec.remark);
-    // Output
     var out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
     var blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     var fileName = 'BusinessTrip_' + (rec.doc_no || 'doc') + '.xlsx';
     var a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = fileName;
+    a.href = URL.createObjectURL(blob); a.download = fileName;
     document.body.appendChild(a); a.click();
     setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
     showToast('✅ ' + (_btT('bt_dl_excel_ok') || 'Excel 다운로드 완료'));
@@ -450,7 +702,7 @@ async function _btDownloadExcel(idx) {
   }
 }
 
-// ── PDF 다운로드 ──────────────────────────────────────────────────
+// ── PDF 다운로드 (legs 포함) ──────────────────────────────────────
 async function _btDownloadPDF(idx) {
   var rec = _btListCache[idx];
   if (!rec) { showToast('Record not found'); return; }
@@ -458,15 +710,24 @@ async function _btDownloadPDF(idx) {
     neoAlert('PDF 라이브러리 로드 실패'); return;
   }
   showToast('📄 ' + (_btT('bt_dl_pdf_start') || 'PDF 생성 중...'));
-  // 임시 렌더 영역 (off-screen) 만들어 record 채워서 캡처
   var temp = document.createElement('div');
   temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:780px;background:#fff;padding:28px;font-family:-apple-system,sans-serif;color:#1e293b;';
   var modeLabel = rec.mode === 'settlement' ? '정산 (Settlement)' : '가불 (Advance)';
   var amt = rec.amounts || {};
-  var amtRow = function(k, lbl, v) {
+  var amtRow = function(lbl, v) {
     return '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;">' + lbl + '</td>' +
            '<td style="padding:6px 10px;border:1px solid #cbd5e1;text-align:right;">' + (Number(v||0)).toLocaleString() + '</td></tr>';
   };
+  var legs = rec.legs && rec.legs.length ? rec.legs : [{ departure: rec.departure || '', arrival: rec.arrival || '', distance_km: 0 }];
+  var legsTable = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;">' +
+    '<thead><tr style="background:#0f766e;color:#fff;"><th style="padding:6px;border:1px solid #cbd5e1;">#</th><th style="padding:6px;border:1px solid #cbd5e1;">출발</th><th style="padding:6px;border:1px solid #cbd5e1;">도착</th><th style="padding:6px;border:1px solid #cbd5e1;">고객</th><th style="padding:6px;border:1px solid #cbd5e1;">거리(km)</th></tr></thead><tbody>' +
+    legs.map(function(l, i){
+      return '<tr><td style="padding:6px;border:1px solid #cbd5e1;text-align:center;">' + (i+1) + '</td>' +
+             '<td style="padding:6px;border:1px solid #cbd5e1;">' + _btSafeHtml(l.departure || '') + '</td>' +
+             '<td style="padding:6px;border:1px solid #cbd5e1;">' + _btSafeHtml(l.arrival || '') + '</td>' +
+             '<td style="padding:6px;border:1px solid #cbd5e1;">' + _btSafeHtml((l.customer_erp || '') + ' ' + (l.customer_name || '')) + '</td>' +
+             '<td style="padding:6px;border:1px solid #cbd5e1;text-align:right;">' + (Number(l.distance_km||0)).toFixed(1) + '</td></tr>';
+    }).join('') + '</tbody></table>';
   temp.innerHTML =
     '<h2 style="margin:0 0 6px;color:#0d9488;">🧳 Business Trip Request</h2>' +
     '<div style="font-size:12px;color:#64748b;margin-bottom:16px;">' + (rec.doc_no || '') + ' · ' + modeLabel + '</div>' +
@@ -477,30 +738,23 @@ async function _btDownloadPDF(idx) {
           '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (rec.doc_date || '') + '</td></tr>' +
       '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Trip Period</td>' +
           '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (rec.trip_from || '') + ' ~ ' + (rec.trip_to || '') + '</td></tr>' +
-      '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Departure</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (rec.departure || '') + '</td></tr>' +
-      '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Arrival</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (rec.arrival || '') + '</td></tr>' +
-      '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Customer</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (rec.customer_erp || '') + ' ' + (rec.customer_name || '') + '</td></tr>' +
       '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Attendees</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (rec.attendees || '') + '</td></tr>' +
+          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + _btSafeHtml(rec.attendees || '') + '</td></tr>' +
       '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Purpose</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (rec.purpose || '') + '</td></tr>' +
+          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + _btSafeHtml(rec.purpose || '') + '</td></tr>' +
+      '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Total Distance</td>' +
+          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (Number(rec.total_distance_km||0).toFixed(1)) + ' km</td></tr>' +
     '</table>' +
+    '<h3 style="margin:14px 0 6px;color:#0f766e;font-size:14px;">Itinerary</h3>' + legsTable +
     '<h3 style="margin:14px 0 6px;color:#0f766e;font-size:14px;">Expenses (Baht)</h3>' +
     '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
-      amtRow('hotel','🏨 Hotel', amt.hotel) +
-      amtRow('service','🤝 Service', amt.service) +
-      amtRow('airfare','✈️ Air Fare', amt.airfare) +
-      amtRow('gasoline','⛽ Gasoline', amt.gasoline) +
-      amtRow('allowance','📋 Allowance', amt.allowance) +
-      amtRow('others','📦 Others', amt.others) +
+      amtRow('🏨 Hotel', amt.hotel) + amtRow('🤝 Service', amt.service) + amtRow('✈️ Air Fare', amt.airfare) +
+      amtRow('⛽ Gasoline', amt.gasoline) + amtRow('📋 Allowance', amt.allowance) + amtRow('📦 Others', amt.others) +
       '<tr style="background:#0d9488;color:#fff;font-weight:700;">' +
         '<td style="padding:8px 10px;">TOTAL</td>' +
         '<td style="padding:8px 10px;text-align:right;font-size:15px;">' + (Number(rec.total||0)).toLocaleString() + '</td></tr>' +
     '</table>' +
-    (rec.remark ? '<div style="margin-top:14px;font-size:12px;color:#475569;"><strong>Remark:</strong> ' + (rec.remark||'').replace(/</g,'&lt;') + '</div>' : '');
+    (rec.remark ? '<div style="margin-top:14px;font-size:12px;color:#475569;"><strong>Remark:</strong> ' + _btSafeHtml(rec.remark) + '</div>' : '');
   document.body.appendChild(temp);
   try {
     var canvas = await html2canvas(temp, { scale: 2, backgroundColor: '#fff', useCORS: true });
@@ -508,7 +762,7 @@ async function _btDownloadPDF(idx) {
     var jsPDF = window.jspdf.jsPDF;
     var pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
     var pdfW = 210, pdfH = 297;
-    var imgW = pdfW - 16; // 8mm 마진 양쪽
+    var imgW = pdfW - 16;
     var imgH = canvas.height * imgW / canvas.width;
     pdf.addImage(imgData, 'JPEG', 8, 8, imgW, Math.min(imgH, pdfH - 16));
     var fileName = 'BusinessTrip_' + (rec.doc_no || 'doc') + '.pdf';
@@ -522,13 +776,14 @@ async function _btDownloadPDF(idx) {
   }
 }
 
-// 글로벌 노출 (인라인 onclick 에서 호출)
 window._btDownloadExcel = _btDownloadExcel;
 window._btDownloadPDF = _btDownloadPDF;
 window._btSwitchTab = _btSwitchTab;
 window._btSubmit = _btSubmit;
 window._btResetForm = _btResetForm;
 window._btCalcTotal = _btCalcTotal;
+window._btAddLeg = _btAddLeg;
+window._btRemoveLeg = _btRemoveLeg;
 
 // ── 초기화 ──────────────────────────────────────────────────────
 (async function _btInit() {
@@ -537,7 +792,6 @@ window._btCalcTotal = _btCalcTotal;
   }
   await _btLoadUser();
   if (!_btMe) return;
-  // 신청자: 사번 - 이름 (사번 우선)
   var who = (_btMe.empid ? _btMe.empid + ' - ' : '') + (_btMe.name || _btMe.nickname || '');
   document.getElementById('btApplicant').value = who.trim() || _btMe.email || '';
   document.getElementById('btDocNo').value = _btGenDocNo('advance');
@@ -545,6 +799,7 @@ window._btCalcTotal = _btCalcTotal;
   _btCalcTotal();
   _btBindModeChange();
   _btBindCustomerSearch();
-  _btAttachPlaces();
+  // 첫 leg 추가
+  _btMakeLegRow();
   if (typeof applyLang === 'function') applyLang();
 })();

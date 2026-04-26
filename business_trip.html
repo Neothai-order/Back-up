@@ -69,6 +69,18 @@
   .bt-btn-mini-excel:hover { background:#d1fae5; }
   .bt-btn-mini-pdf { color:#b91c1c; border-color:#ef4444; }
   .bt-btn-mini-pdf:hover { background:#fee2e2; }
+  .bt-leg-card { border:1px solid #e5e7eb; border-radius:10px; padding:12px; margin-bottom:10px; background:#fafafa; position:relative; }
+  .bt-leg-card.first { border-color:#0d9488; background:#f0fdfa; }
+  .bt-leg-hdr { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+  .bt-leg-title { font-size:12px; font-weight:700; color:#0f766e; }
+  .bt-leg-remove { background:none; border:none; color:#ef4444; font-size:16px; cursor:pointer; padding:2px 6px; border-radius:4px; }
+  .bt-leg-remove:hover { background:#fee2e2; }
+  .bt-leg-search { position:relative; }
+  .bt-leg-search-list { position:absolute; top:100%; left:0; right:0; background:#fff; border:1.5px solid #d1d5db; border-radius:8px; max-height:280px; overflow-y:auto; box-shadow:0 6px 20px rgba(0,0,0,.12); z-index:20; display:none; margin-top:4px; }
+  .bt-leg-distance { display:inline-flex; align-items:center; gap:6px; padding:5px 12px; background:#0f766e; color:#fff; border-radius:14px; font-size:12px; font-weight:700; margin-top:6px; }
+  .bt-leg-map { display:none; height:240px; border-radius:8px; overflow:hidden; margin-top:8px; border:1px solid #e5e7eb; }
+  .bt-cust-tag { display:inline-block; padding:2px 6px; background:#ccfbf1; color:#0f766e; border-radius:4px; font-size:10px; font-weight:700; margin-left:6px; }
+  .bt-place-tag { display:inline-block; padding:2px 6px; background:#fef3c7; color:#92400e; border-radius:4px; font-size:10px; font-weight:700; margin-left:6px; }
   @media (max-width:480px) {
     .bt-body { padding:12px; }
     .bt-card { padding:14px; }
@@ -121,22 +133,10 @@
         <span class="bt-label" data-i18n="bt_trip_to">종료일</span>
         <input type="date" id="btTripTo" class="bt-input">
       </div>
-      <div class="bt-row">
-        <span class="bt-label" data-i18n="bt_departure">출발지</span>
-        <input type="text" id="btDeparture" class="bt-input" placeholder="출발 주소 입력" data-i18n-placeholder="bt_departure_ph" autocomplete="off">
-      </div>
-      <div class="bt-row">
-        <span class="bt-label" data-i18n="bt_arrival">도착지</span>
-        <input type="text" id="btArrival" class="bt-input" placeholder="도착 주소 입력" data-i18n-placeholder="bt_arrival_ph" autocomplete="off">
-      </div>
-      <!-- 출발-도착 지도 미리보기 -->
-      <div id="btMapPreview" style="display:none; height:280px; border-radius:8px; overflow:hidden; margin-top:8px; border:1px solid #e5e7eb;">
-        <iframe id="btMapFrame" width="100%" height="100%" frameborder="0" style="border:0;" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
-      </div>
-      <div class="bt-row bt-search-wrap">
-        <span class="bt-label" data-i18n="bt_customer">고객</span>
-        <input type="text" id="btCustomerSearch" class="bt-input" placeholder="ERP / 클리닉 / 의사 검색" data-i18n-placeholder="bt_customer_ph" autocomplete="off">
-        <div class="bt-search-list" id="btCustList"></div>
+      <!-- ─── 일정(leg) 컨테이너: 다중 leg 지원 ─── -->
+      <div id="btLegsContainer"></div>
+      <div style="display:flex;justify-content:flex-start;margin:8px 0 4px;">
+        <button type="button" class="bt-btn bt-btn-ghost" onclick="_btAddLeg()" style="font-size:12px;padding:8px 14px;border:1.5px dashed #0d9488;background:#f0fdfa;color:#0d9488;">➕ <span data-i18n="bt_add_leg">일정 추가</span></button>
       </div>
       <div class="bt-row">
         <span class="bt-label" data-i18n="bt_attendees">참석자</span>
@@ -217,7 +217,7 @@
 <div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:99500;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
 
 <!-- Lang -->
-<script src="lang.min.js?v=176"></script>
+<script src="lang.min.js?v=177"></script>
 <!-- 페이지 헤더 -->
 <script src="page-header.js?v=2"></script>
 <!-- 공용 Firebase 초기화 (다른 페이지와 동일 config 적용) -->
@@ -251,7 +251,7 @@ var _fbDb = firebase.firestore();
 </script>
 
 <!-- Business Trip 메인 로직 -->
-<script src="business_trip.min.js?v=3"></script>
+<script src="business_trip.min.js?v=4"></script>
 
 </body>
 </html>

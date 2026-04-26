@@ -821,17 +821,32 @@ function _goOnline() {
     lastSeen: firebase.firestore.FieldValue.serverTimestamp()
   };
   _fbDb.collection('presence').doc(me.empid).set(doc, { merge: true }).catch(function(){});
-  // 하트비트: 90초마다 lastSeen 업데이트 (2분 온라인 윈도우 내)
-  // — 각 하트비트가 모든 탭의 presence onSnapshot 리스너를 발화시키므로 빈도를 낮춰 읽기 수 감소
+  // 하트비트: 5분마다 lastSeen 업데이트 (7분 온라인 윈도우 내)
+  // — 90초 → 300초로 완화 (Firestore 일일 writes 약 67% 절감, 30명 사용 시 무료한도 내 유지)
+  // — 백그라운드 탭(visibilityState!=='visible')은 skip 하여 추가 절감
   clearInterval(_presenceHeartbeat);
   _presenceHeartbeat = setInterval(function() {
     var u = getCurrentUser();
     if (!u) { clearInterval(_presenceHeartbeat); return; }
+    if (typeof document !== 'undefined' && document.visibilityState && document.visibilityState !== 'visible') return;
     _fbDb.collection('presence').doc(u.empid).update({
       lastSeen: firebase.firestore.FieldValue.serverTimestamp()
     }).catch(function(){});
-  }, 90000);
+  }, 5 * 60 * 1000);
+  // 탭이 다시 보이게 되면 즉시 lastSeen 갱신 (백그라운드에서 윈도우 만료 후 복귀 시 빠른 반영)
+  if (typeof document !== 'undefined' && !_presenceVisHook) {
+    _presenceVisHook = function() {
+      if (document.visibilityState !== 'visible') return;
+      var u = getCurrentUser();
+      if (!u) return;
+      _fbDb.collection('presence').doc(u.empid).update({
+        lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+      }).catch(function(){});
+    };
+    document.addEventListener('visibilitychange', _presenceVisHook);
+  }
 }
+var _presenceVisHook = null;
 
 function _goOffline() {
   var me = getCurrentUser();
@@ -842,6 +857,10 @@ function _goOffline() {
   clearInterval(_presenceCountTimer);
   if (_presenceUnsub) { _presenceUnsub(); _presenceUnsub = null; }
   if (_broadcastUnsub) { _broadcastUnsub(); _broadcastUnsub = null; }
+  if (_presenceVisHook && typeof document !== 'undefined') {
+    document.removeEventListener('visibilitychange', _presenceVisHook);
+    _presenceVisHook = null;
+  }
   _onlineUsers = [];
   _renderOnlineCount();
 }
@@ -853,8 +872,8 @@ function _applyPresenceSnap(snap) {
   snap.forEach(function(doc) {
     var d = doc.data();
     var lastSeen = d.lastSeen ? d.lastSeen.toMillis() : 0;
-    // 2분(120초) 이내면 온라인
-    if (now - lastSeen < 120000) users.push(d);
+    // 7분(420초) 이내면 온라인 — heartbeat 5분 + 여유 2분
+    if (now - lastSeen < 420000) users.push(d);
   });
   _onlineUsers = users;
   _renderOnlineCount();

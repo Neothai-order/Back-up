@@ -6308,10 +6308,13 @@ function openPkgBuilder(node) {
   }
   _bringToFront(pkgOverlay);
   _bringToFront(pkgEl);
-  // [REFACTOR 2026-04-25] max int32 !important 강제 제거 — z-index 군비경쟁 종결.
-  // CSS 토큰(.pkg-overlay z=9900, .pkg-builder z=9910)이 자연스럽게 적용됨.
-  // _bringToFront 가 inline z-index(_topZ 카운터)를 더 높게 설정하므로 다른 모달과 충돌 없음.
-  // 알림류는 CSS 의 --z-alert 가 더 위에 있어 가리지 않음.
+  // 모바일: _bringToFront 가 inline z-index 를 ~10700 대로 설정 + !important 를 제거함.
+  // 안드로이드에서 order-overlay 도 _bringToFront 로 비슷한 값을 가지므로 stacking 충돌 발생.
+  // 따라서 _bringToFront 직후에 다시 setProperty(!important)로 매우 높은 값 강제.
+  if (window.innerWidth <= 1024) {
+    pkgOverlay.style.setProperty('z-index', '999998', 'important');
+    pkgEl.style.setProperty('z-index', '999999', 'important');
+  }
   // 안드로이드 모바일: 위저드 모드(순차 입력) 활성화
   _setupPkgWizard();
 }

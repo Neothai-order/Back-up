@@ -15,6 +15,73 @@ var _btAcService = null;       // Google AutocompleteService
 var _btPlacesService = null;   // PlacesService (getDetails 용)
 var _btDirService = null;      // DirectionsService
 var _btSelectedCustomer = null;
+var _btManualHotel = false;       // 숙박비 수동 입력 모드
+var _btGasolineRatePerKm = null;  // settings/businessTrip 에서 fetch (default 5)
+var _btDailyAllowance = 300;      // 출장수당 default
+var _btHotelPerNight = 650;       // 숙박비 default
+
+// ── settings/businessTrip 에서 단가 fetch ─────────────────────────
+async function _btLoadRates() {
+  if (_btGasolineRatePerKm != null) return;
+  try {
+    var doc = await _fbDb.collection('settings').doc('businessTrip').get();
+    if (doc.exists) {
+      var d = doc.data();
+      _btGasolineRatePerKm = Number(d.gasoline_rate_per_km) || 5;
+      if (d.daily_allowance) _btDailyAllowance = Number(d.daily_allowance) || 300;
+      if (d.hotel_per_night) _btHotelPerNight = Number(d.hotel_per_night) || 650;
+    } else {
+      _btGasolineRatePerKm = 5;
+    }
+  } catch(e) {
+    console.warn('[BT] rate fetch failed, using defaults:', e);
+    _btGasolineRatePerKm = 5;
+  }
+}
+
+// ── 자동 계산 (출장수당, 숙박비, 휘발유) ─────────────────────────
+function _btCalcAutoAmounts() {
+  var fromVal = (document.getElementById('btTripFrom') || {}).value;
+  var toVal   = (document.getElementById('btTripTo') || {}).value;
+  if (!fromVal || !toVal) return;
+  var d1 = new Date(fromVal + 'T00:00:00');
+  var d2 = new Date(toVal   + 'T00:00:00');
+  if (isNaN(d1) || isNaN(d2) || d2 < d1) return;
+  var dayMs = 86400000;
+  var diffDays = Math.round((d2 - d1) / dayMs) + 1;  // 일수 (포함)
+  var nights   = Math.max(0, Math.round((d2 - d1) / dayMs));  // 박 수
+  // 출장수당
+  var allowEl = document.getElementById('btAmtAllowance');
+  if (allowEl) allowEl.value = diffDays * _btDailyAllowance;
+  // 숙박비 (수동 체크 안 됐을 때만)
+  if (!_btManualHotel) {
+    var hotelEl = document.getElementById('btAmtHotel');
+    if (hotelEl) hotelEl.value = nights * _btHotelPerNight;
+  }
+  // 휘발유 = 모든 leg 거리 합 × rate
+  var totalKm = _btLegs.reduce(function(s, l){ return s + (Number(l.distance_km) || 0); }, 0);
+  var rate = _btGasolineRatePerKm || 5;
+  var gasEl = document.getElementById('btAmtGasoline');
+  if (gasEl) gasEl.value = Math.round(totalKm * rate);
+  _btCalcTotal();
+}
+
+// ── 숙박비 수동 입력 토글 ────────────────────────────────────────
+function _btToggleHotelManual() {
+  var chk = document.getElementById('btHotelManual');
+  var hotelEl = document.getElementById('btAmtHotel');
+  if (!chk || !hotelEl) return;
+  _btManualHotel = chk.checked;
+  hotelEl.readOnly = !_btManualHotel;
+  hotelEl.style.background = _btManualHotel ? '#fff' : '#f1f5f9';
+  hotelEl.style.color = _btManualHotel ? '#1e293b' : '#475569';
+  if (_btManualHotel) {
+    hotelEl.focus();
+    hotelEl.select();
+  } else {
+    _btCalcAutoAmounts();
+  }
+}
 
 // ── 인증 ──────────────────────────────────────────────────────────
 function _btWaitAuth(timeoutMs) {
@@ -516,6 +583,8 @@ function _btUpdateLegMapAndDistance(leg) {
           leg.distance_km = 0;
           if (distWrap) distWrap.style.display = 'none';
         }
+        // 거리 갱신 → 휘발유 자동 재계산
+        _btCalcAutoAmounts();
       });
     }
   } else if (dep || arr) {
@@ -614,6 +683,11 @@ function _btResetForm() {
     var el = document.getElementById(id); if (el) el.value = '';
   });
   _btSelectedCustomer = null;
+  // 숙박비 수동 모드 reset
+  _btManualHotel = false;
+  var chk = document.getElementById('btHotelManual'); if (chk) chk.checked = false;
+  var hotelEl = document.getElementById('btAmtHotel');
+  if (hotelEl) { hotelEl.readOnly = true; hotelEl.style.background = '#f1f5f9'; hotelEl.style.color = '#475569'; }
   document.querySelector('input[name=bt_mode][value=advance]').checked = true;
   document.getElementById('btDocNo').value = _btGenDocNo('advance');
   // legs 초기화
@@ -621,7 +695,7 @@ function _btResetForm() {
   document.getElementById('btLegsContainer').innerHTML = '';
   _btMakeLegRow();
   _btSetDefaultDates();
-  _btCalcTotal();
+  _btCalcAutoAmounts();
 }
 
 function _btSwitchTab(tab) {
@@ -847,6 +921,7 @@ window._btResetForm = _btResetForm;
 window._btCalcTotal = _btCalcTotal;
 window._btAddLeg = _btAddLeg;
 window._btRemoveLeg = _btRemoveLeg;
+window._btToggleHotelManual = _btToggleHotelManual;
 
 // ── 초기화 ──────────────────────────────────────────────────────
 (async function _btInit() {
@@ -862,7 +937,16 @@ window._btRemoveLeg = _btRemoveLeg;
   _btCalcTotal();
   _btBindModeChange();
   _btBindCustomerSearch();
+  // 시작일/종료일 변경 시 자동 재계산
+  ['btTripFrom','btTripTo'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('change', _btCalcAutoAmounts);
+  });
+  // 단가 fetch (백그라운드)
+  await _btLoadRates();
   // 첫 leg 추가
   _btMakeLegRow();
+  // 자동 계산 1차 실행
+  _btCalcAutoAmounts();
   if (typeof applyLang === 'function') applyLang();
 })();

@@ -156,15 +156,21 @@
       <div class="bt-amounts">
         <div class="bt-amount-item">
           <label data-i18n="bt_amt_allowance">📋 출장수당</label>
-          <input type="number" id="btAmtAllowance" min="0" step="1" value="0" oninput="_btCalcTotal()">
+          <input type="number" id="btAmtAllowance" min="0" step="1" value="0" readonly oninput="_btCalcTotal()" style="background:#f1f5f9;color:#475569;">
         </div>
         <div class="bt-amount-item">
           <label data-i18n="bt_amt_gasoline">⛽ 휘발유</label>
-          <input type="number" id="btAmtGasoline" min="0" step="1" value="0" oninput="_btCalcTotal()">
+          <input type="number" id="btAmtGasoline" min="0" step="1" value="0" readonly oninput="_btCalcTotal()" style="background:#f1f5f9;color:#475569;">
         </div>
         <div class="bt-amount-item">
-          <label data-i18n="bt_amt_hotel">🏨 숙박비</label>
-          <input type="number" id="btAmtHotel" min="0" step="1" value="0" oninput="_btCalcTotal()">
+          <label style="display:flex;justify-content:space-between;align-items:center;">
+            <span data-i18n="bt_amt_hotel">🏨 숙박비</span>
+            <label style="display:inline-flex;align-items:center;gap:3px;font-size:10px;color:#64748b;cursor:pointer;font-weight:500;">
+              <input type="checkbox" id="btHotelManual" onchange="_btToggleHotelManual()" style="margin:0;width:13px;height:13px;">
+              <span data-i18n="bt_manual">수동</span>
+            </label>
+          </label>
+          <input type="number" id="btAmtHotel" min="0" step="1" value="0" readonly oninput="_btCalcTotal()" style="background:#f1f5f9;color:#475569;">
         </div>
         <div class="bt-amount-item">
           <label data-i18n="bt_amt_airfare">✈️ 항공권</label>
@@ -222,7 +228,7 @@
 <div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:99500;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
 
 <!-- Lang -->
-<script src="lang.min.js?v=179"></script>
+<script src="lang.min.js?v=180"></script>
 <!-- 페이지 헤더 -->
 <script src="page-header.js?v=2"></script>
 <!-- 공용 Firebase 초기화 (다른 페이지와 동일 config 적용) -->
@@ -256,7 +262,7 @@ var _fbDb = firebase.firestore();
 </script>
 
 <!-- Business Trip 메인 로직 -->
-<script src="business_trip.min.js?v=9"></script>
+<script src="business_trip.min.js?v=10"></script>
 
 </body>
 </html>

@@ -3130,11 +3130,13 @@ function renderCharts(d) {
   } else if (isFinance) {
     // 재무팀은 승인권 유무와 무관하게 전체 조회 (재무 집계 업무상 전사 데이터 필요)
     _curPerm = 'admin';
-  } else if (hasApprove && (pos === 'group_leader' || pos === 'ceo')) {
-    // 그룹장/법인장 + 승인 → 전체
+  } else if (pos === 'group_leader' || pos === 'ceo') {
+    // 그룹장/법인장 → 직위만으로 전체 조회 자동 부여
+    // (별도 hasApprove 체크 불필요 — 직위 자체가 권한)
     _curPerm = 'admin';
-  } else if (hasApprove) {
-    // 팀원/팀장 + 승인 → 소속팀
+  } else if (pos === 'leader' || hasApprove) {
+    // 팀장 → 직위만으로 소속팀 자동 부여
+    // 또는 일반 팀원 + 승인권 → 소속팀
     _curPerm = 'manager';
   } else {
     // 열람만 → 본인만 (이름 매칭 실패 시 소속팀으로 폴백)

@@ -843,78 +843,180 @@ async function _btDownloadPDF(idx) {
   var rec = _btListCache[idx];
   if (!rec) { showToast('Record not found'); return; }
   if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
-    neoAlert('PDF 라이브러리 로드 실패'); return;
+    neoAlert(_btT('bt_dl_pdf_fail', 'PDF 라이브러리 로드 실패')); return;
   }
-  showToast('📄 ' + (_btT('bt_dl_pdf_start', 'PDF 생성 중...')));
-  var temp = document.createElement('div');
-  temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:780px;background:#fff;padding:28px;font-family:-apple-system,sans-serif;color:#1e293b;';
-  var modeLabel = rec.mode === 'settlement' ? '정산 (Settlement)' : '가불 (Advance)';
+  showToast('📄 ' + _btT('bt_dl_pdf_start', 'PDF 생성 중...'));
   var amt = rec.amounts || {};
-  var amtRow = function(lbl, v, detail) {
-    return '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;">' + lbl +
-           (detail ? ' <span style="font-size:11px;color:#64748b;font-weight:400;">(' + _btSafeHtml(detail) + ')</span>' : '') +
-           '</td>' +
-           '<td style="padding:6px 10px;border:1px solid #cbd5e1;text-align:right;">' + (Number(v||0)).toLocaleString() + '</td></tr>';
-  };
-  var detailMap = rec.amounts_detail || {};
-  var legs = rec.legs && rec.legs.length ? rec.legs : [{ departure: rec.departure || '', arrival: rec.arrival || '', distance_km: 0 }];
-  var legsTable = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;">' +
-    '<thead><tr style="background:#0f766e;color:#fff;"><th style="padding:6px;border:1px solid #cbd5e1;">#</th><th style="padding:6px;border:1px solid #cbd5e1;">출발</th><th style="padding:6px;border:1px solid #cbd5e1;">도착</th><th style="padding:6px;border:1px solid #cbd5e1;">고객</th><th style="padding:6px;border:1px solid #cbd5e1;">거리(km)</th></tr></thead><tbody>' +
-    legs.map(function(l, i){
-      return '<tr><td style="padding:6px;border:1px solid #cbd5e1;text-align:center;">' + (i+1) + '</td>' +
-             '<td style="padding:6px;border:1px solid #cbd5e1;">' + _btSafeHtml(l.departure || '') + '</td>' +
-             '<td style="padding:6px;border:1px solid #cbd5e1;">' + _btSafeHtml(l.arrival || '') + '</td>' +
-             '<td style="padding:6px;border:1px solid #cbd5e1;">' + _btSafeHtml((l.customer_erp || '') + ' ' + (l.customer_name || '')) + '</td>' +
-             '<td style="padding:6px;border:1px solid #cbd5e1;text-align:right;">' + (Number(l.distance_km||0)).toFixed(1) + '</td></tr>';
-    }).join('') + '</tbody></table>';
+  var detail = (rec.amounts_detail && rec.amounts_detail.others) || '';
+  var legs = (rec.legs && rec.legs.length) ? rec.legs : [{ departure: rec.departure || '', arrival: rec.arrival || '', distance_km: 0, customer_erp: rec.customer_erp || '', customer_name: rec.customer_name || '' }];
+  var days = 1, nights = 0;
+  if (rec.trip_from && rec.trip_to) {
+    var d1 = new Date(rec.trip_from + 'T00:00:00');
+    var d2 = new Date(rec.trip_to   + 'T00:00:00');
+    if (!isNaN(d1) && !isNaN(d2) && d2 >= d1) {
+      days = Math.round((d2 - d1) / 86400000) + 1;
+      nights = Math.max(0, days - 1);
+    }
+  }
+  var totalKm = Number(rec.total_distance_km || legs.reduce(function(s,l){ return s + Number(l.distance_km||0); }, 0));
+  var advChk = rec.mode === 'advance' ? '☑' : '☐';
+  var stlChk = rec.mode === 'settlement' ? '☑' : '☐';
+  var fmt = function(v){ return Number(v||0).toLocaleString(); };
+  var bodyRows = legs.map(function(l, i){
+    var first = (i === 0);
+    var route = (l.departure || '') + (l.arrival ? '\n→ ' + l.arrival : '');
+    var distance = Number(l.distance_km||0).toFixed(1);
+    return '<tr>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:left;">' + (first ? _btSafeHtml(rec.applicant_name || '') : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;font-size:8px;text-align:left;white-space:pre-line;">' + _btSafeHtml(route) + (l.customer_name ? '\n🏥 ' + _btSafeHtml(l.customer_name) : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + distance + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? (_btGasolineRatePerKm || 5) : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.gasoline) : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? nights : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? _btHotelPerNight : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.hotel) : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? days : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? _btDailyAllowance : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.allowance) : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first && Number(amt.service) > 0 ? '1' : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.service) : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.airfare) : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.others) : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:right;font-weight:700;">' + (first ? fmt(rec.total) : '') + '</td>' +
+    '</tr>';
+  }).join('');
+  var temp = document.createElement('div');
+  temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:1180px;background:#fff;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#000;font-size:11px;line-height:1.4;';
   temp.innerHTML =
-    '<h2 style="margin:0 0 6px;color:#0d9488;">🧳 Business Trip Request</h2>' +
-    '<div style="font-size:12px;color:#64748b;margin-bottom:16px;">' + (rec.doc_no || '') + ' · ' + modeLabel + '</div>' +
-    '<table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px;">' +
-      '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;width:130px;">Applicant</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (rec.applicant_id || '') + ' - ' + (rec.applicant_name || '') + '</td></tr>' +
-      '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Doc Date</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (rec.doc_date || '') + '</td></tr>' +
-      '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Trip Period</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (rec.trip_from || '') + ' ~ ' + (rec.trip_to || '') + '</td></tr>' +
-      '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Attendees</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + _btSafeHtml(rec.attendees || '') + '</td></tr>' +
-      '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Purpose</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + _btSafeHtml(rec.purpose || '') + '</td></tr>' +
-      '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;background:#f1f5f9;">Total Distance</td>' +
-          '<td style="padding:6px 10px;border:1px solid #cbd5e1;">' + (Number(rec.total_distance_km||0).toFixed(1)) + ' km</td></tr>' +
+    '<div style="text-align:center;font-size:14px;font-weight:700;margin-bottom:6px;">' +
+      'ฟอร์มการเดินทางเพื่อธุรกิจ_ภายในประเทศ<br>Business Trip Format_Domestic' +
+    '</div>' +
+    '<table style="width:100%;border-collapse:collapse;margin-bottom:8px;">' +
+      '<tr>' +
+        '<td style="width:50%;padding:6px 4px;font-size:11px;">' +
+          '<div>' + advChk + ' &nbsp; เบิกล่วงหน้า / Advance</div>' +
+          '<div>' + stlChk + ' &nbsp; เคลียที่เบิกล่วงหน้า / Settlement</div>' +
+        '</td>' +
+        '<td style="width:50%;padding:6px 4px;font-size:11px;text-align:right;">' +
+          '<div>Document No : <strong>' + _btSafeHtml(rec.doc_no || '') + '</strong></div>' +
+          '<div>วันที่ทำเอกสาร / Date : ' + _btSafeHtml(rec.doc_date || '') + '</div>' +
+        '</td>' +
+      '</tr>' +
+      '<tr><td colspan="2" style="padding:4px;font-size:11px;border-top:1px solid #ccc;">' +
+        'ชื่อผู้บิก / Name : <strong>' + _btSafeHtml((rec.applicant_id || '') + ' - ' + (rec.applicant_name || '')) + '</strong>' +
+      '</td></tr>' +
     '</table>' +
-    '<h3 style="margin:14px 0 6px;color:#0f766e;font-size:14px;">Itinerary</h3>' + legsTable +
-    '<h3 style="margin:14px 0 6px;color:#0f766e;font-size:14px;">Expenses (Baht)</h3>' +
-    '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
-      amtRow('📋 Allowance', amt.allowance) + amtRow('⛽ Gasoline', amt.gasoline) + amtRow('🏨 Hotel', amt.hotel) +
-      amtRow('✈️ Air Fare', amt.airfare) + amtRow('🤝 Service', amt.service) + amtRow('📦 Others', amt.others, detailMap.others) +
-      '<tr style="background:#0d9488;color:#fff;font-weight:700;">' +
-        '<td style="padding:8px 10px;">TOTAL</td>' +
-        '<td style="padding:8px 10px;text-align:right;font-size:15px;">' + (Number(rec.total||0)).toLocaleString() + '</td></tr>' +
+    '<div style="font-weight:700;font-size:12px;margin:6px 0 4px;">Duration</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:10px;">' +
+      '<thead><tr style="background:#e5e7eb;">' +
+        '<th style="padding:4px;border:1px solid #000;">Name</th>' +
+        '<th style="padding:4px;border:1px solid #000;">From</th>' +
+        '<th style="padding:4px;border:1px solid #000;">To</th>' +
+        '<th style="padding:4px;border:1px solid #000;">Customer code</th>' +
+        '<th style="padding:4px;border:1px solid #000;">Customer name</th>' +
+        '<th style="padding:4px;border:1px solid #000;">Purpose</th>' +
+      '</tr></thead><tbody><tr>' +
+        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(rec.attendees || rec.applicant_name || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(rec.trip_from || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(rec.trip_to || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(legs[0].customer_erp || rec.customer_erp || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(legs[0].customer_name || rec.customer_name || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(rec.purpose || '') + '</td>' +
+      '</tr></tbody>' +
     '</table>' +
-    (rec.remark ? '<div style="margin-top:14px;font-size:12px;color:#475569;"><strong>Remark:</strong> ' + _btSafeHtml(rec.remark) + '</div>' : '');
+    '<div style="font-weight:700;font-size:12px;margin:10px 0 4px;">Business Tripper</div>' +
+    '<table style="width:100%;border-collapse:collapse;font-size:9px;">' +
+      '<thead>' +
+        '<tr style="background:#dbeafe;">' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;width:8%;">Name</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;width:18%;">Province / Route</th>' +
+          '<th colspan="3" style="padding:3px;border:1px solid #000;">Gasoline 1)</th>' +
+          '<th colspan="3" style="padding:3px;border:1px solid #000;">Hotel 2)</th>' +
+          '<th colspan="3" style="padding:3px;border:1px solid #000;">Trip allowance 3)</th>' +
+          '<th colspan="2" style="padding:3px;border:1px solid #000;">Service 4)</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;width:6%;">Air flight</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;width:6%;">Others</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;width:7%;">Total</th>' +
+        '</tr>' +
+        '<tr style="background:#eff6ff;">' +
+          '<th style="padding:3px;border:1px solid #000;">K.M.</th><th style="padding:3px;border:1px solid #000;">Rate</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
+          '<th style="padding:3px;border:1px solid #000;">Night</th><th style="padding:3px;border:1px solid #000;">Rate</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
+          '<th style="padding:3px;border:1px solid #000;">Day</th><th style="padding:3px;border:1px solid #000;">Rate</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
+          '<th style="padding:3px;border:1px solid #000;">Person</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>' + bodyRows +
+        '<tr style="background:#fef3c7;font-weight:700;">' +
+          '<td colspan="2" style="padding:4px;border:1px solid #000;text-align:right;">Actual Amount</td>' +
+          '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.gasoline) + '</td>' +
+          '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.hotel) + '</td>' +
+          '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.allowance) + '</td>' +
+          '<td colspan="2" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.service) + '</td>' +
+          '<td style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.airfare) + '</td>' +
+          '<td style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.others) + '</td>' +
+          '<td style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(rec.total) + '</td>' +
+        '</tr>' +
+      '</tbody>' +
+    '</table>' +
+    '<table style="width:100%;border-collapse:collapse;margin-top:12px;font-size:10px;">' +
+      '<tr>' +
+        '<td style="width:45%;padding:4px;vertical-align:top;">' +
+          '<table style="border-collapse:collapse;">' +
+            '<tr><td style="padding:4px 8px;">Advance / Actual amount :</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;text-align:right;font-weight:700;">' + fmt(rec.total) + '</td><td style="padding:4px 8px;">Baht</td></tr>' +
+            '<tr><td style="padding:4px 8px;">Deduct Advance amount :</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;"></td><td style="padding:4px 8px;">Baht</td></tr>' +
+            '<tr><td style="padding:4px 8px;">Return to Company :</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;"></td><td style="padding:4px 8px;">Baht</td></tr>' +
+            '<tr><td style="padding:4px 8px;">Pay to Staff :</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;"></td><td style="padding:4px 8px;">Baht</td></tr>' +
+          '</table>' +
+        '</td>' +
+        '<td style="width:55%;padding:8px;vertical-align:top;font-size:9px;border-left:1px solid #ccc;">' +
+          '<strong>Remark :</strong><br>' +
+          '1) Gasoline rate announce in Group ware by monthly<br>' +
+          '2) Hotel 2 persons / room, if man and women can separate room.<br>' +
+          '&nbsp;&nbsp;&nbsp;&nbsp;Hotel rate 650 baht / night, if price over get confirm from MD<br>' +
+          '3) Freelancer 500 baht / person : Need to get confirm from MD in advance' +
+          (detail ? '<br><br><strong>Others detail :</strong> ' + _btSafeHtml(detail) : '') +
+          (rec.remark ? '<br><br><strong>Note :</strong> ' + _btSafeHtml(rec.remark) : '') +
+          (totalKm ? '<br><br><strong>Total distance :</strong> ' + totalKm.toFixed(1) + ' km' : '') +
+        '</td>' +
+      '</tr>' +
+    '</table>' +
+    '<table style="width:100%;border-collapse:collapse;margin-top:24px;font-size:11px;">' +
+      '<tr>' +
+        '<td style="width:50%;padding:8px;text-align:center;">' +
+          '<div style="margin-bottom:30px;">Requirement by</div>' +
+          '<div style="border-top:1px solid #000;display:inline-block;padding-top:4px;min-width:200px;">Signature</div>' +
+        '</td>' +
+        '<td style="width:50%;padding:8px;text-align:center;">' +
+          '<div style="margin-bottom:30px;">Approve by</div>' +
+          '<div style="border-top:1px solid #000;display:inline-block;padding-top:4px;min-width:200px;">Signature</div>' +
+        '</td>' +
+      '</tr>' +
+    '</table>';
   document.body.appendChild(temp);
   try {
     var canvas = await html2canvas(temp, { scale: 2, backgroundColor: '#fff', useCORS: true });
     var imgData = canvas.toDataURL('image/jpeg', 0.92);
     var jsPDF = window.jspdf.jsPDF;
-    var pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
-    var pdfW = 210, pdfH = 297;
+    var pdf = new jsPDF({ orientation: 'l', unit: 'mm', format: 'a4' });
+    var pdfW = 297, pdfH = 210;
     var imgW = pdfW - 16;
     var imgH = canvas.height * imgW / canvas.width;
-    pdf.addImage(imgData, 'JPEG', 8, 8, imgW, Math.min(imgH, pdfH - 16));
+    if (imgH > pdfH - 16) {
+      imgH = pdfH - 16;
+      imgW = canvas.width * imgH / canvas.height;
+    }
+    var x = (pdfW - imgW) / 2;
+    pdf.addImage(imgData, 'JPEG', x, 8, imgW, imgH);
     var fileName = 'BusinessTrip_' + (rec.doc_no || 'doc') + '.pdf';
     pdf.save(fileName);
-    showToast('✅ ' + (_btT('bt_dl_pdf_ok', 'PDF 다운로드 완료')));
+    showToast('✅ ' + _btT('bt_dl_pdf_ok', 'PDF 다운로드 완료'));
   } catch(e) {
     console.error('[BT] pdf failed:', e);
-    neoAlert((_btT('bt_dl_pdf_fail', 'PDF 다운로드 실패')) + ': ' + (e.message || e));
+    neoAlert(_btT('bt_dl_pdf_fail', 'PDF 다운로드 실패') + ': ' + (e.message || e));
   } finally {
     if (temp.parentNode) temp.parentNode.removeChild(temp);
   }
 }
-
 window._btDownloadExcel = _btDownloadExcel;
 window._btDownloadPDF = _btDownloadPDF;
 window._btSwitchTab = _btSwitchTab;

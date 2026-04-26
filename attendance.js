@@ -1155,6 +1155,36 @@ function _calcAttendDistances() {
 }
 
 // ── 출퇴근 집계 ─────────────────────────────────────────────────────────────
+// ── 주소에서 시간 prefix + Plus Code 제거 (엑셀용) ──
+function _cleanAttendAddrForExcel(addr) {
+  if (!addr) return '';
+  var s = String(addr).trim();
+  // 1) 선행 시간 "HH:MM" 또는 "HH:MM:SS" 제거
+  s = s.replace(/^\d{1,2}:\d{2}(:\d{2})?\s+/, '');
+  // 2) 선행 Plus Code 제거 (예: "2M9Q+F46", "2MCP+MRV", "8FVCXFFR+8R")
+  s = s.replace(/^[A-Z0-9]{4,8}\+[A-Z0-9]{2,4}\s+/i, '');
+  return s.trim();
+}
+
+// ── distance 셀에서 morning/evening km 분리 추출 (엑셀용) ──
+function _extractAttendDistForExcel(cell) {
+  if (!cell) return '-';
+  var mEl = document.getElementById(cell.id + '_m');
+  var eEl = document.getElementById(cell.id + '_e');
+  function pickKm(el) {
+    if (!el) return '';
+    var m = (el.textContent || '').match(/([\d.]+)\s*km/);
+    return m ? (m[1] + ' km') : '';
+  }
+  var mkm = pickKm(mEl);
+  var ekm = pickKm(eEl);
+  if (mkm && ekm) return '🚗 ' + mkm + ' / 🏠 ' + ekm;
+  if (mkm) return '🚗 ' + mkm;
+  if (ekm) return '🏠 ' + ekm;
+  var fb = pickKm(cell);
+  return fb || '-';
+}
+
 // ── 출퇴근 집계 엑셀 다운로드 ──
 function exportAttendanceExcel() {
   var body = document.getElementById('attendSummaryBody');
@@ -1162,37 +1192,48 @@ function exportAttendanceExcel() {
   if (!window.XLSX) { neoAlert(t('att_excel_loading')); return; }
 
   // 체크된 행만 내보내기 (PDF 버튼과 동일 정책)
-  var _anyChecked = body.querySelectorAll('.as-row-cb:checked');
-  if (!_anyChecked.length) { neoAlert(t('att_pdf_no_check')); return; }
+  var checked = body.querySelectorAll('.as-row-cb:checked');
+  if (!checked.length) { neoAlert(t('att_pdf_no_check')); return; }
 
   var wb = XLSX.utils.book_new();
-  // 테이블 데이터 수집 (직원별 카드)
-  var cards = body.querySelectorAll('div[style*="border:1px solid"]');
   var allRows = [];
-  allRows.push([t('att_excel_name'), t('att_excel_empid'), t('att_excel_dept'), t('att_excel_date'), t('att_excel_in'), t('att_excel_out'), t('att_excel_hours'), t('att_excel_loc'), t('att_excel_dist'), t('att_excel_work')]);
+  // 헤더: Employee ID | Name | Date | Clock In | Clock Out | Work Hours | Work Details | Distance | Location (depart) | Location (Return)
+  allRows.push([
+    t('att_excel_empid'),
+    t('att_excel_name'),
+    t('att_excel_date'),
+    t('att_excel_in'),
+    t('att_excel_out'),
+    t('att_excel_hours'),
+    t('att_excel_work'),
+    t('att_excel_dist'),
+    t('att_excel_loc_depart'),
+    t('att_excel_loc_return')
+  ]);
 
-  cards.forEach(function(card) {
-    // 헤더에서 이름, 사번, 부서 추출
-    var hdr = card.querySelector('strong');
-    var sub = card.querySelector('span[style*="color:#6b7280"]');
-    var name = hdr ? hdr.textContent : '';
-    var subText = sub ? sub.textContent : '';
-    var empid = '', dept = '';
-    var subMatch = subText.match(/([A-Z]\d+)/);
-    if (subMatch) empid = subMatch[1];
-    if (subText.indexOf('·') !== -1) dept = subText.split('·')[1].trim();
+  checked.forEach(function(cb) {
+    var ds = cb.dataset;
+    var inHM = (ds.in || '').split(':').slice(0, 2).join(':');
+    var outHM = (ds.out || '').split(':').slice(0, 2).join(':');
+    var departAddr = _cleanAttendAddrForExcel(ds.departAddr || '');
+    var returnAddr = _cleanAttendAddrForExcel(ds.returnAddr || '');
 
-    var rows = card.querySelectorAll('tbody tr');
-    rows.forEach(function(tr) {
-      // 체크박스 미체크 시 skip
-      var cb = tr.querySelector('.as-row-cb');
-      if (!cb || !cb.checked) return;
-      var cells = tr.querySelectorAll('td');
-      if (cells.length < 7) return;
-      var row = [name, empid, dept];
-      cells.forEach(function(td) { row.push(td.textContent.trim()); });
-      allRows.push(row);
-    });
+    var distId = 'asDist_' + (ds.emp || '') + '_' + (ds.date || '').replace(/-/g, '');
+    var distCell = document.getElementById(distId);
+    var distText = _extractAttendDistForExcel(distCell);
+
+    allRows.push([
+      ds.emp || '',
+      ds.empname || '',
+      ds.date || '',
+      inHM,
+      outHM,
+      ds.hours || '',
+      ds.work || '',
+      distText,
+      departAddr,
+      returnAddr
+    ]);
   });
 
   var ws = XLSX.utils.aoa_to_sheet(allRows);

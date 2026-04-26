@@ -773,7 +773,7 @@
   .modal-info-value a:hover { text-decoration: underline; }
   @media (max-width: 1024px) {
     .modal { max-height: 95vh; border-radius: 16px; }
-    .modal-fixed-header { padding: 12px 16px 0; }
+    .modal-fixed-header { padding: calc(24px + env(safe-area-inset-top, 0px)) 16px 0; }
     .modal-top-bar { margin-right: -4px; }
     #modalContent { padding: 8px 16px 16px; }
     .modal-sections-grid { grid-template-columns: 1fr; }
@@ -934,7 +934,7 @@
     /* ── 모달 공통 ── */
     .modal-overlay { padding: 8px; }
     .modal { border-radius: 12px; max-height: 95vh; }
-    .modal-fixed-header { padding: 10px 16px 0; }
+    .modal-fixed-header { padding: calc(20px + env(safe-area-inset-top, 0px)) 16px 0; }
     .modal-top-bar { margin-right: -6px; }
     #modalContent { padding: 8px 16px 16px; }
 

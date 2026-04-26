@@ -2050,6 +2050,11 @@ async function saveEditAcct() {
 function openOrderFromModal() {
   if (!_modalCustomer) return;
   const r = _modalCustomer;
+  // 안드로이드: #modalOverlay.show 가 z-index 99600 (.order-overlay 99500 보다 위) 으로 강제되어
+  // closeModalDirect 의 200ms 애니메이션 동안 order-overlay 가 가려져 클릭이 무효화됨.
+  // 따라서 .show 를 즉시 제거해서 z-index 충돌을 회피.
+  var _modalOv = document.getElementById('modalOverlay');
+  if (_modalOv) _modalOv.classList.remove('show');
   closeModalDirect();
 
   // 주문폼 초기화

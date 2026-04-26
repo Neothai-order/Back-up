@@ -2182,9 +2182,12 @@ function _isOfficeDept(u) {
 /** 본인 데이터만 봐야 하는 사용자 (관리자/Office 제외 = Sales 및 미지정 포함) */
 function _isScopedUser(u) {
   if (!u) return false;
+  // 영업(Sales) 부서: role(Admin/Manager 등) 과 무관하게 항상 본인 스코프로 제한
+  // — 배지/리스트에서 다른 영업이 신청한 건이 보이지 않도록
+  if (u.dept === 'Sales') return true;
   if (_isAdmin(u)) return false;
   if (_isOfficeDept(u)) return false;
-  return true; // Sales 또는 dept 미지정: 본인 스코프로 제한
+  return true; // dept 미지정: 본인 스코프로 제한
 }
 window._isSalesDept = _isSalesDept;
 window._isOfficeDept = _isOfficeDept;

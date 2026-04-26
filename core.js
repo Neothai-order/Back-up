@@ -2041,7 +2041,7 @@ function _makeDraggable(opts) {
       if (!document.getElementById('_dragShield')) {
         var shield = document.createElement('div');
         shield.id = '_dragShield';
-        shield.style.cssText = 'position:fixed;inset:0;z-index:2147483646;cursor:grabbing;background:transparent;';
+        shield.style.cssText = 'position:fixed;inset:0;z-index:var(--z-drag-shield);cursor:grabbing;background:transparent;';
         document.body.appendChild(shield);
       }
       // 현재 포커스된 요소(배경 input 등) blur

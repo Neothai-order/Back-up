@@ -61,12 +61,49 @@ Thai 치과 공급 영업 관리 앱. Firebase Hosting + Firestore 백엔드. Re
 | `--z-popover` | 9700 | tooltip, hover card |
 | `--z-pkg-stack` / `--z-pkg-builder` | 9900 | 패키지 빌더 (스택 위) |
 | `--z-modal-stacked` | 9920 | 모달 위 모달 (1단계까지만) |
+| `--z-modal-fullscreen` | 10000 | fullscreen 모달 (pending, order-detail) |
+| `--z-modal-fs-stack` | 10001 | fullscreen 위 stacked (1단계) |
+| `--z-modal-preview` | 11000 | 미리보기 모달 (qt-preview) |
+| `--z-modal-confirm` | 12000 | 확인 다이얼로그 (dup / qc / prod-detail / file-preview) |
+| `--z-modal-signature` | 15000 | 서명/법적 모달 |
 | `--z-chat` | 90000 | 채팅 팝업 |
 | `--z-header` | 99000 | 고정 헤더 |
 | `--z-toast` | 99500 | toast / snackbar |
 | `--z-loader` | 99800 | 전역 spinner |
 | `--z-alert` | 99999 | **neoAlert / neoConfirm — 항상 최상위** |
+| `--z-drag-shield` | 2147483646 | 드래그 인터셉트 차단막 (= z-top − 1) |
 | `--z-top` | 2147483647 | 최후 수단 (Top Layer 대안). 신규 코드는 사용 X |
+
+### 🌳 신규 패널 z-index 결정 트리 (위에서부터 우선)
+
+```
+1. <dialog> 사용 가능?         → 사용  (Top Layer, z-index 무관)
+2. 여러 모달 위 promote 필요?  → JS _bringToFront() 호출
+3. 고정 tier 만 필요?           → .z-tier-* 유틸리티 클래스 (아래 표)
+4. 특수 tier (signature 등)?    → CSS class 에 var(--z-*) 직접
+5. ❌ 매직넘버 / inline `style="z-index:..."` / `style.zIndex = ...` 금지
+```
+
+### 🛠️ z-tier 유틸리티 클래스 (Phase 2C — 2026-04-26)
+
+신규 패널 작성 시 **클래스만 추가하면 토큰 자동 적용** — CSS 추가 불필요.
+
+| 클래스 | 적용 토큰 | 용도 |
+|---|---|---|
+| `.z-tier-default` | `--z-modal` (9000) | 일반 모달/오버레이 |
+| `.z-tier-stacked` | `--z-modal-stacked` (9920) | 모달 위 모달 |
+| `.z-tier-confirm` | `--z-modal-confirm` (12000) | 확인 다이얼로그 |
+| `.z-tier-alert` | `--z-alert` (99999) | 경고/시스템 알림 |
+
+**사용 예:**
+```html
+<div class="my-overlay z-tier-default">...</div>
+<div class="my-confirm-overlay z-tier-confirm">...</div>
+```
+
+**원칙:**
+- 정적 tier 만 정의. 같은 tier 내에서 위로 promote 는 `_bringToFront()` 사용
+- 4개 tier 외 특수 케이스 (fullscreen / preview / signature 등) 는 CSS class 에 직접 `var(--z-*)` 사용
 
 ### ✅ 새 모달 추가 시 체크리스트
 

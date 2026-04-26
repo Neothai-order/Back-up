@@ -27,7 +27,22 @@
     --z-loader:        99800;                  /* 전역 spinner */
     --z-alert:         99999;                  /* neoAlert / neoConfirm — 항상 최상위 */
     --z-top:           2147483647;             /* 최후 수단 (Top Layer 대안). 신규 코드는 --z-alert 권장 */
+    /* ── Phase 2C 토큰 (2026-04-26) — orphan tier 정리 ──
+       기존 매직넘버 값과 동일 → 시각 변화 없음. 의미 부여 + 신규 코드용 reference. */
+    --z-modal-fullscreen: 10000;             /* fullscreen 모달 (pending, order-detail) */
+    --z-modal-fs-stack:   10001;             /* fullscreen 위 1단계 stacked */
+    --z-modal-confirm:    12000;             /* 확인 다이얼로그 (dup, qc, prod-detail, file-preview, prev-qt) */
+    --z-modal-preview:    11000;             /* 미리보기 모달 (qt-preview) */
+    --z-modal-signature:  15000;             /* 서명/법적 모달 (sig-overlay) */
+    --z-drag-shield:      2147483646;        /* 드래그 인터셉트 차단막 (=z-top - 1) */
   }
+  /* z-tier 유틸리티 클래스 — 신규 패널 작성 시 클래스만 추가하면 토큰 자동 적용
+     사용 예: <div class="my-overlay z-tier-default">
+     원칙: 정적 tier 만 정의. 같은 tier 내 promote 는 _bringToFront() 사용. */
+  .z-tier-default { z-index: var(--z-modal); }
+  .z-tier-stacked { z-index: var(--z-modal-stacked); }
+  .z-tier-confirm { z-index: var(--z-modal-confirm); }
+  .z-tier-alert   { z-index: var(--z-alert); }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; }
   input, textarea, [contenteditable="true"] { -webkit-user-select: text; -moz-user-select: text; -ms-user-select: text; user-select: text; }
   html {
@@ -1086,7 +1101,7 @@
     }
     #settlePickerWrap .settle-split-right {
       position: fixed !important; top: 0 !important; left: 0 !important; right: 0 !important; bottom: 0 !important;
-      width: 100% !important; height: 100% !important; z-index: 10001 !important;
+      width: 100% !important; height: 100% !important; z-index: var(--z-modal-fs-stack) !important;
       transform: translateX(100%) !important; transition: transform .3s ease !important;
       flex: none !important; display: flex !important; flex-direction: column !important;
     }
@@ -1095,7 +1110,7 @@
     }
     /* 모바일 정산 리스트 보기 FAB */
     .mob-settle-fab {
-      display: flex !important; position: fixed; bottom: 20px; right: 16px; z-index: 10000;
+      display: flex !important; position: fixed; bottom: 20px; right: 16px; z-index: var(--z-modal-fullscreen);
       padding: 12px 18px; border: none; border-radius: 50px; background: linear-gradient(135deg,#059669,#10b981);
       color: #fff; font-size: 13px; font-weight: 700; cursor: pointer;
       box-shadow: 0 4px 16px rgba(5,150,105,.4); align-items: center; gap: 6px;
@@ -1407,7 +1422,7 @@
   /* ── 중복 고객 확인 다이얼로그 ── */
   .dup-confirm-overlay {
     display: none; position: fixed; inset: 0;
-    background: rgba(0,0,0,.55); z-index: 12000;
+    background: rgba(0,0,0,.55); z-index: var(--z-modal-confirm);
     align-items: center; justify-content: center; padding: 20px;
   }
   .dup-confirm-overlay.open { display: flex; }
@@ -1424,7 +1439,7 @@
     background: #9ca3af;
     opacity: 0;
     pointer-events: none;
-    z-index: 12001;
+    z-index: calc(var(--z-modal-confirm) + 1);
   }
   .logout-fragment.animate-gather {
     animation: fragmentGather 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
@@ -1652,7 +1667,7 @@
   /* ── 상품 상세 카드 ── */
   .prod-detail-overlay {
     display:none; position:fixed; inset:0;
-    background:rgba(0,0,0,.45); z-index:12000;
+    background:rgba(0,0,0,.45); z-index:var(--z-modal-confirm);
     align-items:center; justify-content:center; padding:16px;
   }
   .prod-detail-overlay.open { display:flex; }
@@ -2176,7 +2191,7 @@
 .quote-hdr h2{font-size:18px;font-weight:700;margin:0;}
 .btn-load-prev-qt{background:#f0f9ff;color:#2563eb;border:1.5px solid #bfdbfe;border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:5px;margin-left:10px;transition:all .15s;white-space:nowrap;}
 .btn-load-prev-qt:hover{background:#dbeafe;border-color:#93c5fd;}
-.prev-qt-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:12000;align-items:center;justify-content:center;}
+.prev-qt-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:var(--z-modal-confirm);align-items:center;justify-content:center;}
 .prev-qt-overlay.open{display:flex;}
 .prev-qt-modal{background:#fff;border-radius:14px;width:95%;max-width:720px;max-height:78vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,.25);overflow:hidden;}
 .prev-qt-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid #e5e7eb;background:#f8fafc;}
@@ -2219,7 +2234,7 @@
 .quote-ac-item .qac-name{font-weight:600;color:#111827;}
 .quote-ac-item .qac-sub{font-size:11px;color:#9ca3af;margin-top:2px;}
 /* 고객 확인 팝업 */
-.qc-confirm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:12000;align-items:center;justify-content:center;}
+.qc-confirm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:var(--z-modal-confirm);align-items:center;justify-content:center;}
 .qc-confirm-overlay.open{display:flex;}
 .qc-confirm-box{background:#fff;border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.25);width:420px;max-width:92vw;max-height:85vh;overflow-y:auto;animation:qcPopIn .2s ease;}
 @keyframes qcPopIn{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
@@ -2362,7 +2377,7 @@
 .quote-btn-preview{background:none;border:1.5px solid #7c3aed;color:#7c3aed;border-radius:8px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;margin-right:auto;}
 .quote-btn-preview:hover{background:#f5f3ff;}
 /* 견적서 미리보기 오버레이 */
-.qt-preview-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:11000;align-items:center;justify-content:center;padding:8px 16px;}
+.qt-preview-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:var(--z-modal-preview);align-items:center;justify-content:center;padding:8px 16px;}
 .qt-preview-overlay.open{display:flex;}
 .qt-preview-modal{background:#fff;border-radius:12px;width:100%;max-width:760px;height:calc(100vh - 16px);max-height:none;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;}
 .qt-preview-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #e5e7eb;background:linear-gradient(135deg,#f5f3ff,#ede9fe);flex-shrink:0;}
@@ -2433,7 +2448,7 @@
 .qt-pv-sign-col .sign-date{font-size:9px;color:#475569;margin-top:4px;}
 
 /* ── 전자 서명 팝업 ── */
-.sig-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:15000;align-items:center;justify-content:center;padding:16px;}
+.sig-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:var(--z-modal-signature);align-items:center;justify-content:center;padding:16px;}
 .sig-overlay.open{display:flex;}
 .sig-modal{background:#fff;border-radius:16px;width:95%;max-width:480px;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden;}
 .sig-modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-bottom:1px solid #e5e7eb;}
@@ -2968,19 +2983,19 @@ body.force-mobile .pkg-builder.open{top:var(--mob-bar-h, 0px);left:0;transform:n
 .pending-fullscreen{background:none;border:none;font-size:16px;cursor:pointer;color:#6b7280;padding:6px 10px;border-radius:6px;line-height:1;transition:background .15s,color .15s;}
 .pending-fullscreen:hover{background:#e5e7eb;color:#374151;}
 /* 전체화면 모드 — 모달만 */
-.pending-modal.fullscreen{margin:0!important;max-width:100%!important;width:100%!important;height:100%!important;max-height:100%!important;border-radius:8px!important;z-index:10000!important;transition:all .3s ease;}
+.pending-modal.fullscreen{margin:0!important;max-width:100%!important;width:100%!important;height:100%!important;max-height:100%!important;border-radius:8px!important;z-index:var(--z-modal-fullscreen)!important;transition:all .3s ease;}
 /* 전체화면 + 상세 열림 → 좌우 50:50 분할 */
 .pending-modal.fullscreen.split-mode{width:50vw!important;right:auto!important;}
 .pending-modal.fullscreen.split-mode .pending-detail-panel{
   position:fixed!important;left:50vw!important;top:0!important;right:0!important;bottom:0!important;
   width:50vw!important;height:100vh!important;max-height:100vh!important;
-  border-radius:0!important;z-index:10001!important;transform:none!important;opacity:1!important;
+  border-radius:0!important;z-index:var(--z-modal-fs-stack)!important;transform:none!important;opacity:1!important;
   box-shadow:none!important;transition:all .3s ease;
 }
 .pending-modal.fullscreen.split-mode .pending-detail-panel .pdp-hdr{border-radius:0!important;}
 .pending-modal.fullscreen.split-mode .pending-detail-panel .pdp-footer{border-radius:0!important;}
 /* 상세만 전체화면 */
-.pending-detail-panel.fullscreen{width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;border-radius:8px!important;z-index:10001!important;transform:none!important;opacity:1!important;transition:all .3s ease;margin:0!important;}
+.pending-detail-panel.fullscreen{width:100%!important;height:100%!important;max-width:100%!important;max-height:100%!important;border-radius:8px!important;z-index:var(--z-modal-fs-stack)!important;transform:none!important;opacity:1!important;transition:all .3s ease;margin:0!important;}
 .pending-detail-panel.fullscreen .pdp-hdr{border-radius:0!important;}
 .pending-detail-panel.fullscreen .pdp-footer{border-radius:0!important;}
 /* 리사이즈 핸들 */
@@ -2998,7 +3013,7 @@ body.force-mobile .pkg-builder.open{top:var(--mob-bar-h, 0px);left:0;transform:n
 .resize-handle-e::after,.resize-handle-w::after{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:4px;height:40px;border-radius:2px;background:#94a3b8;}
 .resize-handle-ne::after,.resize-handle-nw::after,.resize-handle-se::after,.resize-handle-sw::after{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:8px;height:8px;border-radius:50%;background:#94a3b8;}
 .fullscreen .resize-handle{display:none!important;}
-.fullscreen{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;max-width:100%!important;max-height:100%!important;border-radius:0!important;margin:0!important;z-index:10000!important;transform:none!important;}
+.fullscreen{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;max-width:100%!important;max-height:100%!important;border-radius:0!important;margin:0!important;z-index:var(--z-modal-fullscreen)!important;transform:none!important;}
 @media(min-width:1025px){
   .fullscreen{top:var(--header-h)!important;height:calc(100% - var(--header-h))!important;}
   .pending-modal.fullscreen.split-mode .pending-detail-panel{top:var(--header-h)!important;height:calc(100vh - var(--header-h))!important;max-height:calc(100vh - var(--header-h))!important;}
@@ -3179,7 +3194,7 @@ body.force-mobile .pkg-builder.open{top:var(--mob-bar-h, 0px);left:0;transform:n
 .od-att-btn{display:inline-flex;align-items:center;gap:5px;background:#f0f4ff;color:#2563eb;border:1.5px solid #bfdbfe;border-radius:8px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;transition:background .15s;white-space:nowrap;}
 .od-att-btn:hover{background:#dbeafe;border-color:#93c5fd;}
 /* ── 주문 상세 오버레이 ── */
-.order-detail-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:10000;align-items:center;justify-content:center;padding:16px;pointer-events:none;}
+.order-detail-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:var(--z-modal-fullscreen);align-items:center;justify-content:center;padding:16px;pointer-events:none;}
 .order-detail-overlay > *{pointer-events:auto;}
 .order-detail-overlay.open{display:flex;}
 .order-detail-modal{background:#fff;border-radius:16px;width:100%;max-width:680px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3);}
@@ -4164,7 +4179,7 @@ html:not(:has(body.places-input-active)) > .pac-container{display:none!important
 .afi-preview { background:none;border:1px solid #93c5fd;color:#2563eb;border-radius:6px;padding:3px 8px;font-size:12px;cursor:pointer;white-space:nowrap; }
 .afi-preview:hover { background:#eff6ff; }
 .afi-del { background:none;border:none;color:#ef4444;cursor:pointer;font-size:15px;padding:2px 4px;flex-shrink:0; }
-.file-preview-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:12000;align-items:center;justify-content:center;padding:10px; }
+.file-preview-overlay { display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:var(--z-modal-confirm);align-items:center;justify-content:center;padding:10px; }
 .file-preview-overlay.open { display:flex; }
 .file-preview-modal { background:#fff;border-radius:14px;width:100%;max-width:1200px;height:94vh;display:flex;flex-direction:column;box-shadow:0 24px 80px rgba(0,0,0,.5); }
 .file-preview-hdr { display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:1px solid #e5e7eb;flex-shrink:0; }
@@ -5357,7 +5372,7 @@ body.force-tablet .cards-grid { grid-template-columns: 1fr 1fr !important; gap: 
   .chat-list-item .cli-unread{font-size:14px!important;min-width:24px;height:24px;line-height:24px;border-radius:12px;}
   .chat-list-empty{font-size:16px!important;}
   /* 채팅 팝업 → 전체화면 (하단 네비 위) */
-  .chat-popup{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:100%!important;border-radius:0!important;z-index:10000!important;animation:chatSlideInRight .3s ease-out!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}
+  .chat-popup{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:100%!important;border-radius:0!important;z-index:var(--z-modal-fullscreen)!important;animation:chatSlideInRight .3s ease-out!important;display:flex!important;flex-direction:column!important;overflow:hidden!important;}
   .chat-popup.maximized{width:100%!important;height:100%!important;}
   .chat-popup .chat-body{flex:1!important;overflow-y:auto!important;padding-bottom:4px!important;min-height:0!important;}
   .chat-popup .chat-input-area{flex-shrink:0!important;padding-bottom:calc(8px + env(safe-area-inset-bottom, 0px))!important;}

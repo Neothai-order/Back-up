@@ -5085,9 +5085,20 @@ function _updateShipAddrMap(address) {
 
 var _pacFixIntervalShip = null;
 function _attachShipAddrPlaces(inputEl, retryCount) {
+  if (!inputEl) return;
+  // 🛡️ lazy focus 안전망: Google API 로드 타이밍 문제로 초기 attach 실패해도 포커스 시 재시도
+  // (_attachRegPlaces 와 동일 패턴 — 고객 등록 시 자동완성 안정성과 동일하게)
+  if (!inputEl._shipLazyBound) {
+    inputEl._shipLazyBound = true;
+    inputEl.addEventListener('focus', function _shipLazyInit() {
+      if (!inputEl._gPlacesAttached && _placesReady && window.google && google.maps && google.maps.places) {
+        _attachShipAddrPlaces(inputEl);
+      }
+    });
+  }
   if (!_placesReady || !window.google || !google.maps || !google.maps.places) {
     var rc = retryCount || 0;
-    if (rc < 20) setTimeout(function(){ _attachShipAddrPlaces(inputEl, rc + 1); }, 300);
+    if (rc < 40) setTimeout(function(){ _attachShipAddrPlaces(inputEl, rc + 1); }, 300);
     return;
   }
   if (inputEl._gPlacesAttached) return;

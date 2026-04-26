@@ -1,4 +1,4 @@
-// ─── Business Trip ────────────────────────────────────────────────
+﻿// ─── Business Trip ────────────────────────────────────────────────
 // 출장 신청 (가불/정산) — Firestore: businessTrips
 // v4 (2026-04-27) — 다중 leg + 거리 + 도착지 통합 자동완성
 
@@ -39,31 +39,43 @@ function _btWaitAuth(timeoutMs) {
 async function _btLoadUser() {
   var fbUser = await _btWaitAuth();
   if (!fbUser) {
-    showToast(_btT('bt_auth_required') || '로그인이 필요합니다.');
+    showToast(_btT('bt_auth_required', '로그인이 필요합니다.'));
     setTimeout(function(){ location.href = 'index.html'; }, 1500);
     return null;
   }
+  // empid = email local-part 대문자 (firestore.rules myEmpid() 와 동일 규칙)
+  var empid = (fbUser.email || '').split('@')[0].toUpperCase();
   try {
+    // 1차: doc ID = empid 로 직접 fetch (가장 빠르고 정확)
+    if (empid) {
+      var doc = await _fbDb.collection('accounts').doc(empid).get();
+      if (doc.exists) {
+        _btMe = Object.assign({ empid: empid, _id: empid, email: fbUser.email }, doc.data());
+        return _btMe;
+      }
+    }
+    // 2차 fallback: email 필드 검색
     var snap = await _fbDb.collection('accounts').where('email','==', fbUser.email).limit(1).get();
     if (!snap.empty) {
-      var d = snap.docs[0]; _btMe = Object.assign({ _id: d.id }, d.data());
+      var d = snap.docs[0];
+      _btMe = Object.assign({ empid: d.id, _id: d.id, email: fbUser.email }, d.data());
     } else {
-      _btMe = { email: fbUser.email, name: fbUser.displayName || '', empid: '', dept: '' };
+      _btMe = { email: fbUser.email, name: fbUser.displayName || '', empid: empid, dept: '' };
     }
   } catch(e) {
     console.warn('[BT] accounts fetch failed:', e);
-    _btMe = { email: fbUser.email, name: fbUser.displayName || '' };
+    _btMe = { email: fbUser.email, name: fbUser.displayName || '', empid: empid };
   }
   return _btMe;
 }
 
-function _btT(key) {
-  if (typeof window.t === 'function') return window.t(key);
-  if (typeof LANG !== 'undefined' && typeof currentLang !== 'undefined') {
-    var L = LANG[currentLang] || {};
-    return L[key] || key;
+function _btT(key, fallback) {
+  // lang.min.js 의 t() 가 키 그대로 반환하면 (캐시 미스 등) fallback 사용
+  if (typeof window.t === 'function') {
+    var v = window.t(key);
+    if (v && v !== key) return v;
   }
-  return key;
+  return fallback || key;
 }
 
 function showToast(msg) {
@@ -168,7 +180,7 @@ async function _btDoCustSearch(q) {
     return hay.indexOf(q) !== -1;
   }).slice(0, 30);
   if (!matches.length) {
-    list.innerHTML = '<div class="bt-search-item" style="color:#94a3b8;cursor:default;">' + (_btT('bt_no_cust') || '검색 결과 없음') + '</div>';
+    list.innerHTML = '<div class="bt-search-item" style="color:#94a3b8;cursor:default;">' + (_btT('bt_no_cust', '검색 결과 없음')) + '</div>';
     list.style.display = 'block';
     return;
   }
@@ -262,7 +274,7 @@ function _btAddLeg() {
 function _btRemoveLeg(id) {
   var idx = _btLegs.findIndex(function(l){ return l.id === id; });
   if (idx === -1) return;
-  if (_btLegs.length <= 1) { showToast(_btT('bt_leg_min') || '최소 1개의 일정이 필요합니다.'); return; }
+  if (_btLegs.length <= 1) { showToast(_btT('bt_leg_min', '최소 1개의 일정이 필요합니다.')); return; }
   _btLegs.splice(idx, 1);
   var card = document.querySelector('.bt-leg-card[data-leg-id="' + id + '"]');
   if (card) card.remove();
@@ -351,7 +363,7 @@ async function _btDoArrivalSearch(input, listEl, leg, q) {
     } catch(e) { placeMatches = []; }
   }
   if (!custMatches.length && !placeMatches.length) {
-    listEl.innerHTML = '<div class="bt-search-item" style="color:#94a3b8;cursor:default;">' + (_btT('bt_no_results') || '검색 결과 없음') + '</div>';
+    listEl.innerHTML = '<div class="bt-search-item" style="color:#94a3b8;cursor:default;">' + (_btT('bt_no_results', '검색 결과 없음')) + '</div>';
     listEl.style.display = 'block';
     return;
   }
@@ -359,7 +371,7 @@ async function _btDoArrivalSearch(input, listEl, leg, q) {
   // 고객 그룹
   custMatches.forEach(function(c){
     html += '<div class="bt-search-item" data-type="cust" data-erp="' + _btSafeHtml(c.erp) + '">' +
-      '<div><span class="bt-cust-tag">' + (_btT('bt_tag_customer') || '고객') + '</span><strong style="color:#0f766e;">' + _btSafeHtml(c.erp) + '</strong></div>' +
+      '<div><span class="bt-cust-tag">' + (_btT('bt_tag_customer', '고객')) + '</span><strong style="color:#0f766e;">' + _btSafeHtml(c.erp) + '</strong></div>' +
       '<div style="font-size:12px;color:#475569;margin-top:2px;">' + _btSafeHtml(c.clinic || c.name_en || c.name_th) + '</div>' +
       (c.addr_reg ? '<div style="font-size:11px;color:#94a3b8;margin-top:1px;">📍 ' + _btSafeHtml(c.addr_reg) + '</div>' : '') +
     '</div>';
@@ -367,7 +379,7 @@ async function _btDoArrivalSearch(input, listEl, leg, q) {
   // 장소 그룹
   placeMatches.forEach(function(p){
     html += '<div class="bt-search-item" data-type="place" data-place-id="' + _btSafeHtml(p.place_id) + '" data-desc="' + _btSafeHtml(p.description) + '">' +
-      '<div><span class="bt-place-tag">' + (_btT('bt_tag_place') || '장소') + '</span></div>' +
+      '<div><span class="bt-place-tag">' + (_btT('bt_tag_place', '장소')) + '</span></div>' +
       '<div style="font-size:13px;color:#1e293b;margin-top:2px;">' + _btSafeHtml(p.description) + '</div>' +
     '</div>';
   });
@@ -529,23 +541,23 @@ function _btCollectRecord() {
 }
 
 async function _btSubmit() {
-  if (!_btMe) { neoAlert(_btT('bt_auth_required') || '로그인이 필요합니다.'); return; }
+  if (!_btMe) { neoAlert(_btT('bt_auth_required', '로그인이 필요합니다.')); return; }
   var rec = _btCollectRecord();
-  if (!rec.trip_from || !rec.trip_to) { neoAlert(_btT('bt_err_dates') || '출장 기간을 입력해주세요.'); return; }
+  if (!rec.trip_from || !rec.trip_to) { neoAlert(_btT('bt_err_dates', '출장 기간을 입력해주세요.')); return; }
   var validLegs = (rec.legs || []).filter(function(l){ return l.departure && l.arrival; });
-  if (!validLegs.length) { neoAlert(_btT('bt_err_place') || '최소 1개 일정의 출발지·도착지를 입력해주세요.'); return; }
-  if (!rec.purpose) { neoAlert(_btT('bt_err_purpose') || '목적을 입력해주세요.'); return; }
+  if (!validLegs.length) { neoAlert(_btT('bt_err_place', '최소 1개 일정의 출발지·도착지를 입력해주세요.')); return; }
+  if (!rec.purpose) { neoAlert(_btT('bt_err_purpose', '목적을 입력해주세요.')); return; }
   rec.status = 'submitted';
   rec.created_at = firebase.firestore.FieldValue.serverTimestamp();
   rec.updated_at = firebase.firestore.FieldValue.serverTimestamp();
   try {
     await _fbDb.collection('businessTrips').add(rec);
-    showToast('✅ ' + (_btT('bt_submitted') || '제출되었습니다.') + ' (' + rec.doc_no + ')');
+    showToast('✅ ' + (_btT('bt_submitted', '제출되었습니다.')) + ' (' + rec.doc_no + ')');
     _btResetForm();
     setTimeout(function(){ _btSwitchTab('list'); }, 600);
   } catch(e) {
     console.error('[BT] submit failed:', e);
-    neoAlert((_btT('bt_submit_fail') || '제출 실패') + ': ' + (e.message || e));
+    neoAlert((_btT('bt_submit_fail', '제출 실패')) + ': ' + (e.message || e));
   }
 }
 
@@ -581,8 +593,8 @@ var _btListCache = [];
 async function _btLoadList() {
   var body = document.getElementById('btListBody');
   if (!body) return;
-  body.innerHTML = '<div class="bt-empty">' + (_btT('bt_loading') || '로딩 중...') + '</div>';
-  if (!_btMe) { body.innerHTML = '<div class="bt-empty">' + (_btT('bt_auth_required') || '로그인이 필요합니다.') + '</div>'; return; }
+  body.innerHTML = '<div class="bt-empty">' + (_btT('bt_loading', '로딩 중...')) + '</div>';
+  if (!_btMe) { body.innerHTML = '<div class="bt-empty">' + (_btT('bt_auth_required', '로그인이 필요합니다.')) + '</div>'; return; }
   try {
     var snap = await _fbDb.collection('businessTrips')
       .where('applicant_email', '==', _btMe.email || '')
@@ -596,11 +608,11 @@ async function _btLoadList() {
     });
     _btListCache = docs;
     if (!docs.length) {
-      body.innerHTML = '<div class="bt-empty">📭 ' + (_btT('bt_list_empty') || '아직 신청 내역이 없습니다.') + '</div>';
+      body.innerHTML = '<div class="bt-empty">📭 ' + (_btT('bt_list_empty', '아직 신청 내역이 없습니다.')) + '</div>';
       return;
     }
     body.innerHTML = docs.map(function(d, i){
-      var modeLabel = d.mode === 'settlement' ? (_btT('bt_mode_settlement') || '정산') : (_btT('bt_mode_advance') || '가불');
+      var modeLabel = d.mode === 'settlement' ? (_btT('bt_mode_settlement', '정산')) : (_btT('bt_mode_advance', '가불'));
       var modeClass = d.mode === 'settlement' ? 'bt-status-settlement' : 'bt-status-advance';
       var totalStr = (d.total != null ? d.total : 0).toLocaleString() + ' Baht';
       var dateStr = (d.trip_from || '') + ' ~ ' + (d.trip_to || '');
@@ -631,7 +643,7 @@ async function _btLoadList() {
     }).join('');
   } catch(e) {
     console.error('[BT] list fetch failed:', e);
-    body.innerHTML = '<div class="bt-empty">⚠️ ' + (_btT('bt_list_fail') || '조회 실패') + '</div>';
+    body.innerHTML = '<div class="bt-empty">⚠️ ' + (_btT('bt_list_fail', '조회 실패')) + '</div>';
   }
 }
 
@@ -640,7 +652,7 @@ async function _btDownloadExcel(idx) {
   var rec = _btListCache[idx];
   if (!rec) { showToast('Record not found'); return; }
   if (typeof XLSX === 'undefined') { neoAlert('XLSX 라이브러리 로드 실패'); return; }
-  showToast('📊 ' + (_btT('bt_dl_excel_start') || 'Excel 생성 중...'));
+  showToast('📊 ' + (_btT('bt_dl_excel_start', 'Excel 생성 중...')));
   try {
     var resp = await fetch('business_trip_template.xlsx');
     var ab = await resp.arrayBuffer();
@@ -695,10 +707,10 @@ async function _btDownloadExcel(idx) {
     a.href = URL.createObjectURL(blob); a.download = fileName;
     document.body.appendChild(a); a.click();
     setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); }, 500);
-    showToast('✅ ' + (_btT('bt_dl_excel_ok') || 'Excel 다운로드 완료'));
+    showToast('✅ ' + (_btT('bt_dl_excel_ok', 'Excel 다운로드 완료')));
   } catch(e) {
     console.error('[BT] excel download failed:', e);
-    neoAlert((_btT('bt_dl_excel_fail') || 'Excel 다운로드 실패') + ': ' + (e.message || e));
+    neoAlert((_btT('bt_dl_excel_fail', 'Excel 다운로드 실패')) + ': ' + (e.message || e));
   }
 }
 
@@ -709,7 +721,7 @@ async function _btDownloadPDF(idx) {
   if (typeof html2canvas === 'undefined' || typeof window.jspdf === 'undefined') {
     neoAlert('PDF 라이브러리 로드 실패'); return;
   }
-  showToast('📄 ' + (_btT('bt_dl_pdf_start') || 'PDF 생성 중...'));
+  showToast('📄 ' + (_btT('bt_dl_pdf_start', 'PDF 생성 중...')));
   var temp = document.createElement('div');
   temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:780px;background:#fff;padding:28px;font-family:-apple-system,sans-serif;color:#1e293b;';
   var modeLabel = rec.mode === 'settlement' ? '정산 (Settlement)' : '가불 (Advance)';
@@ -767,10 +779,10 @@ async function _btDownloadPDF(idx) {
     pdf.addImage(imgData, 'JPEG', 8, 8, imgW, Math.min(imgH, pdfH - 16));
     var fileName = 'BusinessTrip_' + (rec.doc_no || 'doc') + '.pdf';
     pdf.save(fileName);
-    showToast('✅ ' + (_btT('bt_dl_pdf_ok') || 'PDF 다운로드 완료'));
+    showToast('✅ ' + (_btT('bt_dl_pdf_ok', 'PDF 다운로드 완료')));
   } catch(e) {
     console.error('[BT] pdf failed:', e);
-    neoAlert((_btT('bt_dl_pdf_fail') || 'PDF 다운로드 실패') + ': ' + (e.message || e));
+    neoAlert((_btT('bt_dl_pdf_fail', 'PDF 다운로드 실패')) + ': ' + (e.message || e));
   } finally {
     if (temp.parentNode) temp.parentNode.removeChild(temp);
   }

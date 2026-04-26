@@ -155,28 +155,31 @@
       <div class="bt-section-title">💰 <span data-i18n="bt_section_amounts">비용</span></div>
       <div class="bt-amounts">
         <div class="bt-amount-item">
-          <label data-i18n="bt_amt_hotel">🏨 숙박비</label>
-          <input type="number" id="btAmtHotel" min="0" step="1" value="0" oninput="_btCalcTotal()">
-        </div>
-        <div class="bt-amount-item">
-          <label data-i18n="bt_amt_service">🤝 서비스</label>
-          <input type="number" id="btAmtService" min="0" step="1" value="0" oninput="_btCalcTotal()">
-        </div>
-        <div class="bt-amount-item">
-          <label data-i18n="bt_amt_airfare">✈️ 항공권</label>
-          <input type="number" id="btAmtAirfare" min="0" step="1" value="0" oninput="_btCalcTotal()">
+          <label data-i18n="bt_amt_allowance">📋 출장수당</label>
+          <input type="number" id="btAmtAllowance" min="0" step="1" value="0" oninput="_btCalcTotal()">
         </div>
         <div class="bt-amount-item">
           <label data-i18n="bt_amt_gasoline">⛽ 휘발유</label>
           <input type="number" id="btAmtGasoline" min="0" step="1" value="0" oninput="_btCalcTotal()">
         </div>
         <div class="bt-amount-item">
-          <label data-i18n="bt_amt_allowance">📋 출장수당</label>
-          <input type="number" id="btAmtAllowance" min="0" step="1" value="0" oninput="_btCalcTotal()">
+          <label data-i18n="bt_amt_hotel">🏨 숙박비</label>
+          <input type="number" id="btAmtHotel" min="0" step="1" value="0" oninput="_btCalcTotal()">
         </div>
         <div class="bt-amount-item">
+          <label data-i18n="bt_amt_airfare">✈️ 항공권</label>
+          <input type="number" id="btAmtAirfare" min="0" step="1" value="0" oninput="_btCalcTotal()">
+        </div>
+        <div class="bt-amount-item">
+          <label data-i18n="bt_amt_service">🤝 서비스</label>
+          <input type="number" id="btAmtService" min="0" step="1" value="0" oninput="_btCalcTotal()">
+        </div>
+        <div class="bt-amount-item" style="grid-column: span 2;">
           <label data-i18n="bt_amt_others">📦 기타</label>
-          <input type="number" id="btAmtOthers" min="0" step="1" value="0" oninput="_btCalcTotal()">
+          <div style="display:flex; gap:6px; align-items:center;">
+            <input type="number" id="btAmtOthers" min="0" step="1" value="0" oninput="_btCalcTotal()" style="flex:0 0 90px; text-align:right;">
+            <input type="text" id="btAmtOthersDetail" placeholder="기타 비용 상세 (예: 식대, 통행료)" data-i18n-placeholder="bt_amt_others_detail_ph" style="flex:1; padding:6px 8px; border:1.5px solid #d1d5db; border-radius:6px; font-size:12px; outline:none; box-sizing:border-box;">
+          </div>
         </div>
       </div>
     </div>
@@ -219,7 +222,7 @@
 <div id="toastContainer" style="position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:99500;display:flex;flex-direction:column;gap:8px;pointer-events:none;"></div>
 
 <!-- Lang -->
-<script src="lang.min.js?v=178"></script>
+<script src="lang.min.js?v=179"></script>
 <!-- 페이지 헤더 -->
 <script src="page-header.js?v=2"></script>
 <!-- 공용 Firebase 초기화 (다른 페이지와 동일 config 적용) -->
@@ -253,7 +256,7 @@ var _fbDb = firebase.firestore();
 </script>
 
 <!-- Business Trip 메인 로직 -->
-<script src="business_trip.min.js?v=8"></script>
+<script src="business_trip.min.js?v=9"></script>
 
 </body>
 </html>

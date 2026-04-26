@@ -104,7 +104,7 @@ function _btGenDocNo(mode) {
 }
 
 function _btCalcTotal() {
-  var ids = ['btAmtHotel','btAmtService','btAmtAirfare','btAmtGasoline','btAmtAllowance','btAmtOthers'];
+  var ids = ['btAmtAllowance','btAmtGasoline','btAmtHotel','btAmtAirfare','btAmtService','btAmtOthers'];
   var total = 0;
   ids.forEach(function(id){
     var v = parseFloat((document.getElementById(id) || {}).value || 0);
@@ -535,12 +535,15 @@ function _btUpdateLegMapAndDistance(leg) {
 function _btCollectRecord() {
   var mode = (document.querySelector('input[name=bt_mode]:checked') || {}).value || 'advance';
   var amounts = {
-    hotel:    parseFloat(document.getElementById('btAmtHotel').value || 0) || 0,
-    service:  parseFloat(document.getElementById('btAmtService').value || 0) || 0,
-    airfare:  parseFloat(document.getElementById('btAmtAirfare').value || 0) || 0,
-    gasoline: parseFloat(document.getElementById('btAmtGasoline').value || 0) || 0,
     allowance:parseFloat(document.getElementById('btAmtAllowance').value || 0) || 0,
+    gasoline: parseFloat(document.getElementById('btAmtGasoline').value || 0) || 0,
+    hotel:    parseFloat(document.getElementById('btAmtHotel').value || 0) || 0,
+    airfare:  parseFloat(document.getElementById('btAmtAirfare').value || 0) || 0,
+    service:  parseFloat(document.getElementById('btAmtService').value || 0) || 0,
     others:   parseFloat(document.getElementById('btAmtOthers').value || 0) || 0
+  };
+  var amounts_detail = {
+    others: ((document.getElementById('btAmtOthersDetail') || {}).value || '').trim()
   };
   var total = Object.values(amounts).reduce(function(a,b){ return a+b; }, 0);
   var docNo = document.getElementById('btDocNo').value || _btGenDocNo(mode);
@@ -577,6 +580,7 @@ function _btCollectRecord() {
     purpose: document.getElementById('btPurpose').value.trim(),
     remark: document.getElementById('btRemark').value.trim(),
     amounts: amounts,
+    amounts_detail: amounts_detail,
     total: total
   };
 }
@@ -603,10 +607,10 @@ async function _btSubmit() {
 }
 
 function _btResetForm() {
-  ['btAmtHotel','btAmtService','btAmtAirfare','btAmtGasoline','btAmtAllowance','btAmtOthers'].forEach(function(id){
+  ['btAmtAllowance','btAmtGasoline','btAmtHotel','btAmtAirfare','btAmtService','btAmtOthers'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.value = 0;
   });
-  ['btCustomerSearch','btAttendees','btPurpose','btRemark'].forEach(function(id){
+  ['btCustomerSearch','btAttendees','btPurpose','btRemark','btAmtOthersDetail'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.value = '';
   });
   _btSelectedCustomer = null;
@@ -740,7 +744,10 @@ async function _btDownloadExcel(idx) {
     setCell('P26', Number(rec.total || 0));
     setCell('B3', rec.mode === 'advance');
     setCell('B4', rec.mode === 'settlement');
-    if (rec.remark) setCell('K34', rec.remark);
+    // 기타 상세 (있다면 비고와 함께 K34 셀에 합쳐서)
+    var detail = (rec.amounts_detail || {}).others || '';
+    var remarkLine = [detail ? ('기타: ' + detail) : '', rec.remark || ''].filter(Boolean).join(' / ');
+    if (remarkLine) setCell('K34', remarkLine);
     var out = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
     var blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     var fileName = 'BusinessTrip_' + (rec.doc_no || 'doc') + '.xlsx';
@@ -767,10 +774,13 @@ async function _btDownloadPDF(idx) {
   temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:780px;background:#fff;padding:28px;font-family:-apple-system,sans-serif;color:#1e293b;';
   var modeLabel = rec.mode === 'settlement' ? '정산 (Settlement)' : '가불 (Advance)';
   var amt = rec.amounts || {};
-  var amtRow = function(lbl, v) {
-    return '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;">' + lbl + '</td>' +
+  var amtRow = function(lbl, v, detail) {
+    return '<tr><td style="padding:6px 10px;border:1px solid #cbd5e1;">' + lbl +
+           (detail ? ' <span style="font-size:11px;color:#64748b;font-weight:400;">(' + _btSafeHtml(detail) + ')</span>' : '') +
+           '</td>' +
            '<td style="padding:6px 10px;border:1px solid #cbd5e1;text-align:right;">' + (Number(v||0)).toLocaleString() + '</td></tr>';
   };
+  var detailMap = rec.amounts_detail || {};
   var legs = rec.legs && rec.legs.length ? rec.legs : [{ departure: rec.departure || '', arrival: rec.arrival || '', distance_km: 0 }];
   var legsTable = '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;">' +
     '<thead><tr style="background:#0f766e;color:#fff;"><th style="padding:6px;border:1px solid #cbd5e1;">#</th><th style="padding:6px;border:1px solid #cbd5e1;">출발</th><th style="padding:6px;border:1px solid #cbd5e1;">도착</th><th style="padding:6px;border:1px solid #cbd5e1;">고객</th><th style="padding:6px;border:1px solid #cbd5e1;">거리(km)</th></tr></thead><tbody>' +
@@ -801,8 +811,8 @@ async function _btDownloadPDF(idx) {
     '<h3 style="margin:14px 0 6px;color:#0f766e;font-size:14px;">Itinerary</h3>' + legsTable +
     '<h3 style="margin:14px 0 6px;color:#0f766e;font-size:14px;">Expenses (Baht)</h3>' +
     '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
-      amtRow('🏨 Hotel', amt.hotel) + amtRow('🤝 Service', amt.service) + amtRow('✈️ Air Fare', amt.airfare) +
-      amtRow('⛽ Gasoline', amt.gasoline) + amtRow('📋 Allowance', amt.allowance) + amtRow('📦 Others', amt.others) +
+      amtRow('📋 Allowance', amt.allowance) + amtRow('⛽ Gasoline', amt.gasoline) + amtRow('🏨 Hotel', amt.hotel) +
+      amtRow('✈️ Air Fare', amt.airfare) + amtRow('🤝 Service', amt.service) + amtRow('📦 Others', amt.others, detailMap.others) +
       '<tr style="background:#0d9488;color:#fff;font-weight:700;">' +
         '<td style="padding:8px 10px;">TOTAL</td>' +
         '<td style="padding:8px 10px;text-align:right;font-size:15px;">' + (Number(rec.total||0)).toLocaleString() + '</td></tr>' +

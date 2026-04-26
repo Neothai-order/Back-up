@@ -655,7 +655,9 @@ function _startRealtimeBadges() {
 
   // 1-a) orders pending+cancel_requested → 주문 승인 배지
   // 관리자/Office: 전체, 그 외: 본인 문서만 서버에서 필터 (읽기 수 대폭 감소)
-  var _scopedForOrders = (typeof _isScopedUser === 'function') && _isScopedUser(me);
+  // 영업(Sales) 부서는 직위 무관 항상 본인 스코프 — 배지는 본인 알림 전용
+  // (팀장의 팀 전체 보기는 Summary 등 분석 화면에만 적용)
+  var _scopedForOrders = (me.dept === 'Sales') || ((typeof _isScopedUser === 'function') && _isScopedUser(me));
   var _ordersPendingQuery = _fbDb.collection('orders').where('status','in',['pending','cancel_requested']);
   if (_scopedForOrders && myStr) {
     _ordersPendingQuery = _ordersPendingQuery.where('user', '==', myStr);
@@ -695,7 +697,7 @@ function _startRealtimeBadges() {
     _fbDb.collection('quotes').where('status','==','pending').onSnapshot(function(snap) {
       var docs = snap.docs.map(function(d) { var q = d.data(); q._id = d.id; return q; });
       var pendingCount = docs.length;
-      var _scopedQ = (typeof _isScopedUser === 'function') && _isScopedUser(me);
+      var _scopedQ = (me.dept === 'Sales') || ((typeof _isScopedUser === 'function') && _isScopedUser(me));
       if (_scopedQ) {
         pendingCount = docs.filter(function(q) {
           var by = (q.requested_by || q.created_by || q.submitted_by || '').toLowerCase();
@@ -719,7 +721,8 @@ function _startRealtimeBadges() {
 
   // 3) pendingCustomers → 고객 승인 배지
   // 관리자/Office: 전체, 그 외(Sales 포함): 본인이 올린 건만 (서버 필터)
-  var _scopedUser = (typeof _isScopedUser === 'function') && _isScopedUser(me);
+  // 영업(Sales) 부서는 직위 무관 항상 본인 스코프 — 배지는 본인 알림 전용
+  var _scopedUser = (me.dept === 'Sales') || ((typeof _isScopedUser === 'function') && _isScopedUser(me));
   if (_scopedUser && me.empid) {
     // 서버 필터 쿼리 2개 (created_by 또는 reg_by)
     var _pcA = _fbDb.collection('pendingCustomers').where('status','==','Pending').where('created_by','==', me.empid);

@@ -897,15 +897,17 @@ async function _btDownloadPDF(idx) {
   var advChk = rec.mode === 'advance' ? '☑' : '☐';
   var stlChk = rec.mode === 'settlement' ? '☑' : '☐';
   var fmt = function(v){ return Number(v||0).toLocaleString(); };
+  // html2canvas 공백 누락 회피용 헬퍼 — 공백을 &nbsp; 로
+  var _nb = function(s) { return _btSafeHtml(s).replace(/ /g, '&nbsp;'); };
   var bodyRows = legs.map(function(l, i){
     var first = (i === 0);
     var depProv = _btExtractProvince(l.departure || '');
     var arrProv = _btExtractProvince(l.arrival || '');
     var distance = Number(l.distance_km||0).toFixed(1);
     return '<tr>' +
-      '<td style="padding:4px;border:1px solid #000;text-align:left;">' + (first ? _btSafeHtml(rec.applicant_name || '') : '') + '</td>' +
-      '<td style="padding:4px;border:1px solid #000;font-size:10px;text-align:center;white-space:nowrap;">' + _btSafeHtml(depProv) + '</td>' +
-      '<td style="padding:4px;border:1px solid #000;font-size:10px;text-align:center;white-space:nowrap;">' + _btSafeHtml(arrProv) + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;text-align:left;">' + (first ? _nb(rec.applicant_name || '') : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;font-size:10px;text-align:center;white-space:nowrap;">' + _nb(depProv) + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;font-size:10px;text-align:center;white-space:nowrap;">' + _nb(arrProv) + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + distance + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? (_btGasolineRatePerKm || 5) : '') + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.gasoline) : '') + '</td>' +
@@ -923,7 +925,7 @@ async function _btDownloadPDF(idx) {
     '</tr>';
   }).join('');
   var temp = document.createElement('div');
-  temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:1180px;background:#fff;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#000;font-size:11px;line-height:1.4;';
+  temp.style.cssText = 'position:fixed;left:-9999px;top:0;width:1280px;background:#fff;padding:24px;font-family:Arial,Helvetica,sans-serif;color:#000;font-size:11px;line-height:1.4;word-spacing:1px;';
   temp.innerHTML =
     '<div style="text-align:center;font-size:14px;font-weight:700;margin-bottom:6px;">' +
       'ฟอร์มการเดินทางเพื่อธุรกิจ_ภายในประเทศ<br>Business Trip Format_Domestic' +
@@ -931,16 +933,16 @@ async function _btDownloadPDF(idx) {
     '<table style="width:100%;border-collapse:collapse;margin-bottom:8px;">' +
       '<tr>' +
         '<td style="width:50%;padding:6px 4px;font-size:11px;">' +
-          '<div>' + advChk + ' &nbsp; เบิกล่วงหน้า / Advance</div>' +
-          '<div>' + stlChk + ' &nbsp; เคลียที่เบิกล่วงหน้า / Settlement</div>' +
+          '<div>' + advChk + '&nbsp;&nbsp;เบิกล่วงหน้า&nbsp;/&nbsp;Advance</div>' +
+          '<div>' + stlChk + '&nbsp;&nbsp;เคลียที่เบิกล่วงหน้า&nbsp;/&nbsp;Settlement</div>' +
         '</td>' +
         '<td style="width:50%;padding:6px 4px;font-size:11px;text-align:right;">' +
-          '<div>Document No : <strong>' + _btSafeHtml(rec.doc_no || '') + '</strong></div>' +
-          '<div>วันที่ทำเอกสาร / Date : ' + _btSafeHtml(rec.doc_date || '') + '</div>' +
+          '<div>Document&nbsp;No&nbsp;:&nbsp;<strong>' + _btSafeHtml(rec.doc_no || '') + '</strong></div>' +
+          '<div>วันที่ทำเอกสาร&nbsp;/&nbsp;Date&nbsp;:&nbsp;' + _btSafeHtml(rec.doc_date || '') + '</div>' +
         '</td>' +
       '</tr>' +
       '<tr><td colspan="2" style="padding:4px;font-size:11px;border-top:1px solid #ccc;">' +
-        'ชื่อผู้บิก / Name : <strong>' + _btSafeHtml((rec.applicant_id || '') + ' - ' + (rec.applicant_name || '')) + '</strong>' +
+        'ชื่อผู้บิก&nbsp;/&nbsp;Name&nbsp;:&nbsp;<strong>' + _nb((rec.applicant_id || '') + ' - ' + (rec.applicant_name || '')) + '</strong>' +
       '</td></tr>' +
     '</table>' +
     '<div style="font-weight:700;font-size:12px;margin:6px 0 4px;">Duration</div>' +
@@ -957,19 +959,19 @@ async function _btDownloadPDF(idx) {
         '<th style="padding:4px;border:1px solid #000;">Name</th>' +
         '<th style="padding:4px;border:1px solid #000;">From</th>' +
         '<th style="padding:4px;border:1px solid #000;">To</th>' +
-        '<th style="padding:4px;border:1px solid #000;">Customer code</th>' +
-        '<th style="padding:4px;border:1px solid #000;">Customer name</th>' +
+        '<th style="padding:4px;border:1px solid #000;white-space:nowrap;">Customer&nbsp;code</th>' +
+        '<th style="padding:4px;border:1px solid #000;white-space:nowrap;">Customer&nbsp;name</th>' +
         '<th style="padding:4px;border:1px solid #000;">Purpose</th>' +
       '</tr></thead><tbody><tr>' +
-        '<td style="padding:4px;border:1px solid #000;word-break:break-word;">' + _btSafeHtml(rec.attendees || rec.applicant_name || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;word-break:break-word;">' + _nb(rec.attendees || rec.applicant_name || '') + '</td>' +
         '<td style="padding:4px;border:1px solid #000;text-align:center;">' + _btSafeHtml(rec.trip_from || '') + '</td>' +
         '<td style="padding:4px;border:1px solid #000;text-align:center;">' + _btSafeHtml(rec.trip_to || '') + '</td>' +
         '<td style="padding:4px;border:1px solid #000;text-align:center;">' + _btSafeHtml(legs[0].customer_erp || rec.customer_erp || '') + '</td>' +
         '<td style="padding:4px;border:1px solid #000;font-size:9px;word-break:break-word;">' + _btSafeHtml(legs[0].customer_name || rec.customer_name || '') + '</td>' +
-        '<td style="padding:4px;border:1px solid #000;word-break:break-word;">' + _btSafeHtml(rec.purpose || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;word-break:break-word;">' + _nb(rec.purpose || '') + '</td>' +
       '</tr></tbody>' +
     '</table>' +
-    '<div style="font-weight:700;font-size:12px;margin:10px 0 4px;">Business Tripper</div>' +
+    '<div style="font-weight:700;font-size:12px;margin:10px 0 4px;">Business&nbsp;Tripper</div>' +
     '<table style="width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed;">' +
       '<colgroup>' +
         '<col style="width:7%;">' +   /* Name */
@@ -978,19 +980,19 @@ async function _btDownloadPDF(idx) {
         '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Hotel Night/Rate/Amount */
         '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Trip allowance Day/Rate/Amount */
         '<col style="width:4%;"><col style="width:6%;">' +  /* Service Person/Amount */
-        '<col style="width:7%;">' +   /* Air flight */
+        '<col style="width:8%;">' +   /* Air flight */
         '<col style="width:7%;">' +   /* Others */
-        '<col style="width:13%;">' +  /* Total */
+        '<col style="width:12%;">' +  /* Total */
       '</colgroup>' +
       '<thead>' +
         '<tr style="background:#dbeafe;">' +
           '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Name</th>' +
           '<th colspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Province</th>' +
-          '<th colspan="3" style="padding:3px;border:1px solid #000;">Gasoline 1)</th>' +
-          '<th colspan="3" style="padding:3px;border:1px solid #000;">Hotel 2)</th>' +
-          '<th colspan="3" style="padding:3px;border:1px solid #000;">Trip allowance 3)</th>' +
-          '<th colspan="2" style="padding:3px;border:1px solid #000;">Service 4)</th>' +
-          '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Air flight</th>' +
+          '<th colspan="3" style="padding:3px;border:1px solid #000;white-space:nowrap;">Gasoline&nbsp;1)</th>' +
+          '<th colspan="3" style="padding:3px;border:1px solid #000;white-space:nowrap;">Hotel&nbsp;2)</th>' +
+          '<th colspan="3" style="padding:3px;border:1px solid #000;white-space:nowrap;">Trip&nbsp;allowance&nbsp;3)</th>' +
+          '<th colspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Service&nbsp;4)</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Air&nbsp;flight</th>' +
           '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Others</th>' +
           '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Total</th>' +
         '</tr>' +
@@ -1004,7 +1006,7 @@ async function _btDownloadPDF(idx) {
       '</thead>' +
       '<tbody>' + bodyRows +
         '<tr style="background:#fef3c7;font-weight:700;">' +
-          '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">Actual Amount</td>' +
+          '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;white-space:nowrap;">Actual&nbsp;Amount</td>' +
           '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.gasoline) + '</td>' +
           '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.hotel) + '</td>' +
           '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.allowance) + '</td>' +
@@ -1019,32 +1021,32 @@ async function _btDownloadPDF(idx) {
       '<tr>' +
         '<td style="width:45%;padding:4px;vertical-align:top;">' +
           '<table style="border-collapse:collapse;">' +
-            '<tr><td style="padding:4px 8px;">Advance / Actual amount :</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;text-align:right;font-weight:700;">' + fmt(rec.total) + '</td><td style="padding:4px 8px;">Baht</td></tr>' +
-            '<tr><td style="padding:4px 8px;">Deduct Advance amount :</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;"></td><td style="padding:4px 8px;">Baht</td></tr>' +
-            '<tr><td style="padding:4px 8px;">Return to Company :</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;"></td><td style="padding:4px 8px;">Baht</td></tr>' +
-            '<tr><td style="padding:4px 8px;">Pay to Staff :</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;"></td><td style="padding:4px 8px;">Baht</td></tr>' +
+            '<tr><td style="padding:4px 8px;white-space:nowrap;">Advance&nbsp;/&nbsp;Actual&nbsp;amount&nbsp;:</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;text-align:right;font-weight:700;">' + fmt(rec.total) + '</td><td style="padding:4px 8px;">Baht</td></tr>' +
+            '<tr><td style="padding:4px 8px;white-space:nowrap;">Deduct&nbsp;Advance&nbsp;amount&nbsp;:</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;"></td><td style="padding:4px 8px;">Baht</td></tr>' +
+            '<tr><td style="padding:4px 8px;white-space:nowrap;">Return&nbsp;to&nbsp;Company&nbsp;:</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;"></td><td style="padding:4px 8px;">Baht</td></tr>' +
+            '<tr><td style="padding:4px 8px;white-space:nowrap;">Pay&nbsp;to&nbsp;Staff&nbsp;:</td><td style="padding:4px 8px;border-bottom:1px solid #000;width:100px;"></td><td style="padding:4px 8px;">Baht</td></tr>' +
           '</table>' +
         '</td>' +
         '<td style="width:55%;padding:8px;vertical-align:top;font-size:9px;border-left:1px solid #ccc;">' +
-          '<strong>Remark :</strong><br>' +
-          '1) Gasoline rate announce in Group ware by monthly<br>' +
-          '2) Hotel 2 persons / room, if man and women can separate room.<br>' +
-          '&nbsp;&nbsp;&nbsp;&nbsp;Hotel rate 650 baht / night, if price over get confirm from MD<br>' +
-          '3) Freelancer 500 baht / person : Need to get confirm from MD in advance' +
-          (detail ? '<br><br><strong>Others detail :</strong> ' + _btSafeHtml(detail) : '') +
-          (rec.remark ? '<br><br><strong>Note :</strong> ' + _btSafeHtml(rec.remark) : '') +
-          (totalKm ? '<br><br><strong>Total distance :</strong> ' + totalKm.toFixed(1) + ' km' : '') +
+          '<strong>Remark&nbsp;:</strong><br>' +
+          '1)&nbsp;Gasoline&nbsp;rate&nbsp;announce&nbsp;in&nbsp;Group&nbsp;ware&nbsp;by&nbsp;monthly<br>' +
+          '2)&nbsp;Hotel&nbsp;2&nbsp;persons&nbsp;/&nbsp;room,&nbsp;if&nbsp;man&nbsp;and&nbsp;women&nbsp;can&nbsp;separate&nbsp;room.<br>' +
+          '&nbsp;&nbsp;&nbsp;&nbsp;Hotel&nbsp;rate&nbsp;650&nbsp;baht&nbsp;/&nbsp;night,&nbsp;if&nbsp;price&nbsp;over&nbsp;get&nbsp;confirm&nbsp;from&nbsp;MD<br>' +
+          '3)&nbsp;Freelancer&nbsp;500&nbsp;baht&nbsp;/&nbsp;person&nbsp;:&nbsp;Need&nbsp;to&nbsp;get&nbsp;confirm&nbsp;from&nbsp;MD&nbsp;in&nbsp;advance' +
+          (detail ? '<br><br><strong>Others&nbsp;detail&nbsp;:</strong>&nbsp;' + _nb(detail) : '') +
+          (rec.remark ? '<br><br><strong>Note&nbsp;:</strong>&nbsp;' + _nb(rec.remark) : '') +
+          (totalKm ? '<br><br><strong>Total&nbsp;distance&nbsp;:</strong>&nbsp;' + totalKm.toFixed(1) + '&nbsp;km' : '') +
         '</td>' +
       '</tr>' +
     '</table>' +
     '<table style="width:100%;border-collapse:collapse;margin-top:24px;font-size:11px;">' +
       '<tr>' +
         '<td style="width:50%;padding:8px;text-align:center;">' +
-          '<div style="margin-bottom:30px;">Requirement by</div>' +
+          '<div style="margin-bottom:30px;">Requirement&nbsp;by</div>' +
           '<div style="border-top:1px solid #000;display:inline-block;padding-top:4px;min-width:200px;">Signature</div>' +
         '</td>' +
         '<td style="width:50%;padding:8px;text-align:center;">' +
-          '<div style="margin-bottom:30px;">Approve by</div>' +
+          '<div style="margin-bottom:30px;">Approve&nbsp;by</div>' +
           '<div style="border-top:1px solid #000;display:inline-block;padding-top:4px;min-width:200px;">Signature</div>' +
         '</td>' +
       '</tr>' +

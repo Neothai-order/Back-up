@@ -901,11 +901,11 @@ async function _btDownloadPDF(idx) {
     var first = (i === 0);
     var depProv = _btExtractProvince(l.departure || '');
     var arrProv = _btExtractProvince(l.arrival || '');
-    var route = depProv + (arrProv ? ' → ' + arrProv : '');
     var distance = Number(l.distance_km||0).toFixed(1);
     return '<tr>' +
       '<td style="padding:4px;border:1px solid #000;text-align:left;">' + (first ? _btSafeHtml(rec.applicant_name || '') : '') + '</td>' +
-      '<td style="padding:4px;border:1px solid #000;font-size:10px;text-align:center;white-space:nowrap;">' + _btSafeHtml(route) + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;font-size:10px;text-align:center;white-space:nowrap;">' + _btSafeHtml(depProv) + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;font-size:10px;text-align:center;white-space:nowrap;">' + _btSafeHtml(arrProv) + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + distance + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? (_btGasolineRatePerKm || 5) : '') + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.gasoline) : '') + '</td>' +
@@ -973,19 +973,19 @@ async function _btDownloadPDF(idx) {
     '<table style="width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed;">' +
       '<colgroup>' +
         '<col style="width:7%;">' +   /* Name */
-        '<col style="width:13%;">' +  /* Province / Route */
+        '<col style="width:7%;"><col style="width:7%;">' +   /* Province From / To */
         '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Gasoline KM/Rate/Amount */
         '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Hotel Night/Rate/Amount */
         '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Trip allowance Day/Rate/Amount */
         '<col style="width:4%;"><col style="width:6%;">' +  /* Service Person/Amount */
-        '<col style="width:8%;">' +   /* Air flight */
+        '<col style="width:7%;">' +   /* Air flight */
         '<col style="width:7%;">' +   /* Others */
         '<col style="width:13%;">' +  /* Total */
       '</colgroup>' +
       '<thead>' +
         '<tr style="background:#dbeafe;">' +
           '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Name</th>' +
-          '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Province / Route</th>' +
+          '<th colspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Province</th>' +
           '<th colspan="3" style="padding:3px;border:1px solid #000;">Gasoline 1)</th>' +
           '<th colspan="3" style="padding:3px;border:1px solid #000;">Hotel 2)</th>' +
           '<th colspan="3" style="padding:3px;border:1px solid #000;">Trip allowance 3)</th>' +
@@ -995,6 +995,7 @@ async function _btDownloadPDF(idx) {
           '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Total</th>' +
         '</tr>' +
         '<tr style="background:#eff6ff;">' +
+          '<th style="padding:3px;border:1px solid #000;">From</th><th style="padding:3px;border:1px solid #000;">To</th>' +
           '<th style="padding:3px;border:1px solid #000;">K.M.</th><th style="padding:3px;border:1px solid #000;">Rate</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
           '<th style="padding:3px;border:1px solid #000;">Night</th><th style="padding:3px;border:1px solid #000;">Rate</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
           '<th style="padding:3px;border:1px solid #000;">Day</th><th style="padding:3px;border:1px solid #000;">Rate</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
@@ -1003,7 +1004,7 @@ async function _btDownloadPDF(idx) {
       '</thead>' +
       '<tbody>' + bodyRows +
         '<tr style="background:#fef3c7;font-weight:700;">' +
-          '<td colspan="2" style="padding:4px;border:1px solid #000;text-align:right;">Actual Amount</td>' +
+          '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">Actual Amount</td>' +
           '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.gasoline) + '</td>' +
           '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.hotel) + '</td>' +
           '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.allowance) + '</td>' +

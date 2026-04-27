@@ -2668,6 +2668,61 @@ function _syncUserPermsFromFirestore(user) {
   }).catch(function() {});
 }
 
+// ══════════════════════════════════════════════════════════════════
+// 영수증 신규 알림 배지 — 2시간마다 receipts 컬렉션 체크하여 'N' 표시
+// 마지막 조회 시각은 localStorage 에 사용자별 저장. 영수증 조회 화면을 열면 갱신.
+// ══════════════════════════════════════════════════════════════════
+var _expenseReceiptBadgeInterval = null;
+var _EXP_RECEIPT_CHECK_MS = 2 * 60 * 60 * 1000; // 2시간
+
+function _getExpReceiptLastViewed(empid) {
+  var key = 'expense_receipt_last_viewed_' + empid;
+  var v = localStorage.getItem(key);
+  if (!v) {
+    var now = Date.now();
+    localStorage.setItem(key, String(now)); // 첫 진입 = 현재 시각으로 baseline → 과거 영수증은 N 표시 안 함
+    return now;
+  }
+  var n = parseInt(v, 10);
+  return isNaN(n) ? Date.now() : n;
+}
+
+function _setExpenseBadgeVisible(show) {
+  var b = document.getElementById('expenseBadge');
+  if (b) b.style.display = show ? 'flex' : 'none';
+  var mb = document.getElementById('mobCatExpenseBadge');
+  if (mb) mb.style.display = show ? 'inline-flex' : 'none';
+}
+
+function _checkExpenseReceiptBadge() {
+  try {
+    var u = getCurrentUser();
+    if (!u || !u.empid) return;
+    if (!window._fbDb || !firebase || !firebase.firestore) return;
+    var lastMs = _getExpReceiptLastViewed(u.empid);
+    var ts = firebase.firestore.Timestamp.fromDate(new Date(lastMs));
+    _fbDb.collection('receipts')
+      .where('uploadTimestamp', '>', ts)
+      .limit(1)
+      .get()
+      .then(function(snap) { _setExpenseBadgeVisible(!snap.empty); })
+      .catch(function(e) { console.warn('[ExpBadge] check error:', e && e.message); });
+  } catch(e) {
+    console.warn('[ExpBadge] check exception:', e && e.message);
+  }
+}
+
+function _startExpenseReceiptBadgeWatcher() {
+  if (_expenseReceiptBadgeInterval) return; // 이미 실행 중
+  _checkExpenseReceiptBadge(); // 즉시 1회
+  _expenseReceiptBadgeInterval = setInterval(_checkExpenseReceiptBadge, _EXP_RECEIPT_CHECK_MS);
+}
+
+function _stopExpenseReceiptBadgeWatcher() {
+  if (_expenseReceiptBadgeInterval) { clearInterval(_expenseReceiptBadgeInterval); _expenseReceiptBadgeInterval = null; }
+  _setExpenseBadgeVisible(false);
+}
+
 function applyUserUI(user) {
   document.getElementById('userAvatar').textContent = user.name.charAt(0);
   document.getElementById('userName').textContent   = user.name + ' (' + user.empid + ')';
@@ -2891,6 +2946,10 @@ function applyUserUI(user) {
   if (mobReceipt) mobReceipt.style.display = (isAdmin || perms.includes('receipt')) ? '' : 'none';
   var mobReceiptAdmin = document.getElementById('mobCardReceiptAdmin');
   if (mobReceiptAdmin) { mobReceiptAdmin.style.display = canReceiptAdmin ? '' : 'none'; mobReceiptAdmin.classList.toggle('perm-hidden', !canReceiptAdmin); }
+
+  // 영수증 신규 알림 배지 (receipt_admin 권한자에게 'N' 표시 — 2시간마다 체크)
+  if (canReceiptAdmin) _startExpenseReceiptBadgeWatcher();
+  else _stopExpenseReceiptBadgeWatcher();
 
   // ── 매출/수금 현황 (리포트 하위) ──
   var canTarget = isAdmin || perms.includes('target') || perms.includes('target_approve');

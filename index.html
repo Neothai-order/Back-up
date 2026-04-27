@@ -84,7 +84,7 @@ if ('serviceWorker' in navigator) {
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Neo Sales App">
-<link rel="stylesheet" href="style.min.css?v=241">
+<link rel="stylesheet" href="style.min.css?v=242">
 <!-- XLSX (xlsx-js-style — 스타일 지원 통합본, xlsx.full.min.js 대체) -->
 <script defer src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
 <!-- Google Maps Places -->
@@ -470,7 +470,7 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
           </div>
         </div>
         <div class="expense-dropdown perm-hidden" id="btnExpenseDD">
-          <button class="btn-expense"><span class="btn-icon">💰</span><span data-i18n="expense_menu">비용 정산</span></button>
+          <button class="btn-expense"><span id="expenseBadge" class="expense-badge" style="display:none">N</span><span class="btn-icon">💰</span><span data-i18n="expense_menu">비용 정산</span></button>
           <div class="expense-dropdown-menu">
             <div class="expense-dropdown-menu-inner">
               <div class="expense-dd-item perm-hidden" id="ddReceiptSubmit" onclick="location.href='expense.html?mode=submit'"><span class="dd-icon">🧾</span><span data-i18n="expense_receipt">영수증 제출</span></div>
@@ -542,6 +542,7 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
       <div class="mob-cat-card" id="mobCatExpense" onclick="openMobSub('expense')" style="display:none">
         <span class="mob-cat-icon" style="background:#fef9c3;color:#ca8a04;">💰</span>
         <div class="mob-cat-info"><div class="mob-cat-title" data-i18n="expense_menu">비용 정산</div><div class="mob-cat-sub" data-i18n="expense_mob_sub">영수증 · 정산</div></div>
+        <span class="mob-cat-badge" id="mobCatExpenseBadge" style="display:none;right:38px;background:#ef4444;">N</span>
         <span class="mob-cat-arrow">›</span>
       </div>
 
@@ -1329,7 +1330,7 @@ function loadJSZip()       { return loadScript('https://cdn.jsdelivr.net/npm/jsz
 <script src="account.min.js?v=189"></script>
 <script src="sync_monitor.min.js?v=4"></script>
 
-<script src="core.min.js?v=220"></script>
+<script src="core.min.js?v=221"></script>
 
 <!-- 주문 오버레이 -->
 <div class="order-overlay" id="orderOverlay" onclick="orderOverlayClick(event)">

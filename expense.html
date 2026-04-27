@@ -179,6 +179,24 @@ var _fbAuth = firebase.auth();
 var _fbDb   = firebase.firestore();
 var _fbStorage = firebase.storage();
 
+// CDN 동적 로더 (index.html과 동일 — expense.html은 단독 페이지라 loadJSZip을 자체 정의 필요)
+var _lazyCache = {};
+function loadScript(url) {
+  if (_lazyCache[url]) return _lazyCache[url];
+  _lazyCache[url] = new Promise(function(resolve, reject) {
+    var s = document.createElement('script');
+    s.src = url;
+    s.onload = resolve;
+    s.onerror = function() { delete _lazyCache[url]; reject(new Error('Failed to load: ' + url)); };
+    document.head.appendChild(s);
+  });
+  return _lazyCache[url];
+}
+function loadJSZip() {
+  if (typeof window.JSZip !== 'undefined') return Promise.resolve();
+  return loadScript('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
+}
+
 function getCurrentUser() {
   var u = JSON.parse(sessionStorage.getItem('current_user') || 'null');
   if (u) return u;
@@ -390,6 +408,11 @@ async function apiGetAccounts() {
     // 관리자 대시보드 초기화
     var tEl = document.getElementById('receiptAdminTitleText');
     if (tEl) tEl.textContent = _isExpenseAdmin() ? t('receipt_admin_title') : t('receipt_view_title');
+    // 영수증 조회 진입 시각 기록 — index.html 의 비용 정산 메뉴 'N' 배지가 사라짐
+    var _meBadge = getCurrentUser();
+    if (_meBadge && _meBadge.empid) {
+      try { localStorage.setItem('expense_receipt_last_viewed_' + _meBadge.empid, String(Date.now())); } catch(e) {}
+    }
     _loadReceiptDashboard();
   } else {
     document.getElementById('expenseSubmitPage').style.display = 'flex';

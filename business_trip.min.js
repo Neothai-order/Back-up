@@ -162,14 +162,31 @@ function neoAlert(msg) {
   if (ov) ov.style.display = 'flex';
 }
 
-function _btGenDocNo(mode) {
+// 신규 패턴: BTA-{empid}-YYYYMM-NN  (A=가불, S=정산, NN=해당 월 누적 순번)
+async function _btGenDocNo(mode) {
   var d = new Date();
-  var yy = String(d.getFullYear()).slice(2);
+  var yyyy = d.getFullYear();
   var mm = String(d.getMonth() + 1).padStart(2, '0');
-  var dd = String(d.getDate()).padStart(2, '0');
-  var modePart = (mode === 'settlement') ? 'STL' : 'ADV';
-  var rand = Math.floor(Math.random() * 999) + 1;
-  return 'BT-' + modePart + '-' + yy + mm + dd + '-' + String(rand).padStart(3, '0');
+  var modeLetter = (mode === 'settlement') ? 'S' : 'A';
+  var empid = (_btMe && _btMe.empid) ? _btMe.empid : '';
+  if (!empid || typeof _fbDb === 'undefined') {
+    return 'BT' + modeLetter + '-' + (empid || 'UNKNOWN') + '-' + yyyy + mm + '-01';
+  }
+  try {
+    // 본인 + 동일 mode + 동일 YYYYMM 의 doc_no 갯수 카운트
+    var snap = await _fbDb.collection('businessTrips')
+      .where('applicant_id', '==', empid).get();
+    var prefix = 'BT' + modeLetter + '-' + empid + '-' + yyyy + mm + '-';
+    var count = 0;
+    snap.forEach(function(doc) {
+      var dn = String(doc.data().doc_no || '');
+      if (dn.indexOf(prefix) === 0) count++;
+    });
+    return prefix + String(count + 1).padStart(2, '0');
+  } catch(e) {
+    console.warn('[BT] doc no seq fetch failed:', e);
+    return 'BT' + modeLetter + '-' + empid + '-' + yyyy + mm + '-01';
+  }
 }
 
 function _btCalcTotal() {
@@ -192,8 +209,8 @@ function _btSetDefaultDates() {
 
 function _btBindModeChange() {
   document.querySelectorAll('input[name=bt_mode]').forEach(function(r){
-    r.addEventListener('change', function() {
-      document.getElementById('btDocNo').value = _btGenDocNo(r.value);
+    r.addEventListener('change', async function() {
+      document.getElementById('btDocNo').value = await _btGenDocNo(r.value);
     });
   });
 }
@@ -638,7 +655,7 @@ function _btUpdateLegMapAndDistance(leg) {
 }
 
 // ── 폼 → record ───────────────────────────────────────────────────
-function _btCollectRecord() {
+async function _btCollectRecord() {
   var mode = (document.querySelector('input[name=bt_mode]:checked') || {}).value || 'advance';
   var amounts = {
     allowance:parseFloat(document.getElementById('btAmtAllowance').value || 0) || 0,
@@ -652,7 +669,7 @@ function _btCollectRecord() {
     others: ((document.getElementById('btAmtOthersDetail') || {}).value || '').trim()
   };
   var total = Object.values(amounts).reduce(function(a,b){ return a+b; }, 0);
-  var docNo = document.getElementById('btDocNo').value || _btGenDocNo(mode);
+  var docNo = document.getElementById('btDocNo').value || (await _btGenDocNo(mode));
   // legs from state (input value 도 sync)
   var legs = _btLegs.map(function(l) {
     return {
@@ -693,7 +710,7 @@ function _btCollectRecord() {
 
 async function _btSubmit() {
   if (!_btMe) { neoAlert(_btT('bt_auth_required', '로그인이 필요합니다.')); return; }
-  var rec = _btCollectRecord();
+  var rec = await _btCollectRecord();
   if (!rec.trip_from || !rec.trip_to) { neoAlert(_btT('bt_err_dates', '출장 기간을 입력해주세요.')); return; }
   var validLegs = (rec.legs || []).filter(function(l){ return l.departure && l.arrival; });
   if (!validLegs.length) { neoAlert(_btT('bt_err_place', '최소 1개 일정의 출발지·도착지를 입력해주세요.')); return; }
@@ -712,7 +729,7 @@ async function _btSubmit() {
   }
 }
 
-function _btResetForm() {
+async function _btResetForm() {
   ['btAmtAllowance','btAmtGasoline','btAmtHotel','btAmtAirfare','btAmtService','btAmtOthers'].forEach(function(id){
     var el = document.getElementById(id); if (el) el.value = 0;
   });
@@ -726,7 +743,7 @@ function _btResetForm() {
   var hotelEl = document.getElementById('btAmtHotel');
   if (hotelEl) { hotelEl.readOnly = true; hotelEl.style.background = '#f1f5f9'; hotelEl.style.color = '#475569'; }
   document.querySelector('input[name=bt_mode][value=advance]').checked = true;
-  document.getElementById('btDocNo').value = _btGenDocNo('advance');
+  document.getElementById('btDocNo').value = await _btGenDocNo('advance');
   // legs 초기화
   _btLegs = [];
   document.getElementById('btLegsContainer').innerHTML = '';
@@ -1095,7 +1112,7 @@ window._btToggleHotelManual = _btToggleHotelManual;
   if (!_btMe) return;
   var who = (_btMe.empid ? _btMe.empid + ' - ' : '') + (_btMe.name || _btMe.nickname || '');
   document.getElementById('btApplicant').value = who.trim() || _btMe.email || '';
-  document.getElementById('btDocNo').value = _btGenDocNo('advance');
+  document.getElementById('btDocNo').value = await _btGenDocNo('advance');
   _btSetDefaultDates();
   _btCalcTotal();
   _btBindModeChange();

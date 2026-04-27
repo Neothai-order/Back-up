@@ -137,9 +137,6 @@
       </div>
       <!-- ─── 일정(leg) 컨테이너: 다중 leg 지원 ─── -->
       <div id="btLegsContainer"></div>
-      <div style="display:flex;justify-content:flex-start;margin:8px 0 4px;">
-        <button type="button" class="bt-btn bt-btn-ghost" onclick="_btAddLeg()" style="font-size:12px;padding:8px 14px;border:1.5px dashed #0d9488;background:#f0fdfa;color:#0d9488;">➕ <span data-i18n="bt_add_leg">일정 추가</span></button>
-      </div>
       <div class="bt-row">
         <span class="bt-label" data-i18n="bt_attendees">참석자</span>
         <input type="text" id="btAttendees" class="bt-input" placeholder="홍길동, 김철수, ..." data-i18n-placeholder="bt_attendees_ph">
@@ -147,6 +144,9 @@
       <div class="bt-row">
         <span class="bt-label" data-i18n="bt_purpose">목적</span>
         <textarea id="btPurpose" class="bt-textarea" data-i18n-placeholder="bt_purpose_ph" placeholder="고객 미팅, 제품 소개 등"></textarea>
+      </div>
+      <div style="display:flex;justify-content:flex-start;margin:12px 0 4px;">
+        <button type="button" class="bt-btn bt-btn-ghost" onclick="_btAddLeg()" style="font-size:12px;padding:8px 14px;border:1.5px dashed #0d9488;background:#f0fdfa;color:#0d9488;">➕ <span data-i18n="bt_add_leg">일정 추가</span></button>
       </div>
     </div>
 

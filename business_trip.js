@@ -211,8 +211,153 @@ function _btBindModeChange() {
   document.querySelectorAll('input[name=bt_mode]').forEach(function(r){
     r.addEventListener('change', async function() {
       document.getElementById('btDocNo').value = await _btGenDocNo(r.value);
+      _btToggleSettlementBanner(r.value === 'settlement');
     });
   });
+}
+
+// ── 정산 배너 표시/숨김 ─────────────────────────────────────────
+function _btToggleSettlementBanner(show) {
+  var banner = document.getElementById('btSettlementBanner');
+  if (banner) banner.style.display = show ? '' : 'none';
+  // 정산 모드에서 빠질 때 로드된 가불 정보 초기화
+  if (!show) _btClearLoadedAdvance(true);
+}
+
+// ── 미정산 가불 로드 상태 ──────────────────────────────────────
+var _btLoadedAdvanceId = null;       // 정산 시 참조할 가불 doc id
+var _btLoadedAdvanceData = null;     // 가불 doc data (참고용)
+
+// ── 미정산 가불 목록 모달 열기 ──────────────────────────────────
+async function _btShowAdvanceList() {
+  if (!_btMe || !_btMe.empid) { neoAlert(_btT('bt_auth_required', '로그인이 필요합니다.')); return; }
+  var ov = document.getElementById('btAdvanceListOverlay');
+  var body = document.getElementById('btAdvanceListBody');
+  if (!ov || !body) return;
+  ov.style.display = 'flex';
+  body.innerHTML = '<div style="padding:30px;text-align:center;color:#94a3b8;font-size:13px;">' + _btT('bt_loading', '로딩 중...') + '</div>';
+  try {
+    // 본인의 가불(advance) 중 정산 안 된 건만
+    var snap = await _fbDb.collection('businessTrips')
+      .where('applicant_id', '==', _btMe.empid)
+      .where('mode', '==', 'advance')
+      .get();
+    var rows = [];
+    snap.forEach(function(d) {
+      var x = d.data();
+      if (!x.settled) rows.push(Object.assign({ _id: d.id }, x));
+    });
+    // 최신순
+    rows.sort(function(a,b){
+      var da = (a.doc_date || '') + (a.doc_no || '');
+      var db = (b.doc_date || '') + (b.doc_no || '');
+      return db.localeCompare(da);
+    });
+    if (!rows.length) {
+      body.innerHTML = '<div style="padding:40px 20px;text-align:center;color:#64748b;font-size:13px;">' +
+        '<div style="font-size:32px;margin-bottom:10px;">✅</div>' +
+        '<div>' + _btT('bt_settle_no_pending', '미정산 가불 내역이 없습니다.') + '</div>' +
+        '</div>';
+      return;
+    }
+    var html = '';
+    rows.forEach(function(r) {
+      var legText = (r.legs && r.legs.length)
+        ? (r.legs.map(function(l){ return _btSafeHtml(l.customer_name || l.arrival || '-'); }).join(' / '))
+        : _btSafeHtml(r.customer_name || '-');
+      html += '<div onclick="_btSelectAdvance(\'' + r._id + '\')" style="padding:14px 22px;border-bottom:1px solid #f1f5f9;cursor:pointer;transition:background 0.15s;" onmouseover="this.style.background=\'#f0fdfa\'" onmouseout="this.style.background=\'\'">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">' +
+          '<div style="font-weight:700;color:#0f766e;font-size:13px;">' + _btSafeHtml(r.doc_no || '-') + '</div>' +
+          '<div style="font-size:13px;font-weight:700;color:#dc2626;">฿ ' + Number(r.total || 0).toLocaleString() + '</div>' +
+        '</div>' +
+        '<div style="margin-top:4px;display:flex;gap:10px;color:#64748b;font-size:12px;flex-wrap:wrap;">' +
+          '<span>📅 ' + _btSafeHtml((r.trip_from || '') + ' ~ ' + (r.trip_to || '')) + '</span>' +
+          '<span style="color:#475569;">' + legText + '</span>' +
+        '</div>' +
+        '<div style="margin-top:3px;color:#94a3b8;font-size:11px;">' + _btSafeHtml(r.purpose || '') + '</div>' +
+      '</div>';
+    });
+    body.innerHTML = html;
+  } catch(e) {
+    console.error('[BT] advance list fetch failed:', e);
+    body.innerHTML = '<div style="padding:30px;text-align:center;color:#ef4444;font-size:13px;">' + _btT('bt_settle_load_fail', '불러오기 실패') + ': ' + (e.message || e) + '</div>';
+  }
+}
+
+function _btCloseAdvanceList() {
+  var ov = document.getElementById('btAdvanceListOverlay');
+  if (ov) ov.style.display = 'none';
+}
+
+// ── 가불 선택 → 폼에 채우기 ──────────────────────────────────────
+async function _btSelectAdvance(docId) {
+  try {
+    var doc = await _fbDb.collection('businessTrips').doc(docId).get();
+    if (!doc.exists) { neoAlert(_btT('bt_settle_load_fail', '불러오기 실패')); return; }
+    var rec = doc.data();
+    _btLoadedAdvanceId = docId;
+    _btLoadedAdvanceData = rec;
+    // 기본 정보 채우기
+    var setVal = function(id, v) { var el = document.getElementById(id); if (el) el.value = v; };
+    setVal('btTripFrom', rec.trip_from || '');
+    setVal('btTripTo', rec.trip_to || '');
+    setVal('btAttendees', rec.attendees || '');
+    setVal('btPurpose', rec.purpose || '');
+    setVal('btRemark', rec.remark || '');
+    // 비용 (정산은 실제 비용으로 수정 가능)
+    var amt = rec.amounts || {};
+    setVal('btAmtAllowance', Number(amt.allowance || 0));
+    setVal('btAmtGasoline', Number(amt.gasoline || 0));
+    setVal('btAmtHotel', Number(amt.hotel || 0));
+    setVal('btAmtAirfare', Number(amt.airfare || 0));
+    setVal('btAmtService', Number(amt.service || 0));
+    setVal('btAmtOthers', Number(amt.others || 0));
+    var detail = (rec.amounts_detail || {}).others || '';
+    setVal('btAmtOthersDetail', detail);
+    // legs 복원
+    _btLegs = [];
+    document.getElementById('btLegsContainer').innerHTML = '';
+    if (rec.legs && rec.legs.length) {
+      rec.legs.forEach(function(l) {
+        _btMakeLegRow({
+          departure: l.departure || '',
+          arrival: l.arrival || '',
+          customer_erp: l.customer_erp || '',
+          customer_name: l.customer_name || '',
+          distance_km: Number(l.distance_km || 0)
+        });
+      });
+    } else {
+      _btMakeLegRow();
+    }
+    _btCalcTotal();
+    // 배너 정보 갱신
+    var info = document.getElementById('btSelectedAdvanceInfo');
+    if (info) {
+      info.innerHTML = '✅ <strong>' + _btSafeHtml(rec.doc_no || '') + '</strong> · ฿ ' + Number(rec.total || 0).toLocaleString() + ' · ' + _btSafeHtml((rec.trip_from || '') + ' ~ ' + (rec.trip_to || ''));
+      info.style.color = '#059669';
+    }
+    document.getElementById('btClearAdvanceBtn').style.display = '';
+    _btCloseAdvanceList();
+    showToast('✅ ' + _btT('bt_settle_loaded', '가불 내역을 불러왔습니다.'));
+  } catch(e) {
+    console.error('[BT] advance load failed:', e);
+    neoAlert(_btT('bt_settle_load_fail', '불러오기 실패') + ': ' + (e.message || e));
+  }
+}
+
+// ── 로드된 가불 초기화 ───────────────────────────────────────────
+function _btClearLoadedAdvance(silent) {
+  _btLoadedAdvanceId = null;
+  _btLoadedAdvanceData = null;
+  var info = document.getElementById('btSelectedAdvanceInfo');
+  if (info) {
+    info.innerHTML = _btT('bt_settle_load_hint', '미정산 가불 내역을 불러와 정산서를 작성합니다.');
+    info.style.color = '#78350f';
+  }
+  var clearBtn = document.getElementById('btClearAdvanceBtn');
+  if (clearBtn) clearBtn.style.display = 'none';
+  if (!silent) showToast(_btT('bt_settle_cleared', '가불 연결 해제됨'));
 }
 
 // ── 고객 데이터 lazy load ─────────────────────────────────────────
@@ -338,13 +483,15 @@ function _btEnsureGmapsServices() {
 }
 
 // ── Leg 추가/제거 ─────────────────────────────────────────────────
-function _btMakeLegRow() {
+function _btMakeLegRow(initData) {
   var id = ++_btLegSeq;
   var leg = {
     id: id,
-    departure: '', arrival: '',
-    customer_erp: '', customer_name: '',
-    distance_km: 0,
+    departure: (initData && initData.departure) || '',
+    arrival:   (initData && initData.arrival) || '',
+    customer_erp: (initData && initData.customer_erp) || '',
+    customer_name: (initData && initData.customer_name) || '',
+    distance_km: (initData && Number(initData.distance_km)) || 0,
     dep_loc: null, arr_loc: null
   };
   _btLegs.push(leg);
@@ -395,6 +542,21 @@ function _btMakeLegRow() {
   var custEl = document.getElementById('btLegCust_' + id);
   var custList = document.getElementById('btLegCustList_' + id);
   _btAttachLegCustomer(custEl, custList, leg);
+
+  // initData 가 있으면 input 값 채우기 + 거리 표시
+  if (initData) {
+    if (depEl && leg.departure) depEl.value = leg.departure;
+    if (arrEl && leg.arrival) arrEl.value = leg.arrival;
+    if (custEl && leg.customer_name) custEl.value = (leg.customer_erp ? leg.customer_erp + ' - ' : '') + leg.customer_name;
+    if (Number(leg.distance_km) > 0) {
+      var distWrap = document.getElementById('btLegDist_' + id);
+      var distVal = document.getElementById('btLegDistVal_' + id);
+      if (distWrap && distVal) {
+        distVal.textContent = leg.distance_km.toFixed(1) + ' km';
+        distWrap.style.display = '';
+      }
+    }
+  }
 
   // i18n re-apply
   if (typeof applyLang === 'function') applyLang();
@@ -704,7 +866,11 @@ async function _btCollectRecord() {
     remark: document.getElementById('btRemark').value.trim(),
     amounts: amounts,
     amounts_detail: amounts_detail,
-    total: total
+    total: total,
+    // 가불에는 settled 플래그(=false 기본). 정산이면 advance_ref 추가
+    settled: (mode === 'advance') ? false : null,
+    advance_ref: (mode === 'settlement' && _btLoadedAdvanceId) ? _btLoadedAdvanceId : null,
+    advance_doc_no: (mode === 'settlement' && _btLoadedAdvanceData) ? (_btLoadedAdvanceData.doc_no || '') : null
   };
 }
 
@@ -719,7 +885,20 @@ async function _btSubmit() {
   rec.created_at = firebase.firestore.FieldValue.serverTimestamp();
   rec.updated_at = firebase.firestore.FieldValue.serverTimestamp();
   try {
-    await _fbDb.collection('businessTrips').add(rec);
+    var newDoc = await _fbDb.collection('businessTrips').add(rec);
+    // 정산 제출 시: 연결된 가불 doc 의 settled=true 로 업데이트
+    if (rec.mode === 'settlement' && rec.advance_ref) {
+      try {
+        await _fbDb.collection('businessTrips').doc(rec.advance_ref).update({
+          settled: true,
+          settled_at: firebase.firestore.FieldValue.serverTimestamp(),
+          settlement_ref: newDoc.id,
+          settlement_doc_no: rec.doc_no
+        });
+      } catch(updErr) {
+        console.warn('[BT] advance settled flag update failed:', updErr);
+      }
+    }
     showToast('✅ ' + (_btT('bt_submitted', '제출되었습니다.')) + ' (' + rec.doc_no + ')');
     _btResetForm();
     setTimeout(function(){ _btSwitchTab('list'); }, 600);
@@ -1102,6 +1281,10 @@ window._btCalcTotal = _btCalcTotal;
 window._btAddLeg = _btAddLeg;
 window._btRemoveLeg = _btRemoveLeg;
 window._btToggleHotelManual = _btToggleHotelManual;
+window._btShowAdvanceList = _btShowAdvanceList;
+window._btCloseAdvanceList = _btCloseAdvanceList;
+window._btSelectAdvance = _btSelectAdvance;
+window._btClearLoadedAdvance = _btClearLoadedAdvance;
 
 // ── 초기화 ──────────────────────────────────────────────────────
 (async function _btInit() {

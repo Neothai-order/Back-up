@@ -917,7 +917,6 @@ async function _btDownloadPDF(idx) {
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? days : '') + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? _btDailyAllowance : '') + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.allowance) : '') + '</td>' +
-      '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first && Number(amt.service) > 0 ? '1' : '') + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.service) : '') + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.airfare) : '') + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.others) : '') + '</td>' +
@@ -974,15 +973,15 @@ async function _btDownloadPDF(idx) {
     '<div style="font-weight:700;font-size:12px;margin:10px 0 4px;">Business&nbsp;Tripper</div>' +
     '<table style="width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed;">' +
       '<colgroup>' +
-        '<col style="width:7%;">' +   /* Name */
-        '<col style="width:7%;"><col style="width:7%;">' +   /* Province From / To */
+        '<col style="width:10%;">' +   /* Name */
+        '<col style="width:11%;"><col style="width:11%;">' +   /* Province From / To (Nakhon Pathom 수용) */
         '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Gasoline KM/Rate/Amount */
         '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Hotel Night/Rate/Amount */
         '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Trip allowance Day/Rate/Amount */
-        '<col style="width:4%;"><col style="width:6%;">' +  /* Service Person/Amount */
-        '<col style="width:8%;">' +   /* Air flight */
-        '<col style="width:7%;">' +   /* Others */
-        '<col style="width:12%;">' +  /* Total */
+        '<col style="width:6%;">' +    /* Service (Amount only — Person 제거) */
+        '<col style="width:6%;">' +    /* Air flight */
+        '<col style="width:6%;">' +    /* Others */
+        '<col style="width:8%;">' +    /* Total (축소) */
       '</colgroup>' +
       '<thead>' +
         '<tr style="background:#dbeafe;">' +
@@ -991,7 +990,7 @@ async function _btDownloadPDF(idx) {
           '<th colspan="3" style="padding:3px;border:1px solid #000;white-space:nowrap;">Gasoline&nbsp;1)</th>' +
           '<th colspan="3" style="padding:3px;border:1px solid #000;white-space:nowrap;">Hotel&nbsp;2)</th>' +
           '<th colspan="3" style="padding:3px;border:1px solid #000;white-space:nowrap;">Trip&nbsp;allowance&nbsp;3)</th>' +
-          '<th colspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Service&nbsp;4)</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Service&nbsp;4)</th>' +
           '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Air&nbsp;flight</th>' +
           '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Others</th>' +
           '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Total</th>' +
@@ -1001,16 +1000,17 @@ async function _btDownloadPDF(idx) {
           '<th style="padding:3px;border:1px solid #000;">K.M.</th><th style="padding:3px;border:1px solid #000;">Rate</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
           '<th style="padding:3px;border:1px solid #000;">Night</th><th style="padding:3px;border:1px solid #000;">Rate</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
           '<th style="padding:3px;border:1px solid #000;">Day</th><th style="padding:3px;border:1px solid #000;">Rate</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
-          '<th style="padding:3px;border:1px solid #000;">Person</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
         '</tr>' +
       '</thead>' +
       '<tbody>' + bodyRows +
         '<tr style="background:#fef3c7;font-weight:700;">' +
-          '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;white-space:nowrap;">Actual&nbsp;Amount</td>' +
+          '<td style="padding:4px;border:1px solid #000;text-align:center;white-space:nowrap;font-size:8px;">Actual&nbsp;Amount</td>' +
+          '<td style="padding:4px;border:1px solid #000;"></td>' +
+          '<td style="padding:4px;border:1px solid #000;"></td>' +
           '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.gasoline) + '</td>' +
           '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.hotel) + '</td>' +
           '<td colspan="3" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.allowance) + '</td>' +
-          '<td colspan="2" style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.service) + '</td>' +
+          '<td style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.service) + '</td>' +
           '<td style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.airfare) + '</td>' +
           '<td style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(amt.others) + '</td>' +
           '<td style="padding:4px;border:1px solid #000;text-align:right;">' + fmt(rec.total) + '</td>' +

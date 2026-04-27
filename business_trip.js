@@ -221,6 +221,41 @@ async function _btLoadCustomers() {
 
 function _btSafeHtml(s) { return (s == null ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+// ── 주소에서 지방(province)만 추출 (PDF 출력용) ──────────────────
+function _btExtractProvince(addr) {
+  if (!addr) return '';
+  // 우편번호(5자리)와 ", Thailand" 제거
+  var clean = String(addr).replace(/,?\s*Thailand\s*$/i, '').replace(/\s*\d{5}\s*,?\s*$/, '').trim();
+  // 태국어 → 영문 매핑
+  var thaiToEng = {
+    'กรุงเทพมหานคร':'Bangkok','กรุงเทพ':'Bangkok','ชลบุรี':'Chonburi',
+    'เชียงใหม่':'Chiang Mai','เชียงราย':'Chiang Rai','ภูเก็ต':'Phuket',
+    'นครปฐม':'Nakhon Pathom','นนทบุรี':'Nonthaburi','ปทุมธานี':'Pathum Thani',
+    'สมุทรปราการ':'Samut Prakan','สมุทรสาคร':'Samut Sakhon','ขอนแก่น':'Khon Kaen',
+    'นครราชสีมา':'Nakhon Ratchasima','พระนครศรีอยุธยา':'Ayutthaya',
+    'ระยอง':'Rayong','สงขลา':'Songkhla','หาดใหญ่':'Hat Yai',
+    'อุดรธานี':'Udon Thani','อุบลราชธานี':'Ubon Ratchathani',
+    'กระบี่':'Krabi','สุราษฎร์ธานี':'Surat Thani','ตรัง':'Trang',
+    'พิษณุโลก':'Phitsanulok','เพชรบุรี':'Phetchaburi','ลำปาง':'Lampang',
+    'สระบุรี':'Saraburi','ฉะเชิงเทรา':'Chachoengsao','กาญจนบุรี':'Kanchanaburi',
+    'ราชบุรี':'Ratchaburi','สุพรรณบุรี':'Suphanburi','อยุธยา':'Ayutthaya'
+  };
+  for (var thai in thaiToEng) {
+    if (clean.indexOf(thai) >= 0) return thaiToEng[thai];
+  }
+  // "Krung Thep Maha Nakhon" → Bangkok
+  if (/Krung\s*Thep/i.test(clean)) return 'Bangkok';
+  // 영문 지방명
+  var engProvinces = ['Bangkok','Chonburi','Chiang Mai','Chiang Rai','Phuket','Nakhon Pathom','Nonthaburi','Pathum Thani','Samut Prakan','Samut Sakhon','Khon Kaen','Nakhon Ratchasima','Ayutthaya','Rayong','Songkhla','Pattaya','Hua Hin','Krabi','Surat Thani','Trang','Phitsanulok','Phetchabun','Phetchaburi','Lampang','Lamphun','Saraburi','Tak','Hat Yai','Udon Thani','Ubon Ratchathani','Chachoengsao','Kanchanaburi','Ratchaburi','Suphanburi'];
+  for (var i = 0; i < engProvinces.length; i++) {
+    if (clean.indexOf(engProvinces[i]) >= 0) return engProvinces[i];
+  }
+  // fallback: 마지막 콤마 분리 토큰
+  var parts = clean.split(',');
+  if (parts.length >= 1) return parts[parts.length - 1].trim();
+  return clean;
+}
+
 // ── 고객 검색 (별도 customer 필드용 — 기존 동작 유지) ────────────
 function _btBindCustomerSearch() {
   var input = document.getElementById('btCustomerSearch');
@@ -864,11 +899,13 @@ async function _btDownloadPDF(idx) {
   var fmt = function(v){ return Number(v||0).toLocaleString(); };
   var bodyRows = legs.map(function(l, i){
     var first = (i === 0);
-    var route = (l.departure || '') + (l.arrival ? '\n→ ' + l.arrival : '');
+    var depProv = _btExtractProvince(l.departure || '');
+    var arrProv = _btExtractProvince(l.arrival || '');
+    var route = depProv + (arrProv ? ' → ' + arrProv : '');
     var distance = Number(l.distance_km||0).toFixed(1);
     return '<tr>' +
       '<td style="padding:4px;border:1px solid #000;text-align:left;">' + (first ? _btSafeHtml(rec.applicant_name || '') : '') + '</td>' +
-      '<td style="padding:4px;border:1px solid #000;font-size:8px;text-align:left;white-space:pre-line;">' + _btSafeHtml(route) + (l.customer_name ? '\n🏥 ' + _btSafeHtml(l.customer_name) : '') + '</td>' +
+      '<td style="padding:4px;border:1px solid #000;font-size:10px;text-align:center;white-space:nowrap;">' + _btSafeHtml(route) + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + distance + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? (_btGasolineRatePerKm || 5) : '') + '</td>' +
       '<td style="padding:4px;border:1px solid #000;text-align:right;">' + (first ? fmt(amt.gasoline) : '') + '</td>' +
@@ -907,7 +944,15 @@ async function _btDownloadPDF(idx) {
       '</td></tr>' +
     '</table>' +
     '<div style="font-weight:700;font-size:12px;margin:6px 0 4px;">Duration</div>' +
-    '<table style="width:100%;border-collapse:collapse;font-size:10px;">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:10px;table-layout:fixed;">' +
+      '<colgroup>' +
+        '<col style="width:12%;">' +
+        '<col style="width:9%;">' +
+        '<col style="width:9%;">' +
+        '<col style="width:8%;">' +
+        '<col style="width:14%;">' +
+        '<col style="width:48%;">' +
+      '</colgroup>' +
       '<thead><tr style="background:#e5e7eb;">' +
         '<th style="padding:4px;border:1px solid #000;">Name</th>' +
         '<th style="padding:4px;border:1px solid #000;">From</th>' +
@@ -916,27 +961,38 @@ async function _btDownloadPDF(idx) {
         '<th style="padding:4px;border:1px solid #000;">Customer name</th>' +
         '<th style="padding:4px;border:1px solid #000;">Purpose</th>' +
       '</tr></thead><tbody><tr>' +
-        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(rec.attendees || rec.applicant_name || '') + '</td>' +
-        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(rec.trip_from || '') + '</td>' +
-        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(rec.trip_to || '') + '</td>' +
-        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(legs[0].customer_erp || rec.customer_erp || '') + '</td>' +
-        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(legs[0].customer_name || rec.customer_name || '') + '</td>' +
-        '<td style="padding:4px;border:1px solid #000;">' + _btSafeHtml(rec.purpose || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;word-break:break-word;">' + _btSafeHtml(rec.attendees || rec.applicant_name || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;text-align:center;">' + _btSafeHtml(rec.trip_from || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;text-align:center;">' + _btSafeHtml(rec.trip_to || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;text-align:center;">' + _btSafeHtml(legs[0].customer_erp || rec.customer_erp || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;font-size:9px;word-break:break-word;">' + _btSafeHtml(legs[0].customer_name || rec.customer_name || '') + '</td>' +
+        '<td style="padding:4px;border:1px solid #000;word-break:break-word;">' + _btSafeHtml(rec.purpose || '') + '</td>' +
       '</tr></tbody>' +
     '</table>' +
     '<div style="font-weight:700;font-size:12px;margin:10px 0 4px;">Business Tripper</div>' +
-    '<table style="width:100%;border-collapse:collapse;font-size:9px;">' +
+    '<table style="width:100%;border-collapse:collapse;font-size:9px;table-layout:fixed;">' +
+      '<colgroup>' +
+        '<col style="width:7%;">' +   /* Name */
+        '<col style="width:13%;">' +  /* Province / Route */
+        '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Gasoline KM/Rate/Amount */
+        '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Hotel Night/Rate/Amount */
+        '<col style="width:4%;"><col style="width:4%;"><col style="width:6%;">' + /* Trip allowance Day/Rate/Amount */
+        '<col style="width:4%;"><col style="width:6%;">' +  /* Service Person/Amount */
+        '<col style="width:8%;">' +   /* Air flight */
+        '<col style="width:7%;">' +   /* Others */
+        '<col style="width:13%;">' +  /* Total */
+      '</colgroup>' +
       '<thead>' +
         '<tr style="background:#dbeafe;">' +
-          '<th rowspan="2" style="padding:3px;border:1px solid #000;width:8%;">Name</th>' +
-          '<th rowspan="2" style="padding:3px;border:1px solid #000;width:18%;">Province / Route</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Name</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Province / Route</th>' +
           '<th colspan="3" style="padding:3px;border:1px solid #000;">Gasoline 1)</th>' +
           '<th colspan="3" style="padding:3px;border:1px solid #000;">Hotel 2)</th>' +
           '<th colspan="3" style="padding:3px;border:1px solid #000;">Trip allowance 3)</th>' +
           '<th colspan="2" style="padding:3px;border:1px solid #000;">Service 4)</th>' +
-          '<th rowspan="2" style="padding:3px;border:1px solid #000;width:6%;">Air flight</th>' +
-          '<th rowspan="2" style="padding:3px;border:1px solid #000;width:6%;">Others</th>' +
-          '<th rowspan="2" style="padding:3px;border:1px solid #000;width:7%;">Total</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Air flight</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Others</th>' +
+          '<th rowspan="2" style="padding:3px;border:1px solid #000;white-space:nowrap;">Total</th>' +
         '</tr>' +
         '<tr style="background:#eff6ff;">' +
           '<th style="padding:3px;border:1px solid #000;">K.M.</th><th style="padding:3px;border:1px solid #000;">Rate</th><th style="padding:3px;border:1px solid #000;">Amount</th>' +
